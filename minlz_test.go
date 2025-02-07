@@ -23,7 +23,6 @@ import (
 	"log"
 	"math"
 	"math/rand"
-	rv2 "math/rand/v2"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -147,8 +146,6 @@ func roundtrip(b, ebuf, dbuf []byte) error {
 		if err := cmp(bOrg, b); err != nil {
 			return fmt.Errorf("lvl %d: src was changed: %v", level, err)
 		}
-		return nil
-		//fmt.Println("asm:", len(asmEnc), "go:", len(goEnc))
 		dGo, err := Decode(nil, goEnc)
 		if err != nil {
 			return fmt.Errorf("lvl %d: decoding (asm) error: %v", level, err)
@@ -1813,16 +1810,4 @@ func decodeGo(dst, src []byte) ([]byte, error) {
 		return dst, ErrCorrupt
 	}
 	return dst, nil
-}
-
-func BenchmarkChaCha8Read(b *testing.B) {
-	p := rv2.NewChaCha8([32]byte{1, 2, 3, 4, 5})
-	buf := make([]byte, 32<<10)
-	b.SetBytes(32 << 10)
-	var t uint8
-	for n := b.N; n > 0; n-- {
-		p.Read(buf)
-		t += buf[0]
-	}
-	_ = uint64(t)
 }
