@@ -146,8 +146,6 @@ func roundtrip(b, ebuf, dbuf []byte) error {
 		if err := cmp(bOrg, b); err != nil {
 			return fmt.Errorf("lvl %d: src was changed: %v", level, err)
 		}
-		return nil
-		//fmt.Println("asm:", len(asmEnc), "go:", len(goEnc))
 		dGo, err := Decode(nil, goEnc)
 		if err != nil {
 			return fmt.Errorf("lvl %d: decoding (asm) error: %v", level, err)
