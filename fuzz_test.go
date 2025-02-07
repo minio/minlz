@@ -242,7 +242,7 @@ func FuzzStreamEncode(f *testing.F) {
 	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, false)
 
 	var encoders []*Writer
-	for l := LevelFastest; l <= LevelBalanced; l++ {
+	for l := LevelFastest; l <= LevelSmallest; l++ {
 		encoders = append(encoders, NewWriter(nil, WriterLevel(l), WriterConcurrency(1), WriterBlockSize(128<<10)))
 		if !testing.Short() && l == LevelFastest {
 			// Try some combinations...

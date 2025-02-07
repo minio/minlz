@@ -1,0 +1,132 @@
+name: Go
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions: read-all
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        go-version: [1.22.x, 1.23.x]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      CGO_ENABLED: 0
+    runs-on: ${{ matrix.os }}
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5.2.0
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Vet
+      run: go vet ./...
+
+    - name: Test
+      run: go test ./...
+
+    - name: Test No-asm
+      run: go test -tags=noasm ./...
+
+    - name: Test No-unsafe
+      run: go test -tags=nounsafe ./...
+
+    - name: Test No-unsafe, noasm
+      run: go test -tags="nounsafe,noasm" ./...
+
+    - name: Test Race 1 CPU
+      env:
+        CGO_ENABLED: 1
+      run: go test -cpu=1 -short -race -tags=nounsafe -v ./...
+
+    - name: Test Race 4 CPU
+      env:
+        CGO_ENABLED: 1
+      run: go test -cpu=4 -short -race -tags=nounsafe -v ./...
+
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5.2.0
+      with:
+        go-version: 1.23.x
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Generate
+      working-directory: ./_generate
+      run: go generate -v -x
+
+    - name: Git Status
+      run: |
+        git diff
+        test -z "$(git status --porcelain)"
+
+  build-special:
+    env:
+      CGO_ENABLED: 0
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5.2.0
+      with:
+        go-version: 1.23.x
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: fmt
+      run: diff <(gofmt -d .) <(printf "")
+
+    - name: Test 386
+      run: GOOS=linux GOARCH=386 go test -short ./...
+
+    - name: Build mz
+      run: go build github.com/minio/minlz/cmd/mz&&./mz c -verify -o=comp.mz mz&&./mz d -rm comp.mz&&rm ./mz&&rm comp
+
+    - name: goreleaser deprecation
+      run: curl -sfL https://git.io/goreleaser | VERSION=v2.3.2 sh -s -- check
+
+    - name: goreleaser snapshot
+      run: curl -sL https://git.io/goreleaser | VERSION=v2.3.2 sh -s -- --snapshot --clean
+
+    - name: Test GOAMD64 v3
+      env:
+        GOAMD64: v3
+      shell: bash {0}
+      run: go test . -test.run=None;if [ $? -eq 0 ]; then go test ...; else true; fi
+
+    - name: Test GOAMD64 v4
+      env:
+        GOAMD64: v4
+      shell: bash {0}
+      run: go test . -test.run=None;if [ $? -eq 0 ]; then go test ...; else true; fi
+
+  fuzz:
+    env:
+      CGO_ENABLED: 0
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        tags: [ 'nounsafe', '"noasm,nounsafe"' ]
+        tests: ['FuzzEncodingBlocks', 'FuzzDecode', 'FuzzStreamEncode', 'FuzzStreamDecode', 'FuzzLZ4Block']
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v5.2.0
+        with:
+          go-version: 1.23.x
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: mz/${{ matrix.tests }}/${{ matrix.tags }}
+        run: go test -tags=${{ matrix.tags }} -run=none -fuzz=${{ matrix.tests }} -fuzztime=100000x -test.fuzzminimizetime=10ms
