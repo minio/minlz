@@ -103,13 +103,13 @@ jobs:
       env:
         GOAMD64: v3
       shell: bash {0}
-      run: go test . -test.run=None;if [ $? -eq 0 ]; then go test ...; else true; fi
+      run: go test . -test.run=None;if [ $? -eq 0 ]; then go test .; else true; fi
 
     - name: Test GOAMD64 v4
       env:
         GOAMD64: v4
       shell: bash {0}
-      run: go test . -test.run=None;if [ $? -eq 0 ]; then go test ...; else true; fi
+      run: go test . -test.run=None;if [ $? -eq 0 ]; then go test .; else true; fi
 
   fuzz:
     env:
