@@ -63,9 +63,10 @@ func main() {
 		fmt.Fprintf(w, "Decompress:   %s d [options] <input>\n", os.Args[0])
 		fmt.Fprintf(w, " (cat)    :   %s cat [options] <input>\n", os.Args[0])
 		fmt.Fprintf(w, " (tail)   :   %s tail [options] <input>\n\n", os.Args[0])
-		fmt.Fprintf(w, "Compress file:    %s c file.txt\n", os.Args[0])
-		fmt.Fprintf(w, "Compress stdin:   %s c -\n", os.Args[0])
-		fmt.Fprintf(w, "Decompress file:  %s d file.txt.mz\n", os.Args[0])
+		fmt.Fprintf(w, "Without options 'c' and 'd' can be omitted. Extension decides if decompressing.\n")
+		fmt.Fprintf(w, "Compress file:    %s file.txt\n", os.Args[0])
+		fmt.Fprintf(w, "Compress stdin:   %s -\n", os.Args[0])
+		fmt.Fprintf(w, "Decompress file:  %s file.txt.mz\n", os.Args[0])
 		fmt.Fprintf(w, "Decompress stdin: %s d -\n", os.Args[0])
 		// Don't print flags.
 	}
@@ -107,9 +108,28 @@ func main() {
 	case "d", "decompress", "tail", "cat":
 		mainDecompress(flag.Args()[1:], flag.Arg(0) == "cat", flag.Arg(0) == "tail")
 	default:
-		flag.Usage()
-		os.Exit(1)
+		if len(flag.Args()) > 0 {
+			cmp := strings.ToLower(flag.Arg(0))
+			for _, ext := range autoDecompressExt {
+				if strings.HasSuffix(cmp, ext) {
+					mainDecompress(flag.Args(), false, false)
+					return
+				}
+			}
+			mainCompress(flag.Args())
+		} else {
+			flag.Usage()
+			os.Exit(1)
+		}
 	}
+}
+
+var autoDecompressExt = []string{
+	minlzBlockExt,
+	minlzExt,
+	s2Ext,
+	snappyExt,
+	".snappy",
 }
 
 func exitErr(err error) {
