@@ -286,7 +286,7 @@ Options:`)
 								elapsed := time.Since(start)
 								mbpersec := (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
 								scale := mbpersec / singleSpeed
-								pct := output * 100 / input
+								pct := input * 100 / output
 								ms := elapsed.Round(time.Millisecond)
 								fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s (%.1fx)          \r", len(b), len(compressed), pct, ms, mbpersec, scale)
 								time.Sleep(time.Second / 6)
