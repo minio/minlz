@@ -143,7 +143,6 @@ func benchDecode(b *testing.B, src []byte) {
 		}
 		b.ReportMetric(100*float64(len(encoded))/float64(len(src)), "pct")
 	})
-
 	b.Run("level-1", func(b *testing.B) {
 		encoded := encodeGo(nil, src, LevelFastest)
 		b.SetBytes(int64(len(src)))
@@ -225,6 +224,40 @@ func benchEncode(b *testing.B, src []byte) {
 		enc, _ := Encode(dst, src, LevelSmallest)
 		b.ReportMetric(100*float64(len(enc))/float64(len(src)), "pct")
 	})
+	/*
+		b.Run("snappy", func(b *testing.B) {
+			dst := snappy.Encode(dst, src)
+			b.SetBytes(int64(len(src)))
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				snappy.Encode(dst, src)
+			}
+			b.ReportMetric(100*float64(len(dst))/float64(len(src)), "pct")
+		})
+		b.Run("lz4-0", func(b *testing.B) {
+			var c lz4.Compressor
+			dst := make([]byte, lz4.CompressBlockBound(len(src)))
+			b.SetBytes(int64(len(src)))
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				c.CompressBlock(src, dst)
+			}
+			enc, _ := c.CompressBlock(src, dst)
+			b.ReportMetric(100*float64(enc)/float64(len(src)), "pct")
+		})
+		b.Run("lz4-9", func(b *testing.B) {
+			var c lz4.CompressorHC
+			c.Level = lz4.Level9
+			dst := make([]byte, lz4.CompressBlockBound(len(src)))
+			b.SetBytes(int64(len(src)))
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				c.CompressBlock(src, dst)
+			}
+			enc, _ := c.CompressBlock(src, dst)
+			b.ReportMetric(100*float64(enc)/float64(len(src)), "pct")
+		})
+	*/
 }
 
 func BenchmarkRandomEncodeBlock1MB(b *testing.B) {
@@ -375,7 +408,7 @@ func benchFile(b *testing.B, i int, decode bool) {
 				}
 			})
 		}
-		enc := encodeGo(nil, data, LevelFastest)
+		enc, _ := Encode(nil, data, LevelFastest)
 		b.ReportMetric(100*float64(len(enc))/float64(len(data)), "pct")
 		b.ReportMetric(float64(len(enc)), "B")
 	})
@@ -459,7 +492,7 @@ func benchFile(b *testing.B, i int, decode bool) {
 				}
 			})
 		}
-		enc := encodeGo(nil, data, LevelBalanced)
+		enc, _ := Encode(nil, data, LevelBalanced)
 		b.ReportMetric(100*float64(len(enc))/float64(len(data)), "pct")
 		b.ReportMetric(float64(len(enc)), "B")
 	})
@@ -544,33 +577,159 @@ func benchFile(b *testing.B, i int, decode bool) {
 				}
 			})
 		}
-		enc := encodeGo(nil, data, LevelSmallest)
+		enc, _ := Encode(nil, data, LevelSmallest)
 		b.ReportMetric(100*float64(len(enc))/float64(len(data)), "pct")
 		b.ReportMetric(float64(len(enc)), "B")
 	})
 	if decode && hasAsm {
 		b.Run("level-3-noasm", func(b *testing.B) {
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				encoded := encodeGo(nil, data, LevelSmallest)
+				tmp := make([]byte, len(data), len(data)+16)
+				for pb.Next() {
+					var err error
+					tmp, err = decodeGo(tmp[:0], encoded)
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+			enc := encodeGo(nil, data, LevelSmallest)
+			b.ReportMetric(100*float64(len(enc))/float64(len(data)), "pct")
+			b.ReportMetric(float64(len(enc)), "B")
+		})
+	}
+	/*
+		b.Run("snappy", func(b *testing.B) {
 			if decode {
 				b.SetBytes(int64(len(data)))
 				b.ReportAllocs()
 				b.ResetTimer()
 				b.RunParallel(func(pb *testing.PB) {
-					encoded := encodeGo(nil, data, LevelSmallest)
+					encoded := snappy.Encode(nil, data)
 					tmp := make([]byte, len(data), len(data)+16)
 					for pb.Next() {
 						var err error
-						tmp, err = decodeGo(tmp[:0], encoded)
+						tmp, err = snappy.Decode(tmp, encoded)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			} else {
+				b.SetBytes(int64(len(data)))
+				b.ReportAllocs()
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					dst := make([]byte, snappy.MaxEncodedLen(len(data)))
+					tmp := make([]byte, len(data))
+					for pb.Next() {
+						res := snappy.Encode(dst, data)
+						if len(res) == 0 {
+							panic(0)
+						}
+						if debugValidateBlocks {
+							tmp, _ = Decode(tmp, res)
+							if !bytes.Equal(tmp, data) {
+								panic("wrong")
+							}
+						}
+					}
+				})
+			}
+			enc := snappy.Encode(nil, data)
+			b.ReportMetric(100*float64(len(enc))/float64(len(data)), "pct")
+			b.ReportMetric(float64(len(enc)), "B")
+		})
+
+		b.Run("lz4-0", func(b *testing.B) {
+			if decode {
+				b.SetBytes(int64(len(data)))
+				b.ReportAllocs()
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					var c lz4.Compressor
+					encoded := make([]byte, lz4.CompressBlockBound(len(data)))
+					encSize, err := c.CompressBlock(data, encoded)
+					if err != nil {
+						b.Fatal(err)
+					}
+					encoded = encoded[:encSize]
+					tmp := make([]byte, len(data), len(data)+16)
+					for pb.Next() {
+						var err error
+						_, err = lz4.UncompressBlock(encoded, tmp)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			} else {
+				b.SetBytes(int64(len(data)))
+				b.ReportAllocs()
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					dst := make([]byte, lz4.CompressBlockBound(len(data)))
+					var c lz4.Compressor
+					for pb.Next() {
+						_, err := c.CompressBlock(data, dst)
 						if err != nil {
 							b.Fatal(err)
 						}
 					}
 				})
 			}
-			enc := encodeGo(nil, data, LevelSmallest)
-			b.ReportMetric(100*float64(len(enc))/float64(len(data)), "pct")
-			b.ReportMetric(float64(len(enc)), "B")
+			var c lz4.Compressor
+			encSize, _ := c.CompressBlock(data, make([]byte, lz4.CompressBlockBound(len(data))))
+			b.ReportMetric(100*float64(encSize)/float64(len(data)), "pct")
+			b.ReportMetric(float64(encSize), "B")
 		})
-	}
+		b.Run("lz4-9", func(b *testing.B) {
+			if decode {
+				b.SetBytes(int64(len(data)))
+				b.ReportAllocs()
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					c := lz4.CompressorHC{Level: lz4.Level9}
+					encoded := make([]byte, lz4.CompressBlockBound(len(data)))
+					encSize, err := c.CompressBlock(data, encoded)
+					if err != nil {
+						b.Fatal(err)
+					}
+					encoded = encoded[:encSize]
+					tmp := make([]byte, len(data), len(data)+16)
+					for pb.Next() {
+						var err error
+						_, err = lz4.UncompressBlock(encoded, tmp)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			} else {
+				b.SetBytes(int64(len(data)))
+				b.ReportAllocs()
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					dst := make([]byte, lz4.CompressBlockBound(len(data)))
+					c := lz4.CompressorHC{Level: lz4.Level9}
+					for pb.Next() {
+						_, err := c.CompressBlock(data, dst)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			}
+			c := lz4.CompressorHC{Level: lz4.Level9}
+			encSize, _ := c.CompressBlock(data, make([]byte, lz4.CompressBlockBound(len(data))))
+			b.ReportMetric(100*float64(encSize)/float64(len(data)), "pct")
+			b.ReportMetric(float64(encSize), "B")
+		})
+	*/
 }
 
 func BenchmarkWriterRandom(b *testing.B) {

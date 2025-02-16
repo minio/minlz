@@ -311,7 +311,128 @@ Using assembly/non-assembly versions will often produce slightly different outpu
 
 # Performance
 
-All sizes are base 1024 where relevant.
+## BLOCKS
+
+Individual block benchmarks should be considered carefully - and can be hard to generalize, 
+since they tend to over-emphasize specific characteristics of the content.
+
+Therefore, it will be easy to find counter-examples to the benchmarks, where specific patterns suit a 
+specific compressor better than others. 
+We present a few examples from the [Snappy benchmark set](https://github.com/google/snappy/tree/main/testdata).
+As a benchmark this set has an over-emphasis on text files.
+
+Blocks are compressed/decompress using 16 concurrent threads on an AMD Ryzen 9 3950X 16-Core Processor.
+Click below to see some sample benchmarks compared to Snappy and LZ4:
+
+<details>
+  <summary>Protobuf (118,588 bytes input)</summary>
+
+| Compressor   | Size   | Comp MB/s | Decomp MB/s | Reduction % |
+|--------------|--------|-----------|-------------|-------------|
+| MinLZ 1      | 17,613 |    27,837 |     116,762 |      85.15% |
+| MinLZ 1 (Go) | 17,479 |    22,036 |      61,652 |      85.26% |
+| MinLZ 2      | 16,345 |    12,797 |     103,100 |      86.22% |
+| MinLZ 2 (Go) | 16,345 |     9,732 |      52,964 |      86.22% |
+| MinLZ 3      | 14,766 |       210 |     126,385 |      87.55% |
+| MinLZ 3 (Go) | 14,766 |           |      68,411 |      87.55% |
+| Snappy       | 23,335 |    24,052 |      61,002 |      80.32% |
+| Snappy (Go)  | 23,335 |           |      35,699 |      80.32% |
+| LZ4 0        | 18,766 |    12,649 |     137,553 |      84.18% |
+| LZ4 0 (Go)   | 18,766 |           |      64,092 |      84.18% |
+| LZ4 9        | 15,844 |    12,649 |     139,801 |      86.64% |
+| LZ4 9 (Go)   | 15,844 |           |      66,904 |      86.64% |
+
+Source file: https://github.com/google/snappy/blob/main/testdata/geo.protodata
+
+</details>
+
+<details>
+  <summary>HTML (102,400 bytes input)</summary>
+
+| Compressor   | Size   | Comp MB/s | Decomp MB/s | Reduction % |
+|--------------|--------|-----------|-------------|-------------|
+| MinLZ 1      | 20,184 |    17,558 |      82,292 |      80.29% |
+| MinLZ 1 (Go) | 19,849 |    15,035 |      32,327 |      80.62% |
+| MinLZ 2      | 17,831 |     9,260 |      58,432 |      82.59% |
+| MinLZ 2 (Go) | 17,831 |     7,524 |      25,728 |      82.59% |
+| MinLZ 3      | 16,025 |       180 |      80,445 |      84.35% |
+| MinLZ 3 (Go) | 16,025 |           |      33,382 |      84.35% |
+| Snappy       | 22,843 |    17,469 |      44,765 |      77.69% |
+| Snappy (Go)  | 22,843 |           |      21,082 |      77.69% |
+| LZ4 0        | 21,216 |     9,452 |     101,490 |      79.28% |
+| LZ4 0 (Go)   | 21,216 |           |      40,674 |      79.28% |
+| LZ4 9        | 17,139 |     1,407 |      95,706 |      83.26% |
+| LZ4 9 (Go)   | 17,139 |           |      39,709 |      83.26% |
+
+Source file: https://github.com/google/snappy/blob/main/testdata/html
+
+</details>
+
+<details>
+  <summary>URLs. (702,087 bytes input)</summary>
+
+| Compressor   | Size    | Comp MB/s | Decomp MB/s | Reduction % |
+|--------------|---------|-----------|-------------|-------------|
+| MinLZ 1      | 268,803 |     9,774 |      30,961 |      61.71% |
+| MinLZ 1 (Go) | 260,937 |     7,935 |      17,362 |      62.83% |
+| MinLZ 2      | 230,280 |     5,197 |      26,871 |      67.20% |
+| MinLZ 2 (Go) | 230,280 |     4,280 |      13,926 |      67.20% |
+| MinLZ 3      | 207,303 |       226 |      28,716 |      70.47% |
+| MinLZ 3 (Go) | 207,303 |           |      15,256 |      70.47% |
+| Snappy       | 335,492 |     9,398 |      24,207 |      52.22% |
+| Snappy (Go)  | 335,492 |           |      12,359 |      52.22% |
+| LZ4 0        | 299,342 |     4,462 |      51,220 |      57.36% |
+| LZ4 0 (Go)   | 299,342 |           |      23,242 |      57.36% |
+| LZ4 9        | 252,182 |       638 |      45,295 |      64.08% |
+| LZ4 9 (Go)   | 252,182 |           |      16,240 |      64.08% |
+
+Source file: https://github.com/google/snappy/blob/main/testdata/urls.10K
+
+</details>
+
+<details>
+  <summary>Serialized binary. (184,320 bytes input)</summary>
+
+| Compressor   | Size   | Comp MB/s | Decomp MB/s | Reduction % |
+|--------------|--------|-----------|-------------|-------------|
+| MinLZ 1      | 63,595 |     8,319 |      26,170 |      65.50% |
+| MinLZ 1 (Go) | 62,087 |     7,601 |      12,118 |      66.32% |
+| MinLZ 2      | 54,688 |     5,932 |      24,688 |      70.33% |
+| MinLZ 2 (Go) | 52,752 |     4,690 |      10,566 |      71.38% |
+| MinLZ 3      | 46,002 |       230 |      28,083 |      75.04% |
+| MinLZ 3 (Go) | 46,002 |           |      12,877 |      75.04% |
+| Snappy       | 69,526 |    10,198 |      19,754 |      62.28% |
+| Snappy (Go)  | 69,526 |           |       8,712 |      62.28% |
+| LZ4 0        | 66,506 |     5,355 |      45,305 |      63.92% |
+| LZ4 0 (Go)   | 66,506 |           |      15,757 |      63.92% |
+| LZ4 9        | 50,439 |        88 |      52,877 |      72.64% |
+| LZ4 9 (Go)   | 50,439 |           |      18,171 |      72.64% |
+
+Source file: https://github.com/google/snappy/blob/main/testdata/kppkn.gtb
+
+</details>
+
+In overall terms, we typically observe that:
+
+* The fastest mode typically beats LZ4 both in speed and output size.
+* The fastest mode is typically equal to Snappy in speed, but significantly smaller.
+* The "balanced" mode typically beats the best possible LZ4 compression, but much faster.
+* LZ4 is decompression speed king.
+* Snappy decompression is usually slowest — especially without assembly.
+
+We encourage you to do your own testing with realistic blocks.
+
+You can use `λ mz c -block -bench=10 -verify -cpu=16 -1 file.ext` with our commandline tool.
+
+## STREAMS
+
+For fair stream comparisons, we run each encoder at its maximum block size
+while maintaining independent blocks where it is an option.
+We use the concurrency offered by the package.
+
+This means there may be further speed/size tradeoffs possible for each, 
+so experiment with fine tuning for your needs.
+
 
 ## Why is concurrent block and stream speed so different?
 
@@ -322,18 +443,19 @@ reads are outside any CPU cache.
 
 Contrast that to blocks, where data has often just been read/produced and therefore
 already is in one of the CPU caches.
-Therefore, block (de)compression will more often take place with data read from cache 
+Therefore, block (de)compression will more often take place with data read from cache
 rather than a stream, where data can be coming from memory.
 
-Even if data is streamed into cache, the "penalty" will still have to paid at some 
+Even if data is streamed into cache, the "penalty" will still have to paid at some
 place in the chain. So streams will mostly appear slower in benchmarks.
+
 
 # Commandline utility
 
 Official releases can be downloaded from the [releases](https://github.com/minio/minlz/releases) section
 with binaries for most platforms.
 
-To install from source execute `go install github.com/minio/minlz@latest`.
+To install from source execute `go install github.com/minio/minlz/cmd/mz@latest`.
 
 ## Usage
 
@@ -343,19 +465,22 @@ MinLZ compression tool vx.x built at home, (c) 2025 MinIO Inc.
 Homepage: https://github.com/minio/minlz
 
 Usage:
-Compress:     mz c [options] <inputs>
-Decompress:   mz d [options] <inputs>
- (cat)    :   mz cat [options] <inputs>
- (tail)   :   mz tail [options] <inputs>
+Compress:     mz c [options] <input>
+Decompress:   mz d [options] <input>
+ (cat)    :   mz cat [options] <input>
+ (tail)   :   mz tail [options] <input>
 
-Compress file:    mz c file.txt
-Compress stdin:   mz c -
-Decompress file:  mz d file.txt.mz
+Without options 'c' and 'd' can be omitted. Extension decides if decompressing.
+
+Compress file:    mz file.txt
+Compress stdin:   mz -
+Decompress file:  mz file.txt.mz
 Decompress stdin: mz d -
 ```
 
-Note that all sizes KB, MB, etc. are base 1024 in the commandline tool, 
-except speed indications, which are base 10. 
+Note that all option sizes KB, MB, etc. are base 1024 in the commandline tool.
+
+Speed indications are base 10.
 
 ### Compressing
 
