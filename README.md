@@ -310,6 +310,14 @@ The following build tags can be used to control which speed improvements are use
 
 Using assembly/non-assembly versions will often produce slightly different output.
 
+We will support 2 releases prior to current Go release version.  
+
+This package has been extensively fuzz tested to ensure that no data input can cause 
+crashes or excessive memory usage.
+
+When doing fuzz testing, use `-tags=nounsafe`. Non-assembly functions will also be tested, 
+but for completeness also test with `-tags=purego`.
+
 # Performance
 
 ## BLOCKS
