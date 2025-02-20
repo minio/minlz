@@ -227,7 +227,8 @@ the `WriteTo` functionality.
 ```
 
 The `DecompressConcurrent` has similar functionality to `WriteTo`, but allows specifying the concurrency.
-By default `WriteTo` uses `runtime.NumCPU()` concurrent decompressors.
+By default `WriteTo` uses `runtime.NumCPU()` or at most 8 concurrent decompressors.
+Besides offering higher throughput using `DecompressConcurrent` will also make input reads async when used. 
 
 For memory-sensitive systems, the maximum block size can be set below 8MB. For this use the `ReaderMaxBlockSize(int)`
 option.
@@ -324,11 +325,13 @@ As a benchmark this set has an over-emphasis on text files.
 Blocks are compressed/decompress using 16 concurrent threads on an AMD Ryzen 9 3950X 16-Core Processor.
 Click below to see some sample benchmarks compared to Snappy and LZ4:
 
+### Protobuf Sample
+
 <details>
-  <summary>Protobuf (118,588 bytes input)</summary>
+  <summary>Click To See Data + Charts (118,588 bytes input)</summary>
 
 | Compressor   | Size   | Comp MB/s | Decomp MB/s | Reduction % |
-|--------------|--------|-----------|-------------|-------------|
+|--------------|--------|----------:|-------------|-------------|
 | MinLZ 1      | 17,613 |    27,837 |     116,762 |      85.15% |
 | MinLZ 1 (Go) | 17,479 |    22,036 |      61,652 |      85.26% |
 | MinLZ 2      | 16,345 |    12,797 |     103,100 |      86.22% |
@@ -336,21 +339,25 @@ Click below to see some sample benchmarks compared to Snappy and LZ4:
 | MinLZ 3      | 14,766 |       210 |     126,385 |      87.55% |
 | MinLZ 3 (Go) | 14,766 |           |      68,411 |      87.55% |
 | Snappy       | 23,335 |    24,052 |      61,002 |      80.32% |
-| Snappy (Go)  | 23,335 |           |      35,699 |      80.32% |
+| Snappy (Go)  | 23,335 |    10,055 |      35,699 |      80.32% |
 | LZ4 0        | 18,766 |    12,649 |     137,553 |      84.18% |
 | LZ4 0 (Go)   | 18,766 |           |      64,092 |      84.18% |
 | LZ4 9        | 15,844 |    12,649 |     139,801 |      86.64% |
 | LZ4 9 (Go)   | 15,844 |           |      66,904 |      86.64% |
 
+![Compression vs Size](img/pb-block.png)
+
 Source file: https://github.com/google/snappy/blob/main/testdata/geo.protodata
 
 </details>
 
+### HTML Sample
+
 <details>
-  <summary>HTML (102,400 bytes input)</summary>
+  <summary>Click To See Data + Charts (102,400 bytes input)</summary>
 
 | Compressor   | Size   | Comp MB/s | Decomp MB/s | Reduction % |
-|--------------|--------|-----------|-------------|-------------|
+|--------------|--------|----------:|-------------|-------------|
 | MinLZ 1      | 20,184 |    17,558 |      82,292 |      80.29% |
 | MinLZ 1 (Go) | 19,849 |    15,035 |      32,327 |      80.62% |
 | MinLZ 2      | 17,831 |     9,260 |      58,432 |      82.59% |
@@ -358,21 +365,25 @@ Source file: https://github.com/google/snappy/blob/main/testdata/geo.protodata
 | MinLZ 3      | 16,025 |       180 |      80,445 |      84.35% |
 | MinLZ 3 (Go) | 16,025 |           |      33,382 |      84.35% |
 | Snappy       | 22,843 |    17,469 |      44,765 |      77.69% |
-| Snappy (Go)  | 22,843 |           |      21,082 |      77.69% |
+| Snappy (Go)  | 22,843 |     8,161 |      21,082 |      77.69% |
 | LZ4 0        | 21,216 |     9,452 |     101,490 |      79.28% |
 | LZ4 0 (Go)   | 21,216 |           |      40,674 |      79.28% |
 | LZ4 9        | 17,139 |     1,407 |      95,706 |      83.26% |
 | LZ4 9 (Go)   | 17,139 |           |      39,709 |      83.26% |
 
+![Compression vs Size](img/html-block.png)
+
 Source file: https://github.com/google/snappy/blob/main/testdata/html
 
 </details>
 
+### URL List Sample
+
 <details>
-  <summary>URLs. (702,087 bytes input)</summary>
+  <summary>Click To See Data + Charts (702,087 bytes input)</summary>
 
 | Compressor   | Size    | Comp MB/s | Decomp MB/s | Reduction % |
-|--------------|---------|-----------|-------------|-------------|
+|--------------|---------|----------:|-------------|-------------|
 | MinLZ 1      | 268,803 |     9,774 |      30,961 |      61.71% |
 | MinLZ 1 (Go) | 260,937 |     7,935 |      17,362 |      62.83% |
 | MinLZ 2      | 230,280 |     5,197 |      26,871 |      67.20% |
@@ -380,21 +391,25 @@ Source file: https://github.com/google/snappy/blob/main/testdata/html
 | MinLZ 3      | 207,303 |       226 |      28,716 |      70.47% |
 | MinLZ 3 (Go) | 207,303 |           |      15,256 |      70.47% |
 | Snappy       | 335,492 |     9,398 |      24,207 |      52.22% |
-| Snappy (Go)  | 335,492 |           |      12,359 |      52.22% |
+| Snappy (Go)  | 335,492 |     4,683 |      12,359 |      52.22% |
 | LZ4 0        | 299,342 |     4,462 |      51,220 |      57.36% |
 | LZ4 0 (Go)   | 299,342 |           |      23,242 |      57.36% |
 | LZ4 9        | 252,182 |       638 |      45,295 |      64.08% |
 | LZ4 9 (Go)   | 252,182 |           |      16,240 |      64.08% |
 
+![Compression vs Size](img/urls-block.png)
+
 Source file: https://github.com/google/snappy/blob/main/testdata/urls.10K
 
 </details>
 
+### Serialized GEO data Sample
+
 <details>
-  <summary>Serialized binary. (184,320 bytes input)</summary>
+  <summary>(184,320 bytes input)</summary>
 
 | Compressor   | Size   | Comp MB/s | Decomp MB/s | Reduction % |
-|--------------|--------|-----------|-------------|-------------|
+|--------------|--------|----------:|-------------|-------------|
 | MinLZ 1      | 63,595 |     8,319 |      26,170 |      65.50% |
 | MinLZ 1 (Go) | 62,087 |     7,601 |      12,118 |      66.32% |
 | MinLZ 2      | 54,688 |     5,932 |      24,688 |      70.33% |
@@ -402,11 +417,13 @@ Source file: https://github.com/google/snappy/blob/main/testdata/urls.10K
 | MinLZ 3      | 46,002 |       230 |      28,083 |      75.04% |
 | MinLZ 3 (Go) | 46,002 |           |      12,877 |      75.04% |
 | Snappy       | 69,526 |    10,198 |      19,754 |      62.28% |
-| Snappy (Go)  | 69,526 |           |       8,712 |      62.28% |
+| Snappy (Go)  | 69,526 |     5,031 |       8,712 |      62.28% |
 | LZ4 0        | 66,506 |     5,355 |      45,305 |      63.92% |
 | LZ4 0 (Go)   | 66,506 |           |      15,757 |      63.92% |
 | LZ4 9        | 50,439 |        88 |      52,877 |      72.64% |
 | LZ4 9 (Go)   | 50,439 |           |      18,171 |      72.64% |
+
+![Compression vs Size](img/geo-block.png)
 
 Source file: https://github.com/google/snappy/blob/main/testdata/kppkn.gtb
 
@@ -417,21 +434,159 @@ In overall terms, we typically observe that:
 * The fastest mode typically beats LZ4 both in speed and output size.
 * The fastest mode is typically equal to Snappy in speed, but significantly smaller.
 * The "balanced" mode typically beats the best possible LZ4 compression, but much faster.
+* Without assembler MinLZ is mostly the fastest option for compression.
 * LZ4 is decompression speed king.
 * Snappy decompression is usually slowest — especially without assembly.
 
 We encourage you to do your own testing with realistic blocks.
 
-You can use `λ mz c -block -bench=10 -verify -cpu=16 -1 file.ext` with our commandline tool.
+You can use `λ mz c -block -bench=10 -verify -cpu=16 -1 file.ext` with our commandline tool to test speed of block encoding/decoding.
 
 ## STREAMS
 
 For fair stream comparisons, we run each encoder at its maximum block size
-while maintaining independent blocks where it is an option.
+or max 4MB,  while maintaining independent blocks where it is an option.
 We use the concurrency offered by the package.
 
 This means there may be further speed/size tradeoffs possible for each, 
 so experiment with fine tuning for your needs.
+
+Blocks are compressed/decompress using 16 core AMD Ryzen 9 3950X 16-Core Processor.
+
+### JSON Stream
+
+<details>
+  <summary>Click To See Data + Charts</summary>
+
+Input Size: 6,273,951,764 bytes
+
+| Compressor  | Speed MiB/s |          Size | Reduction | Dec MiB/s |
+|-------------|------------:|--------------:|----------:|----------:|
+| MinLZ 1     |      14,921 |   974,656,419 |    84.47% |     3,204 |
+| MinLZ 2     |       8,877 |   901,171,279 |    85.64% |     3,028 |
+| MinLZ 3     |         576 |   742,067,802 |    88.17% |     3,835 |
+| S2 Default  |      15,501 | 1,041,700,255 |    83.40% |     2,378 |
+| S2 Better   |       9,334 |   944,872,699 |    84.94% |     2,300 |
+| S2 Best     |         732 |   826,384,742 |    86.83% |     2,572 |
+| LZ4 Fastest |       5,860 | 1,274,297,625 |    79.69% |     2,680 |
+| LZ4 Best    |       1,772 | 1,091,826,460 |    82.60% |     2,694 |
+| Snappy      |         951 | 1,525,176,492 |    75.69% |     1,828 |
+| Gzip L5     |         236 |   938,015,731 |    85.05% |       557 |
+
+![Compression vs Size](img/json-v1-comp.png)
+![Decompression Speed](img/json-v1-decomp.png)
+
+Source file: https://files.klauspost.com/compress/github-june-2days-2019.json.zst
+
+</details>
+
+### CSV Stream
+
+<details>
+  <summary>Click To See Data + Charts</summary>
+
+Input Size: 3,325,605,752 bytes
+
+| Compressor | Speed MiB/s | Size          | Reduction |
+|------------|-------------|---------------|-----------|
+| MinLZ 1    | 9,193       |   937,136,278 |    72.07% |
+| MinLZ 2    | 6,158       |   775,823,904 |    77.13% |
+| MinLZ 3    | 338         |   657,162,410 |    80.66% |
+| S2 Default | 10,679      | 1,093,516,949 |    67.12% |
+| S2 Better  | 6,394       |   884,711,436 |    73.40% |
+| S2 Best    | 400         |   773,678,211 |    76.74% |
+| LZ4 Fast   | 4,835       | 1,066,961,737 |    67.92% |
+| LZ4 Best   | 732         |   903,598,068 |    72.83% |
+| Snappy     | 553         | 1,316,042,016 |    60.43% |
+| Gzip L5    | 128         |   767,340,514 |    76.93% |
+
+![Compression vs Size](img/csv-v1-comp.png)
+
+Source file: https://files.klauspost.com/compress/nyc-taxi-data-10M.csv.zst
+
+</details>
+
+### Log data
+
+<details>
+  <summary>Click To See Data + Charts</summary>
+
+Input Size: 2,622,574,440 bytes
+
+| Compressor | Speed MiB/s | Size        | Reduction |
+|------------|-------------|-------------|-----------|
+| MinLZ 1    | 17,014      | 194,361,157 |    92.59% |
+| MinLZ 2    | 12,696      | 174,819,425 |    93.33% |
+| MinLZ 3    | 1,351       | 139,449,942 |    94.68% |
+| S2 Default | 17,131      | 230,521,260 |    91.21% |
+| S2 Better  | 12,632      | 217,884,566 |    91.69% |
+| S2 Best    | 1,687       | 185,357,903 |    92.93% |
+| LZ4 Fast   | 6,115       | 216,323,995 |    91.75% |
+| LZ4 Best   | 2,704       | 169,447,971 |    93.54% |
+| Snappy     | 1,987       | 290,116,961 |    88.94% |
+| Gzip L5    | 498         | 142,119,985 |    94.58% |
+
+![Compression vs Size](img/logs-v1-comp.png)
+
+Source file: https://files.klauspost.com/compress/apache.log.zst
+
+</details>
+
+### Serialized Data
+
+<details>
+  <summary>Click To See Data + Charts</summary>
+
+Input Size: 1,862,623,243 bytes
+
+| Compressor | Speed MiB/s | Size        | Reduction |
+|------------|-------------|-------------|-----------|
+| MinLZ 1    | 10,701      | 604,315,773 |    67.56% |
+| MinLZ 2    | 5,712       | 517,472,464 |    72.22% |
+| MinLZ 3    | 250         | 480,707,192 |    74.19% |
+| S2 Default | 12,167      | 623,832,101 |    66.51% |
+| S2 Better  | 5,712       | 568,441,654 |    69.48% |
+| S2 Best    | 324         | 553,965,705 |    70.26% |
+| LZ4 Fast   | 5,090       | 618,174,538 |    66.81% |
+| LZ4 Best   | 617         | 552,015,243 |    70.36% |
+| Snappy     | 929         | 589,837,541 |    68.33% |
+| Gzip L5    | 166         | 434,950,800 |    76.65% |
+
+![Compression vs Size](img/msgp-v1-comp.png)
+
+Source file: https://files.klauspost.com/compress/github-ranks-backup.bin.zst
+
+</details>
+
+### Backup (Mixed) Data
+
+<details>
+  <summary>Click To See Data + Charts</summary>
+
+Input Size: 10,065,157,632 bytes
+
+| Compressor  | Speed MiB/s | Size          | Reduction |
+|-------------|-------------|---------------|-----------|
+| MinLZ 1     | 9,356       | 5,859,748,636 |    41.78% |
+| MinLZ 2     | 5,321       | 5,256,474,340 |    47.78% |
+| MinLZ 3     | 259         | 4,855,930,368 |    51.76% |
+| S2 Default  | 10,083      | 5,915,541,066 |    41.23% |
+| S2 Better   | 5,731       | 5,455,008,813 |    45.80% |
+| S2 Best     | 319         | 5,192,490,222 |    48.41% |
+| LZ4 Fastest | 5,065       | 5,850,848,099 |    41.87% |
+| LZ4 Best    | 287         | 5,348,127,708 |    46.86% |
+| Snappy      | 732         | 6,056,946,612 |    39.82% |
+| Gzip L5     | 171         | 4,916,436,115 |    51.15% |
+
+![Compression vs Size](img/10gb-v1-comp.png)
+
+Source file: https://mattmahoney.net/dc/10gb.html
+
+</details>
+
+Our conclusion is that the new compression algorithm provides a good compression increase,
+while retaining the ability to saturate pretty much any IO either with compression or
+decompression given a moderate amount of CPU cores.
 
 
 ## Why is concurrent block and stream speed so different?
@@ -484,6 +639,9 @@ Speed indications are base 10.
 
 ### Compressing
 
+<details>
+  <summary>Click To Compression Help</summary>
+
 ```
 Usage: mz c [options] <input>
 
@@ -534,8 +692,12 @@ Example:
 λ mz c apache.log
 Compressing apache.log -> apache.log.mz 2622574440 -> 170960982 [6.52%]; 4155.2MB/s
 ```
+</details>
 
 ## Decompressing
+
+<details>
+  <summary>Click To Decompression Help</summary>
 
 ```
 Usage: mz d [options] <input>
@@ -583,6 +745,7 @@ Example:
 λ mz d apache.log.mz
 Decompressing apache.log.mz -> apache.log 170960982 -> 2622574440 [1534.02%]; 2660.2MB/s
 ```
+</details>
 
 Tail, Offset and Limit can be made to forward to the next newline by adding `+nl`.
 

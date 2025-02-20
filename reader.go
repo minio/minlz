@@ -567,7 +567,7 @@ func (r *Reader) WriteTo(w io.Writer) (n int64, err error) {
 // DecodeConcurrent will decode the full stream to w.
 // This function should not be combined with reading, seeking or other operations.
 // Up to 'concurrent' goroutines will be used.
-// If <= 0, min(runtime.NumCPU, runtime.GOMAXPROCS) will be used.
+// If <= 0, min(runtime.NumCPU, runtime.GOMAXPROCS, 8) will be used.
 // On success the number of bytes decompressed nil and is returned.
 // This is mainly intended for bigger streams, since it will cause more allocations.
 func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, err error) {
@@ -575,7 +575,7 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 		return 0, errors.New("DecodeConcurrent called after Read")
 	}
 	if concurrent <= 0 {
-		concurrent = min(runtime.NumCPU(), runtime.GOMAXPROCS(0))
+		concurrent = min(runtime.NumCPU(), runtime.GOMAXPROCS(0), 8)
 	}
 	if concurrent == 1 {
 		if rf, ok := w.(io.ReaderFrom); ok {
