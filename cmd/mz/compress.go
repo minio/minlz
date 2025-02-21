@@ -144,248 +144,7 @@ Options:`)
 
 	*quiet = *quiet || *stdout
 	if *bench > 0 {
-		debug.SetGCPercent(10)
-		dec := minlz.NewReader(nil)
-		for _, filename := range files {
-			if *block {
-				func() {
-					if !*quiet {
-						fmt.Print("Reading ", filename, "...")
-					}
-					// Input file.
-					file, size, _ := openFile(filename, false)
-					if size > minlz.MaxBlockSize {
-						exitErr(errors.New("maximum block size of 8MB exceeded"))
-					}
-					b := make([]byte, size)
-					_, err = io.ReadFull(file, b)
-					exitErr(err)
-					file.Close()
-
-					if !*quiet {
-						fmt.Print("\n\nCompressing block (1 thread)...\n")
-					}
-					mel := minlz.MaxEncodedLen(len(b))
-					compressed := make([]byte, mel)
-					var singleSpeed float64
-					runtime.GC()
-
-					start := time.Now()
-					end := time.Now().Add(time.Duration(*bench) * time.Second)
-					lastUpdate := start
-					var n int
-					for time.Now().Before(end) {
-						compressed, err = minlz.Encode(compressed, b, level)
-						exitErr(err)
-
-						n++
-						if !*quiet && time.Since(lastUpdate) > time.Second/6 {
-							input := float64(len(b)) * float64(n)
-							output := float64(len(compressed)) * float64(n)
-							elapsed := time.Since(start)
-							singleSpeed = (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
-							pct := output * 100 / input
-							ms := elapsed.Round(time.Millisecond)
-							fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s           \r", len(b), len(compressed), pct, ms, singleSpeed)
-							lastUpdate = time.Now()
-						}
-					}
-					runtime.GC()
-					if *cpu > 1 {
-						if !*quiet {
-							fmt.Printf("\n\nCompressing block (%d threads)...\n", *cpu)
-						}
-						var n atomic.Int64
-						var wg sync.WaitGroup
-						dsts := make([]byte, *cpu*mel)
-						start := time.Now()
-						end := time.Now().Add(time.Duration(*bench) * time.Second)
-						wg.Add(*cpu)
-						for i := 0; i < *cpu; i++ {
-							go func(i int) {
-								compressed := dsts[i*mel : i*mel+mel : i*mel+mel]
-								defer wg.Done()
-								for time.Now().Before(end) {
-									compressed, err = minlz.Encode(compressed, b, level)
-									exitErr(err)
-									n.Add(1)
-								}
-							}(i)
-						}
-						for !*quiet && time.Now().Before(end) {
-							input := float64(len(b)) * float64(n.Load())
-							output := float64(len(compressed)) * float64(n.Load())
-							elapsed := time.Since(start)
-							mbpersec := (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
-							scale := mbpersec / singleSpeed
-							pct := output * 100 / input
-							ms := elapsed.Round(time.Millisecond)
-							fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s (%.1fx)          \r", len(b), len(compressed), pct, ms, mbpersec, scale)
-							time.Sleep(time.Second / 6)
-						}
-						wg.Wait()
-						runtime.GC()
-					}
-					if *verify {
-						compressed, err := minlz.Encode(nil, b, level)
-						exitErr(err)
-						if !*quiet {
-							fmt.Print("\n\nDecompressing block (1 thread)...\n")
-						}
-						start := time.Now()
-						end := time.Now().Add(time.Duration(*bench) * time.Second)
-						lastUpdate := start
-						decomp := make([]byte, 0, len(b))
-						n = 0
-						for time.Now().Before(end) {
-							decomp, err = minlz.Decode(decomp, compressed)
-							exitErr(err)
-							if len(decomp) != len(b) {
-								exitErr(fmt.Errorf("unexpected size, want %d, got %d", len(b), len(decomp)))
-							}
-							n++
-							if !*quiet && time.Since(lastUpdate) > time.Second/6 {
-								input := float64(len(b)) * float64(n)
-								output := float64(len(compressed)) * float64(n)
-								elapsed := time.Since(start)
-								singleSpeed = (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
-								pct := input * 100 / output
-								ms := elapsed.Round(time.Millisecond)
-								fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s               \r", len(compressed), len(decomp), pct, ms, singleSpeed)
-								lastUpdate = time.Now()
-							}
-						}
-						if *cpu > 1 {
-							if !*quiet {
-								fmt.Printf("\n\nDecompressing block (%d threads)...\n", *cpu)
-							}
-							dsts := make([]byte, 0, *cpu*len(b))
-
-							var n atomic.Int64
-							var wg sync.WaitGroup
-							start := time.Now()
-							end := time.Now().Add(time.Duration(*bench) * time.Second)
-							wg.Add(*cpu)
-							for i := 0; i < *cpu; i++ {
-								go func(i int) {
-									decomp := dsts[i*len(b) : i*len(b)+len(b) : i*len(b)+len(b)]
-									defer wg.Done()
-									for time.Now().Before(end) {
-										decomp, err = minlz.Decode(decomp, compressed)
-										exitErr(err)
-										if len(decomp) != len(b) {
-											exitErr(fmt.Errorf("unexpected size, want %d, got %d", len(b), len(decomp)))
-										}
-										n.Add(1)
-									}
-								}(i)
-							}
-							for !*quiet && time.Now().Before(end) {
-								input := float64(len(b)) * float64(n.Load())
-								output := float64(len(compressed)) * float64(n.Load())
-								elapsed := time.Since(start)
-								mbpersec := (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
-								scale := mbpersec / singleSpeed
-								pct := input * 100 / output
-								ms := elapsed.Round(time.Millisecond)
-								fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s (%.1fx)          \r", len(b), len(compressed), pct, ms, mbpersec, scale)
-								time.Sleep(time.Second / 6)
-							}
-							wg.Wait()
-							runtime.GC()
-						}
-					}
-					if !*quiet {
-						fmt.Println("")
-					}
-					wr.Close()
-				}()
-				continue
-			}
-			func() {
-				if !*quiet {
-					fmt.Print("Reading ", filename, "...")
-				}
-				// Input file.
-				file, size, _ := openFile(filename, false)
-				b := make([]byte, size)
-				_, err = io.ReadFull(file, b)
-				exitErr(err)
-				file.Close()
-				var buf *bytes.Buffer
-				for i := 0; i < *bench; i++ {
-					w := io.Discard
-					// Verify with this buffer...
-					if *verify {
-						if buf == nil {
-							buf = bytes.NewBuffer(make([]byte, 0, len(b)+(len(b)>>8)))
-						}
-						buf.Reset()
-						w = buf
-					}
-					if i == 0 {
-						if !*quiet {
-							fmt.Print("\nPrewarm...")
-						}
-						start := time.Now()
-						wr.Reset(io.Discard)
-						for time.Since(start) < 3*time.Second {
-							exitErr(wr.EncodeBuffer(b))
-							exitErr(wr.Flush())
-						}
-						exitErr(wr.Close())
-						if !*quiet {
-							fmt.Printf("Done - %v", time.Since(start).Round(time.Millisecond))
-						}
-					}
-					wc := wCounter{out: w}
-					if !*quiet {
-						fmt.Print("\nCompressing...")
-					}
-					wr.Reset(&wc)
-					runtime.GC()
-					start := time.Now()
-					err := wr.EncodeBuffer(b)
-					exitErr(err)
-					err = wr.Close()
-					exitErr(err)
-					if !*quiet {
-						input := len(b)
-						elapsed := time.Since(start)
-						mbpersec := (float64(input) / 1e6) / (float64(elapsed) / (float64(time.Second)))
-						pct := float64(wc.n) * 100 / float64(input)
-						ms := elapsed.Round(time.Millisecond)
-						fmt.Printf(" %d -> %d [%.02f%%]; %v, %.01fMB/s", input, wc.n, pct, ms, mbpersec)
-					}
-					if *verify {
-						runtime.GC()
-						if !*quiet {
-							fmt.Print("\nDecompressing.")
-						}
-						start := time.Now()
-						dec.Reset(buf)
-						n, err := dec.DecodeConcurrent(io.Discard, *cpu)
-						exitErr(err)
-						if int(n) != len(b) {
-							exitErr(fmt.Errorf("unexpected size, want %d, got %d", len(b), n))
-						}
-						if !*quiet {
-							input := len(b)
-							elapsed := time.Since(start)
-							mbpersec := (float64(input) / 1e6) / (float64(elapsed) / (float64(time.Second)))
-							pct := float64(input) * 100 / float64(wc.n)
-							ms := elapsed.Round(time.Millisecond)
-							fmt.Printf(" %d -> %d [%.02f%%]; %v, %.01fMB/s", wc.n, n, pct, ms, mbpersec)
-						}
-						dec.Reset(nil)
-					}
-				}
-				if !*quiet {
-					fmt.Println("")
-				}
-				wr.Close()
-			}()
-		}
+		err = runBench(files, block, quiet, err, bench, level, cpu, verify, wr)
 		return
 	}
 	ext := minlzExt
@@ -397,184 +156,470 @@ Options:`)
 	}
 	for _, filename := range files {
 		if *block {
-			if *recomp {
-				exitErr(errors.New("cannot recompress blocks (yet)"))
-			}
-			func() {
-				var closeOnce sync.Once
-				dstFilename := cleanFileName(fmt.Sprintf("%s%s", filename, ext))
-				if *out != "" {
-					dstFilename = *out
-				}
-				if !*quiet {
-					fmt.Print("Compressing ", filename, " -> ", dstFilename)
-				}
-				// Input file.
-				file, size, mode := openFile(filename, false)
-				if size > minlz.MaxBlockSize {
-					exitErr(errors.New("maximum block size of 8MB exceeded"))
-				}
-				exitErr(err)
-				defer closeOnce.Do(func() { file.Close() })
-				inBytes, err := io.ReadAll(file)
-				exitErr(err)
-
-				var out io.Writer
-				switch {
-				case *stdout:
-					out = os.Stdout
-				default:
-					if *safe {
-						_, err := os.Stat(dstFilename)
-						if !os.IsNotExist(err) {
-							exitErr(errors.New("destination file exists"))
-						}
-					}
-					dstFile, err := os.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-					exitErr(err)
-					defer dstFile.Close()
-					out = dstFile
-				}
-				start := time.Now()
-				compressed, err := minlz.Encode(nil, inBytes, level)
-				exitErr(err)
-				_, err = out.Write(compressed)
-				exitErr(err)
-				if !*quiet {
-					elapsed := time.Since(start)
-					mbpersec := (float64(len(inBytes)) / 1e6) / (float64(elapsed) / (float64(time.Second)))
-					pct := float64(len(compressed)) * 100 / float64(len(inBytes))
-					fmt.Printf(" %d -> %d [%.02f%%]; %.01fMB/s\n", len(inBytes), len(compressed), pct, mbpersec)
-				}
-				if *verify {
-					got, err := minlz.Decode(make([]byte, 0, len(inBytes)), compressed)
-					exitErr(err)
-					if !bytes.Equal(got, inBytes) {
-						exitErr(fmt.Errorf("decoded content mismatch"))
-					}
-					if !*quiet {
-						fmt.Print("... Verified ok.")
-					}
-				}
-				if *remove {
-					closeOnce.Do(func() {
-						file.Close()
-						if !*quiet {
-							fmt.Println("Removing", filename)
-						}
-						err := os.Remove(filename)
-						exitErr(err)
-					})
-				}
-			}()
-			continue
+			processBlock(recomp, filename, ext, out, quiet, err, stdout, safe, level, verify, remove)
+		} else {
+			processStream(filename, recomp, ext, out, quiet, stdout, remove, err, cpu, safe, sz, verify, wr)
 		}
-		func() {
-			var closeOnce sync.Once
-			outFileBase := filename
-			if *recomp {
-				switch {
-				case strings.HasSuffix(outFileBase, minlzExt):
-					outFileBase = strings.TrimSuffix(outFileBase, minlzExt)
-				case strings.HasSuffix(outFileBase, s2Ext):
-					outFileBase = strings.TrimSuffix(outFileBase, s2Ext)
-				case strings.HasSuffix(outFileBase, snappyExt):
-					outFileBase = strings.TrimSuffix(outFileBase, snappyExt)
-				case strings.HasSuffix(outFileBase, ".snappy"):
-					outFileBase = strings.TrimSuffix(outFileBase, ".snappy")
-				}
-			}
-			dstFilename := cleanFileName(fmt.Sprintf("%s%s", outFileBase, ext))
-			if *out != "" {
-				dstFilename = *out
-			}
-			if !*quiet {
-				fmt.Print("Compressing ", filename, " -> ", dstFilename)
-			}
+	}
+}
 
-			if dstFilename == filename && !*stdout {
-				if *remove {
-					exitErr(errors.New("cannot remove when input = output"))
-				}
-				renameDst := dstFilename
-				dstFilename = fmt.Sprintf(".tmp-%s%s", time.Now().Format("2006-01-02T15-04-05Z07"), ext)
-				defer func() {
-					exitErr(os.Rename(dstFilename, renameDst))
-				}()
-			}
+func processStream(filename string, recomp *bool, ext string, outFile *string, quiet *bool, stdout *bool, remove *bool, err error, cpu *int, safe *bool, sz int64, verify *bool, wr *minlz.Writer) {
+	var closeOnce sync.Once
+	outFileBase := filename
+	if *recomp {
+		switch {
+		case strings.HasSuffix(outFileBase, minlzExt):
+			outFileBase = strings.TrimSuffix(outFileBase, minlzExt)
+		case strings.HasSuffix(outFileBase, s2Ext):
+			outFileBase = strings.TrimSuffix(outFileBase, s2Ext)
+		case strings.HasSuffix(outFileBase, snappyExt):
+			outFileBase = strings.TrimSuffix(outFileBase, snappyExt)
+		case strings.HasSuffix(outFileBase, ".snappy"):
+			outFileBase = strings.TrimSuffix(outFileBase, ".snappy")
+		}
+	}
+	dstFilename := cleanFileName(fmt.Sprintf("%s%s", outFileBase, ext))
+	if *outFile != "" {
+		dstFilename = *outFile
+	}
+	if !*quiet {
+		fmt.Print("Compressing ", filename, " -> ", dstFilename)
+	}
 
-			// Input file.
-			file, _, mode := openFile(filename, false)
-			exitErr(err)
-			defer closeOnce.Do(func() { file.Close() })
-			src, err := readahead.NewReaderSize(file, *cpu+1, 1<<20)
-			exitErr(err)
-			defer src.Close()
-			var rc = &rCounter{
-				in: src,
-			}
-			if !*quiet {
-				// We only need to count for printing
-				src = rc
-			}
-			if *recomp {
-				dec := minlz.NewReader(src)
-				pr, pw := io.Pipe()
-				go func() {
-					_, err := dec.DecodeConcurrent(pw, *cpu)
-					pw.CloseWithError(err)
-				}()
-				src = pr
-			}
-
-			var out io.Writer
-			switch {
-			case *stdout:
-				out = os.Stdout
-			default:
-				if *safe {
-					_, err := os.Stat(dstFilename)
-					if !os.IsNotExist(err) {
-						exitErr(errors.New("destination file exists"))
-					}
-				}
-				dstFile, err := os.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-				exitErr(err)
-				defer dstFile.Close()
-				bw := bufio.NewWriterSize(dstFile, int(sz)*2)
-				defer bw.Flush()
-				out = bw
-			}
-			out, errFn := verifyTo(out, *verify, *quiet, *cpu)
-			wc := wCounter{out: out}
-			start := time.Now()
-			wr.Reset(&wc)
-			defer wr.Close()
-			_, err = wr.ReadFrom(src)
-			exitErr(err)
-			err = wr.Close()
-
-			exitErr(err)
-			if !*quiet {
-				input := rc.n
-				elapsed := time.Since(start)
-				mbpersec := (float64(input) / 1e6) / (float64(elapsed) / (float64(time.Second)))
-				pct := float64(wc.n) * 100 / float64(input)
-				fmt.Printf(" %d -> %d [%.02f%%]; %.01fMB/s\n", input, wc.n, pct, mbpersec)
-			}
-			exitErr(errFn())
-			if *remove {
-				closeOnce.Do(func() {
-					file.Close()
-					if !*quiet {
-						fmt.Println("Removing", filename)
-					}
-					err := os.Remove(filename)
-					exitErr(err)
-				})
-			}
+	if dstFilename == filename && !*stdout {
+		if *remove {
+			exitErr(errors.New("cannot remove when input = output"))
+		}
+		renameDst := dstFilename
+		dstFilename = fmt.Sprintf(".tmp-%s%s", time.Now().Format("2006-01-02T15-04-05Z07"), ext)
+		defer func() {
+			exitErr(os.Rename(dstFilename, renameDst))
 		}()
 	}
+
+	// Input file.
+	file, _, mode := openFile(filename, false)
+	exitErr(err)
+	defer closeOnce.Do(func() { file.Close() })
+	src, err := readahead.NewReaderSize(file, *cpu+1, 1<<20)
+	exitErr(err)
+	defer src.Close()
+	var rc = &rCounter{
+		in: src,
+	}
+	if !*quiet {
+		// We only need to count for printing
+		src = rc
+	}
+	if *recomp {
+		dec := minlz.NewReader(src)
+		pr, pw := io.Pipe()
+		go func() {
+			_, err := dec.DecodeConcurrent(pw, *cpu)
+			pw.CloseWithError(err)
+		}()
+		src = pr
+	}
+
+	var out io.Writer
+	switch {
+	case *stdout:
+		out = os.Stdout
+	default:
+		if *safe {
+			_, err := os.Stat(dstFilename)
+			if !os.IsNotExist(err) {
+				exitErr(errors.New("destination file exists"))
+			}
+		}
+		dstFile, err := os.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+		exitErr(err)
+		defer dstFile.Close()
+		bw := bufio.NewWriterSize(dstFile, int(sz)*2)
+		defer bw.Flush()
+		out = bw
+	}
+	out, errFn := verifyTo(out, *verify, *quiet, *cpu)
+	wc := wCounter{out: out}
+	start := time.Now()
+	wr.Reset(&wc)
+	defer wr.Close()
+	_, err = wr.ReadFrom(src)
+	exitErr(err)
+	err = wr.Close()
+
+	exitErr(err)
+	if !*quiet {
+		input := rc.n
+		elapsed := time.Since(start)
+		mbpersec := (float64(input) / 1e6) / (float64(elapsed) / (float64(time.Second)))
+		pct := float64(wc.n) * 100 / float64(input)
+		fmt.Printf(" %d -> %d [%.02f%%]; %.01fMB/s\n", input, wc.n, pct, mbpersec)
+	}
+	exitErr(errFn())
+	if *remove {
+		closeOnce.Do(func() {
+			file.Close()
+			if !*quiet {
+				fmt.Println("Removing", filename)
+			}
+			err := os.Remove(filename)
+			exitErr(err)
+		})
+	}
+}
+
+func processBlock(recomp *bool, filename string, ext string, outFile *string, quiet *bool, err error, stdout *bool, safe *bool, level int, verify *bool, remove *bool) {
+	if *recomp {
+		exitErr(errors.New("cannot recompress blocks (yet)"))
+	}
+	func() {
+		var closeOnce sync.Once
+		dstFilename := cleanFileName(fmt.Sprintf("%s%s", filename, ext))
+		if *outFile != "" {
+			dstFilename = *outFile
+		}
+		if !*quiet {
+			fmt.Print("Compressing ", filename, " -> ", dstFilename)
+		}
+		// Input file.
+		file, size, mode := openFile(filename, false)
+		if size > minlz.MaxBlockSize {
+			exitErr(errors.New("maximum block size of 8MB exceeded"))
+		}
+		exitErr(err)
+		defer closeOnce.Do(func() { file.Close() })
+		inBytes, err := io.ReadAll(file)
+		exitErr(err)
+
+		var out io.Writer
+		switch {
+		case *stdout:
+			out = os.Stdout
+		default:
+			if *safe {
+				_, err := os.Stat(dstFilename)
+				if !os.IsNotExist(err) {
+					exitErr(errors.New("destination file exists"))
+				}
+			}
+			dstFile, err := os.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+			exitErr(err)
+			defer dstFile.Close()
+			out = dstFile
+		}
+		start := time.Now()
+		compressed, err := minlz.Encode(nil, inBytes, level)
+		exitErr(err)
+		_, err = out.Write(compressed)
+		exitErr(err)
+		if !*quiet {
+			elapsed := time.Since(start)
+			mbpersec := (float64(len(inBytes)) / 1e6) / (float64(elapsed) / (float64(time.Second)))
+			pct := float64(len(compressed)) * 100 / float64(len(inBytes))
+			fmt.Printf(" %d -> %d [%.02f%%]; %.01fMB/s\n", len(inBytes), len(compressed), pct, mbpersec)
+		}
+		if *verify {
+			got, err := minlz.Decode(make([]byte, 0, len(inBytes)), compressed)
+			exitErr(err)
+			if !bytes.Equal(got, inBytes) {
+				exitErr(fmt.Errorf("decoded content mismatch"))
+			}
+			if !*quiet {
+				fmt.Print("... Verified ok.")
+			}
+		}
+		if *remove {
+			closeOnce.Do(func() {
+				file.Close()
+				if !*quiet {
+					fmt.Println("Removing", filename)
+				}
+				err := os.Remove(filename)
+				exitErr(err)
+			})
+		}
+	}()
+}
+
+func runBench(files []string, block *bool, quiet *bool, err error, bench *int, level int, cpu *int, verify *bool, wr *minlz.Writer) error {
+	debug.SetGCPercent(10)
+	dec := minlz.NewReader(nil)
+	for _, filename := range files {
+		if *block {
+			err = runBenchBlock(quiet, filename, err, bench, level, cpu, verify, wr)
+		} else {
+			err = runBenchStream(quiet, filename, err, bench, verify, wr, dec, cpu)
+		}
+	}
+	return err
+}
+
+func runBenchStream(quiet *bool, filename string, err error, bench *int, verify *bool, wr *minlz.Writer, dec *minlz.Reader, cpu *int) error {
+	if !*quiet {
+		fmt.Print("Reading ", filename, "...")
+	}
+
+	// Input file.
+	file, size, _ := openFile(filename, false)
+	b := make([]byte, size)
+	_, err = io.ReadFull(file, b)
+	exitErr(err)
+	file.Close()
+	var buf *bytes.Buffer
+	for i := 0; i < *bench; i++ {
+		w := io.Discard
+		// Verify with this buffer...
+		if *verify {
+			if buf == nil {
+				buf = bytes.NewBuffer(make([]byte, 0, len(b)+(len(b)>>8)))
+			}
+			buf.Reset()
+			w = buf
+		}
+		if i == 0 && false {
+			if !*quiet {
+				fmt.Print("\nPrewarm...")
+			}
+			start := time.Now()
+			wr.Reset(io.Discard)
+			for time.Since(start) < 3*time.Second {
+				exitErr(wr.EncodeBuffer(b))
+				exitErr(wr.Flush())
+			}
+			exitErr(wr.Close())
+			if !*quiet {
+				fmt.Printf("Done - %v", time.Since(start).Round(time.Millisecond))
+			}
+		}
+		wc := wCounter{out: w}
+		if !*quiet {
+			fmt.Print("\nCompressing...")
+		}
+		wr.Reset(&wc)
+		runtime.GC()
+		start := time.Now()
+		err := wr.EncodeBuffer(b)
+		exitErr(err)
+		err = wr.Close()
+		exitErr(err)
+		if !*quiet {
+			input := len(b)
+			elapsed := time.Since(start)
+			mbpersec := (float64(input) / 1e6) / (float64(elapsed) / (float64(time.Second)))
+			pct := float64(wc.n) * 100 / float64(input)
+			ms := elapsed.Round(time.Millisecond)
+			fmt.Printf(" %d -> %d [%.02f%%]; %v, %.01fMB/s", input, wc.n, pct, ms, mbpersec)
+		}
+		if *verify {
+			runtime.GC()
+			var speedIdx int
+			if !*quiet {
+				fmt.Print("\nDecompressing.")
+				speedIdx = 14
+			}
+			allData := buf.Bytes()
+			start := time.Now()
+			dec.Reset(buf)
+			n, err := dec.DecodeConcurrent(io.Discard, *cpu)
+			exitErr(err)
+			if int(n) != len(b) {
+				exitErr(fmt.Errorf("unexpected size, want %d, got %d", len(b), n))
+			}
+			input := len(b)
+			elapsed := time.Since(start)
+			mbpersecConc := (float64(input) / 1e6) / (float64(elapsed) / (float64(time.Second)))
+			if !*quiet {
+				pct := float64(input) * 100 / float64(wc.n)
+				ms := elapsed.Round(time.Millisecond)
+				str := fmt.Sprintf(" %d -> %d [%.02f%%]; %v, %.01fMB/s", wc.n, n, pct, ms, mbpersecConc)
+				fmt.Print(str)
+				speedIdx += strings.IndexByte(str, ';') + 1
+			}
+
+			if *cpu > 1 {
+				type wrapper struct {
+					io.Reader
+				}
+				start = time.Now()
+				dec.Reset(bytes.NewBuffer(allData))
+
+				n, err = io.Copy(io.Discard, wrapper{Reader: dec})
+				exitErr(err)
+				if int(n) != len(b) {
+					exitErr(fmt.Errorf("unexpected size, want %d, got %d", len(b), n))
+				}
+				elapsed = time.Since(start)
+				mbpersecSingle := (float64(input) / 1e6) / (float64(elapsed) / (float64(time.Second)))
+				if !*quiet {
+					ms := elapsed.Round(time.Millisecond)
+					spacing := strings.Repeat(" ", speedIdx-13)
+					fmt.Printf("\n%s - 1 thread ; %v, %.01fMB/s (%.1fx)", spacing, ms, mbpersecSingle, mbpersecConc/mbpersecSingle)
+				}
+				dec.Reset(nil)
+			}
+
+		}
+	}
+	if !*quiet {
+		fmt.Println("")
+	}
+	wr.Close()
+	return err
+}
+
+func runBenchBlock(quiet *bool, filename string, err error, bench *int, level int, cpu *int, verify *bool, wr *minlz.Writer) error {
+	if !*quiet {
+		fmt.Print("Reading ", filename, "...")
+	}
+	// Input file.
+	file, size, _ := openFile(filename, false)
+	if size > minlz.MaxBlockSize {
+		exitErr(errors.New("maximum block size of 8MB exceeded"))
+	}
+	b := make([]byte, size)
+	_, err = io.ReadFull(file, b)
+	exitErr(err)
+	file.Close()
+
+	if !*quiet {
+		fmt.Print("\n\nCompressing block (1 thread)...\n")
+	}
+	mel := minlz.MaxEncodedLen(len(b))
+	compressed := make([]byte, mel)
+	var singleSpeed float64
+	runtime.GC()
+
+	start := time.Now()
+	end := time.Now().Add(time.Duration(*bench) * time.Second)
+	lastUpdate := start
+	var n int
+	for time.Now().Before(end) {
+		compressed, err = minlz.Encode(compressed, b, level)
+		exitErr(err)
+
+		n++
+		if !*quiet && time.Since(lastUpdate) > time.Second/6 {
+			input := float64(len(b)) * float64(n)
+			output := float64(len(compressed)) * float64(n)
+			elapsed := time.Since(start)
+			singleSpeed = (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
+			pct := output * 100 / input
+			ms := elapsed.Round(time.Millisecond)
+			fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s           \r", len(b), len(compressed), pct, ms, singleSpeed)
+			lastUpdate = time.Now()
+		}
+	}
+	runtime.GC()
+	if *cpu > 1 {
+		if !*quiet {
+			fmt.Printf("\n\nCompressing block (%d threads)...\n", *cpu)
+		}
+		var n atomic.Int64
+		var wg sync.WaitGroup
+		dsts := make([]byte, *cpu*mel)
+		start := time.Now()
+		end := time.Now().Add(time.Duration(*bench) * time.Second)
+		wg.Add(*cpu)
+		for i := 0; i < *cpu; i++ {
+			go func(i int) {
+				compressed := dsts[i*mel : i*mel+mel : i*mel+mel]
+				defer wg.Done()
+				for time.Now().Before(end) {
+					compressed, err = minlz.Encode(compressed, b, level)
+					exitErr(err)
+					n.Add(1)
+				}
+			}(i)
+		}
+		for !*quiet && time.Now().Before(end) {
+			input := float64(len(b)) * float64(n.Load())
+			output := float64(len(compressed)) * float64(n.Load())
+			elapsed := time.Since(start)
+			mbpersec := (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
+			scale := mbpersec / singleSpeed
+			pct := output * 100 / input
+			ms := elapsed.Round(time.Millisecond)
+			fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s (%.1fx)          \r", len(b), len(compressed), pct, ms, mbpersec, scale)
+			time.Sleep(time.Second / 6)
+		}
+		wg.Wait()
+		runtime.GC()
+	}
+	if *verify {
+		compressed, err := minlz.Encode(nil, b, level)
+		exitErr(err)
+		if !*quiet {
+			fmt.Print("\n\nDecompressing block (1 thread)...\n")
+		}
+		start := time.Now()
+		end := time.Now().Add(time.Duration(*bench) * time.Second)
+		lastUpdate := start
+		decomp := make([]byte, 0, len(b))
+		n = 0
+		for time.Now().Before(end) {
+			decomp, err = minlz.Decode(decomp, compressed)
+			exitErr(err)
+			if len(decomp) != len(b) {
+				exitErr(fmt.Errorf("unexpected size, want %d, got %d", len(b), len(decomp)))
+			}
+			n++
+			if !*quiet && time.Since(lastUpdate) > time.Second/6 {
+				input := float64(len(b)) * float64(n)
+				output := float64(len(compressed)) * float64(n)
+				elapsed := time.Since(start)
+				singleSpeed = (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
+				pct := input * 100 / output
+				ms := elapsed.Round(time.Millisecond)
+				fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s               \r", len(compressed), len(decomp), pct, ms, singleSpeed)
+				lastUpdate = time.Now()
+			}
+		}
+		if *cpu > 1 {
+			if !*quiet {
+				fmt.Printf("\n\nDecompressing block (%d threads)...\n", *cpu)
+			}
+			dsts := make([]byte, 0, *cpu*len(b))
+
+			var n atomic.Int64
+			var wg sync.WaitGroup
+			start := time.Now()
+			end := time.Now().Add(time.Duration(*bench) * time.Second)
+			wg.Add(*cpu)
+			for i := 0; i < *cpu; i++ {
+				go func(i int) {
+					decomp := dsts[i*len(b) : i*len(b)+len(b) : i*len(b)+len(b)]
+					defer wg.Done()
+					for time.Now().Before(end) {
+						decomp, err = minlz.Decode(decomp, compressed)
+						exitErr(err)
+						if len(decomp) != len(b) {
+							exitErr(fmt.Errorf("unexpected size, want %d, got %d", len(b), len(decomp)))
+						}
+						n.Add(1)
+					}
+				}(i)
+			}
+			for !*quiet && time.Now().Before(end) {
+				input := float64(len(b)) * float64(n.Load())
+				output := float64(len(compressed)) * float64(n.Load())
+				elapsed := time.Since(start)
+				mbpersec := (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
+				scale := mbpersec / singleSpeed
+				pct := input * 100 / output
+				ms := elapsed.Round(time.Millisecond)
+				fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s (%.1fx)          \r", len(b), len(compressed), pct, ms, mbpersec, scale)
+				time.Sleep(time.Second / 6)
+			}
+			wg.Wait()
+			runtime.GC()
+		}
+	}
+	if !*quiet {
+		fmt.Println("")
+	}
+	wr.Close()
+	return err
 }
 
 func verifyTo(w io.Writer, verify, quiet bool, cpu int) (io.Writer, func() error) {

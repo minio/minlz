@@ -198,134 +198,7 @@ Options:`)
 		if limitBytes > 0 || offset > 0 || tailBytes > 0 {
 			exitErr(errors.New("--offset, --tail and --limit cannot be used with benchmarks"))
 		}
-		debug.SetGCPercent(10)
-		for _, filename := range files {
-			block := *block
-			dstFilename := cleanFileName(filename)
-			switch {
-			case strings.HasSuffix(filename, minlzBlockExt):
-				dstFilename = strings.TrimSuffix(dstFilename, minlzBlockExt)
-				block = true
-			case strings.HasSuffix(dstFilename, minlzExt):
-			case strings.HasSuffix(dstFilename, s2Ext):
-			case strings.HasSuffix(dstFilename, snappyExt):
-			case strings.HasSuffix(dstFilename, ".snappy"):
-			default:
-				if !isHTTP(filename) {
-					fmt.Println("Skipping", filename)
-					continue
-				}
-			}
-
-			func() {
-				if !*quiet {
-					fmt.Print("Reading ", filename, "...")
-				}
-				// Input file.
-				file, size, _ := openFile(filename, false)
-				compressed := make([]byte, size)
-				_, err := io.ReadFull(file, compressed)
-				exitErr(err)
-				file.Close()
-
-				if block {
-					if !*quiet {
-						fmt.Print("\n\nDecompressing Block using 1 thread...\n")
-					}
-					var singleSpeed float64
-					start := time.Now()
-					end := time.Now().Add(time.Duration(*bench) * time.Second)
-					lastUpdate := start
-					dSize, err := minlz.DecodedLen(compressed)
-					exitErr(err)
-					decomp := make([]byte, 0, dSize)
-					n := 0
-					runtime.GC()
-					for time.Now().Before(end) {
-						decomp, err = minlz.Decode(decomp, compressed)
-						exitErr(err)
-						if len(decomp) != dSize {
-							exitErr(fmt.Errorf("unexpected size, want %d, got %d", dSize, len(decomp)))
-						}
-						n++
-						if !*quiet && time.Since(lastUpdate) > time.Second/6 {
-							input := float64(dSize) * float64(n)
-							output := float64(len(compressed)) * float64(n)
-							elapsed := time.Since(start)
-							singleSpeed = (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
-							pct := input * 100 / output
-							ms := elapsed.Round(time.Millisecond)
-							fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s                  \r", len(compressed), len(decomp), pct, ms, singleSpeed)
-							lastUpdate = time.Now()
-						}
-					}
-					if *cpu > 1 {
-						if !*quiet {
-							fmt.Printf("\n\nDecompressing block (%d threads)...\n", *cpu)
-						}
-						b := decomp
-						dsts := make([]byte, 0, *cpu*len(b))
-
-						var n atomic.Int64
-						var wg sync.WaitGroup
-						start := time.Now()
-						end := time.Now().Add(time.Duration(*bench) * time.Second)
-						wg.Add(*cpu)
-						for i := 0; i < *cpu; i++ {
-							go func(i int) {
-								decomp := dsts[i*len(b) : i*len(b)+len(b) : i*len(b)+len(b)]
-								defer wg.Done()
-								for time.Now().Before(end) {
-									decomp, err = minlz.Decode(decomp, compressed)
-									exitErr(err)
-									if len(decomp) != len(b) {
-										exitErr(fmt.Errorf("unexpected size, want %d, got %d", len(b), len(decomp)))
-									}
-									n.Add(1)
-								}
-							}(i)
-						}
-						for !*quiet && time.Now().Before(end) {
-							input := float64(len(b)) * float64(n.Load())
-							output := float64(len(compressed)) * float64(n.Load())
-							elapsed := time.Since(start)
-							mbpersec := (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
-							scale := mbpersec / singleSpeed
-							pct := output * 100 / input
-							ms := elapsed.Round(time.Millisecond)
-							fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s (%.1fx)          \r", len(compressed), len(decomp), pct, ms, mbpersec, scale)
-							time.Sleep(time.Second / 6)
-						}
-						wg.Wait()
-						runtime.GC()
-					}
-					fmt.Println("")
-					return
-				}
-
-				for i := 0; i < *bench; i++ {
-					if !*quiet {
-						fmt.Print("\nDecompressing...")
-					}
-					runtime.GC()
-					start := time.Now()
-					var output int64
-					r.Reset(bytes.NewBuffer(compressed))
-					output, err = r.DecodeConcurrent(io.Discard, *cpu)
-					exitErr(err)
-					if !*quiet {
-						elapsed := time.Since(start)
-						ms := elapsed.Round(time.Millisecond)
-						mbPerSec := (float64(output) / 1e6) / (float64(elapsed) / (float64(time.Second)))
-						pct := float64(output) * 100 / float64(len(compressed))
-						fmt.Printf(" %d -> %d [%.02f%%]; %v, %.01fMB/s", len(compressed), output, pct, ms, mbPerSec)
-					}
-				}
-				if !*quiet {
-					fmt.Println("")
-				}
-			}()
-		}
+		benchDecompOnly(files, block, quiet, bench, cpu, r)
 		return
 	}
 
@@ -365,149 +238,283 @@ Options:`)
 		if *verify {
 			dstFilename = "(verify)"
 		}
+		decompressFile(quiet, filename, dstFilename, block, tailBytes, offset, safe, verify, stdout, blockDebug, tailNextNL, r, limitBytes, limitNextNL, cpu, remove)
+	}
+}
 
-		func() {
-			var closeOnce sync.Once
+func decompressFile(quiet *bool, filename string, dstFilename string, block bool, tailBytes int64, offset int64, safe *bool, verify *bool, stdout *bool, blockDebug *bool, tailNextNL bool, r *minlz.Reader, limitBytes int64, limitNextNL bool, cpu *int, remove *bool) {
+	var closeOnce sync.Once
+	if !*quiet {
+		fmt.Print("Decompressing ", filename, " -> ", dstFilename)
+	}
+	seeker := !block && (tailBytes > 0 || offset > 0)
+	// Input file.
+	file, _, mode := openFile(filename, seeker)
+	defer closeOnce.Do(func() { file.Close() })
+	var rc interface {
+		io.Reader
+		BytesRead() int64
+	}
+	if seeker {
+		rs, ok := file.(io.ReadSeeker)
+		if !ok && tailBytes > 0 {
+			exitErr(errors.New("cannot tail with non-seekable input"))
+		}
+		if ok {
+			rc = &rCountSeeker{in: rs}
+		} else {
+			rc = &rCounter{in: file}
+		}
+	} else {
+		rc = &rCounter{in: file}
+	}
+	var src io.Reader
+	if !seeker {
+		ra, err := readahead.NewReaderSize(rc, 2, 8<<20)
+		exitErr(err)
+		defer ra.Close()
+		src = ra
+	} else {
+		src = rc
+	}
+	if *safe {
+		_, err := os.Stat(dstFilename)
+		if !os.IsNotExist(err) {
+			exitErr(errors.New("destination files exists"))
+		}
+	}
+	var out io.Writer
+	switch {
+	case *verify:
+		out = io.Discard
+	case *stdout:
+		out = os.Stdout
+	default:
+		dstFile, err := os.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+		exitErr(err)
+		defer dstFile.Close()
+		out = dstFile
+		if !block {
+			bw := bufio.NewWriterSize(dstFile, 4<<20)
+			defer bw.Flush()
+			out = bw
+		}
+	}
+	var decoded io.Reader
+	start := time.Now()
+	if block {
+		all, err := io.ReadAll(src)
+		exitErr(err)
+		if *blockDebug {
+			DecodeDebug(nil, all)
+		}
+		b, err := minlz.Decode(nil, all)
+		if offset > 0 {
+			b = b[min(offset, int64(len(all))):]
+		}
+		if tailBytes > 0 {
+			b = b[len(b)-min(len(b), int(tailBytes)):]
+			for len(b) > 0 && tailNextNL {
+				if b[0] == '\n' {
+					b = b[1:]
+					break
+				}
+				b = b[1:]
+			}
+		}
+		// Limit applied later...
+		exitErr(err)
+		decoded = bytes.NewReader(b)
+	} else {
+		r.Reset(src)
+		if tailBytes > 0 || offset > 0 {
+			rs, err := r.ReadSeeker(nil)
+			exitErr(err)
+		retry:
+			if tailBytes > 0 {
+				_, err = rs.Seek(-tailBytes, io.SeekEnd)
+			} else {
+				_, err = rs.Seek(offset, io.SeekStart)
+			}
+			exitErr(err)
+			if tailNextNL {
+				for {
+					v, err := r.ReadByte()
+					if err == io.EOF {
+						tailNextNL = false
+						goto retry
+					}
+					if v == '\n' {
+						break
+					}
+					if err != nil {
+						exitErr(err)
+					}
+				}
+			}
+		}
+		decoded = r
+	}
+	if limitBytes > 0 {
+		decoded = limitReaderNL(decoded, limitBytes, limitNextNL)
+	}
+	var err error
+	var output int64
+	if dec, ok := decoded.(*minlz.Reader); ok && tailBytes == 0 && offset == 0 {
+		output, err = dec.DecodeConcurrent(out, *cpu)
+	} else {
+		output, err = io.Copy(out, decoded)
+	}
+	exitErr(err)
+	if !*quiet {
+		elapsed := time.Since(start)
+		mbPerSec := (float64(output) / 1e6) / (float64(elapsed) / (float64(time.Second)))
+		pct := float64(output) * 100 / float64(rc.BytesRead())
+		fmt.Printf(" %d -> %d [%.02f%%]; %.01fMB/s\n", rc.BytesRead(), output, pct, mbPerSec)
+	}
+	if *remove && !*verify {
+		closeOnce.Do(func() {
+			file.Close()
 			if !*quiet {
-				fmt.Print("Decompressing ", filename, " -> ", dstFilename)
+				fmt.Println("Removing", filename)
 			}
-			seeker := !block && (tailBytes > 0 || offset > 0)
-			// Input file.
-			file, _, mode := openFile(filename, seeker)
-			defer closeOnce.Do(func() { file.Close() })
-			var rc interface {
-				io.Reader
-				BytesRead() int64
+			err := os.Remove(filename)
+			exitErr(err)
+		})
+	}
+}
+
+func benchDecompOnly(files []string, block *bool, quiet *bool, bench *int, cpu *int, r *minlz.Reader) {
+	debug.SetGCPercent(10)
+	for _, filename := range files {
+		block := *block
+		dstFilename := cleanFileName(filename)
+		switch {
+		case strings.HasSuffix(filename, minlzBlockExt):
+			dstFilename = strings.TrimSuffix(dstFilename, minlzBlockExt)
+			block = true
+		case strings.HasSuffix(dstFilename, minlzExt):
+		case strings.HasSuffix(dstFilename, s2Ext):
+		case strings.HasSuffix(dstFilename, snappyExt):
+		case strings.HasSuffix(dstFilename, ".snappy"):
+		default:
+			if !isHTTP(filename) {
+				fmt.Println("Skipping", filename)
+				continue
 			}
-			if seeker {
-				rs, ok := file.(io.ReadSeeker)
-				if !ok && tailBytes > 0 {
-					exitErr(errors.New("cannot tail with non-seekable input"))
-				}
-				if ok {
-					rc = &rCountSeeker{in: rs}
-				} else {
-					rc = &rCounter{in: file}
-				}
-			} else {
-				rc = &rCounter{in: file}
+		}
+
+		if !*quiet {
+			fmt.Print("Reading ", filename, "...")
+		}
+		// Input file.
+		file, size, _ := openFile(filename, false)
+		compressed := make([]byte, size)
+		_, err := io.ReadFull(file, compressed)
+		exitErr(err)
+		file.Close()
+
+		if block {
+			decompresBlockBench(quiet, bench, compressed, cpu)
+			continue
+		}
+
+		for i := 0; i < *bench; i++ {
+			if !*quiet {
+				fmt.Print("\nDecompressing...")
 			}
-			var src io.Reader
-			if !seeker {
-				ra, err := readahead.NewReaderSize(rc, 2, 8<<20)
-				exitErr(err)
-				defer ra.Close()
-				src = ra
-			} else {
-				src = rc
-			}
-			if *safe {
-				_, err := os.Stat(dstFilename)
-				if !os.IsNotExist(err) {
-					exitErr(errors.New("destination files exists"))
-				}
-			}
-			var out io.Writer
-			switch {
-			case *verify:
-				out = io.Discard
-			case *stdout:
-				out = os.Stdout
-			default:
-				dstFile, err := os.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-				exitErr(err)
-				defer dstFile.Close()
-				out = dstFile
-				if !block {
-					bw := bufio.NewWriterSize(dstFile, 4<<20)
-					defer bw.Flush()
-					out = bw
-				}
-			}
-			var decoded io.Reader
+			runtime.GC()
 			start := time.Now()
-			if block {
-				all, err := io.ReadAll(src)
-				exitErr(err)
-				if *blockDebug {
-					DecodeDebug(nil, all)
-				}
-				b, err := minlz.Decode(nil, all)
-				if offset > 0 {
-					b = b[min(offset, int64(len(all))):]
-				}
-				if tailBytes > 0 {
-					b = b[len(b)-min(len(b), int(tailBytes)):]
-					for len(b) > 0 && tailNextNL {
-						if b[0] == '\n' {
-							b = b[1:]
-							break
-						}
-						b = b[1:]
-					}
-				}
-				// Limit applied later...
-				exitErr(err)
-				decoded = bytes.NewReader(b)
-			} else {
-				r.Reset(src)
-				if tailBytes > 0 || offset > 0 {
-					rs, err := r.ReadSeeker(nil)
-					exitErr(err)
-				retry:
-					if tailBytes > 0 {
-						_, err = rs.Seek(-tailBytes, io.SeekEnd)
-					} else {
-						_, err = rs.Seek(offset, io.SeekStart)
-					}
-					exitErr(err)
-					if tailNextNL {
-						for {
-							v, err := r.ReadByte()
-							if err == io.EOF {
-								tailNextNL = false
-								goto retry
-							}
-							if v == '\n' {
-								break
-							}
-							if err != nil {
-								exitErr(err)
-							}
-						}
-					}
-				}
-				decoded = r
-			}
-			if limitBytes > 0 {
-				decoded = limitReaderNL(decoded, limitBytes, limitNextNL)
-			}
-			var err error
 			var output int64
-			if dec, ok := decoded.(*minlz.Reader); ok && tailBytes == 0 && offset == 0 {
-				output, err = dec.DecodeConcurrent(out, *cpu)
-			} else {
-				output, err = io.Copy(out, decoded)
-			}
+			r.Reset(bytes.NewBuffer(compressed))
+			output, err = r.DecodeConcurrent(io.Discard, *cpu)
 			exitErr(err)
 			if !*quiet {
 				elapsed := time.Since(start)
+				ms := elapsed.Round(time.Millisecond)
 				mbPerSec := (float64(output) / 1e6) / (float64(elapsed) / (float64(time.Second)))
-				pct := float64(output) * 100 / float64(rc.BytesRead())
-				fmt.Printf(" %d -> %d [%.02f%%]; %.01fMB/s\n", rc.BytesRead(), output, pct, mbPerSec)
+				pct := float64(output) * 100 / float64(len(compressed))
+				fmt.Printf(" %d -> %d [%.02f%%]; %v, %.01fMB/s", len(compressed), output, pct, ms, mbPerSec)
 			}
-			if *remove && !*verify {
-				closeOnce.Do(func() {
-					file.Close()
-					if !*quiet {
-						fmt.Println("Removing", filename)
-					}
-					err := os.Remove(filename)
-					exitErr(err)
-				})
-			}
-		}()
+		}
+		if !*quiet {
+			fmt.Println("")
+		}
 	}
+}
+
+func decompresBlockBench(quiet *bool, bench *int, compressed []byte, cpu *int) {
+	if !*quiet {
+		fmt.Print("\n\nDecompressing Block using 1 thread...\n")
+	}
+	var singleSpeed float64
+	start := time.Now()
+	end := time.Now().Add(time.Duration(*bench) * time.Second)
+	lastUpdate := start
+	dSize, err := minlz.DecodedLen(compressed)
+	exitErr(err)
+	decomp := make([]byte, 0, dSize)
+	n := 0
+	runtime.GC()
+	for time.Now().Before(end) {
+		decomp, err = minlz.Decode(decomp, compressed)
+		exitErr(err)
+		if len(decomp) != dSize {
+			exitErr(fmt.Errorf("unexpected size, want %d, got %d", dSize, len(decomp)))
+		}
+		n++
+		if !*quiet && time.Since(lastUpdate) > time.Second/6 {
+			input := float64(dSize) * float64(n)
+			output := float64(len(compressed)) * float64(n)
+			elapsed := time.Since(start)
+			singleSpeed = (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
+			pct := input * 100 / output
+			ms := elapsed.Round(time.Millisecond)
+			fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s                  \r", len(compressed), len(decomp), pct, ms, singleSpeed)
+			lastUpdate = time.Now()
+		}
+	}
+	if *cpu > 1 {
+		if !*quiet {
+			fmt.Printf("\n\nDecompressing block (%d threads)...\n", *cpu)
+		}
+		b := decomp
+		dsts := make([]byte, 0, *cpu*len(b))
+
+		var n atomic.Int64
+		var wg sync.WaitGroup
+		start := time.Now()
+		end := time.Now().Add(time.Duration(*bench) * time.Second)
+		wg.Add(*cpu)
+		for i := 0; i < *cpu; i++ {
+			go func(i int) {
+				decomp := dsts[i*len(b) : i*len(b)+len(b) : i*len(b)+len(b)]
+				defer wg.Done()
+				for time.Now().Before(end) {
+					decomp, err = minlz.Decode(decomp, compressed)
+					exitErr(err)
+					if len(decomp) != len(b) {
+						exitErr(fmt.Errorf("unexpected size, want %d, got %d", len(b), len(decomp)))
+					}
+					n.Add(1)
+				}
+			}(i)
+		}
+		for !*quiet && time.Now().Before(end) {
+			input := float64(len(b)) * float64(n.Load())
+			output := float64(len(compressed)) * float64(n.Load())
+			elapsed := time.Since(start)
+			mbpersec := (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
+			scale := mbpersec / singleSpeed
+			pct := output * 100 / input
+			ms := elapsed.Round(time.Millisecond)
+			fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s (%.1fx)          \r", len(compressed), len(decomp), pct, ms, mbpersec, scale)
+			time.Sleep(time.Second / 6)
+		}
+		wg.Wait()
+		runtime.GC()
+	}
+	fmt.Println("")
 }
 
 const (
