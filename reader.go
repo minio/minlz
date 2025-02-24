@@ -549,19 +549,21 @@ func (r *Reader) WriteTo(w io.Writer) (n int64, err error) {
 	if r.i > 0 || r.j > 0 {
 		if r.i != r.j {
 			missing := r.decoded[r.i:r.j]
-			n, err := w.Write(missing)
-			if err == nil && n != len(missing) {
+			n2, err := w.Write(missing)
+			if err == nil && n2 != len(missing) {
 				err = io.ErrShortWrite
 			}
+			n += int64(n2)
 			if err != nil {
 				r.err = err
-				return int64(n), r.err
+				return n, r.err
 			}
 		}
 		r.blockStart += int64(r.j)
 		r.i, r.j = 0, 0
 	}
-	return r.DecodeConcurrent(w, runtime.NumCPU())
+	n2, err := r.DecodeConcurrent(w, runtime.NumCPU())
+	return n + n2, err
 }
 
 // DecodeConcurrent will decode the full stream to w.
