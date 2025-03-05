@@ -340,8 +340,6 @@ Click below to see some sample benchmarks compared to Snappy and LZ4:
 
 ### Protobuf Sample
 
-<details>
-  <summary>Click To See Data + Charts (118,588 bytes input)</summary>
 
 | Compressor   | Size   | Comp MB/s | Decomp MB/s | Reduction % |
 |--------------|--------|----------:|-------------|-------------|
@@ -362,7 +360,6 @@ Click below to see some sample benchmarks compared to Snappy and LZ4:
 
 Source file: https://github.com/google/snappy/blob/main/testdata/geo.protodata
 
-</details>
 
 ### HTML Sample
 
@@ -468,9 +465,6 @@ Blocks are compressed/decompress using 16 core AMD Ryzen 9 3950X 16-Core Process
 
 ### JSON Stream
 
-<details>
-  <summary>Click To See Data + Charts</summary>
-
 Input Size: 6,273,951,764 bytes
 
 | Compressor  | Speed MiB/s |          Size | Reduction | Dec MiB/s |
@@ -491,7 +485,6 @@ Input Size: 6,273,951,764 bytes
 
 Source file: https://files.klauspost.com/compress/github-june-2days-2019.json.zst
 
-</details>
 
 ### CSV Stream
 
