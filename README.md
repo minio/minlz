@@ -31,6 +31,11 @@ This package implements the MinLZ specification v1.0.
 
 For format specification see the included [SPEC.md](SPEC.md).
 
+# Changelog
+
+* [v1.0.0](https://github.com/minio/minlz/releases/tag/v1.0.0)
+  * [Initial Release Blog Post](https://gist.github.com/klauspost/a25b66198cdbdf7b5b224f670c894ed5).
+
 # Usage
 
 MinLZ can operate on *blocks* up to 8 MB or *streams* with unlimited length.
