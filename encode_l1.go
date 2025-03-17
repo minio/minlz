@@ -174,18 +174,6 @@ func encodeBlockGo(dst, src []byte) (d int) {
 		}
 
 		// A 4-byte match has been found. We'll later see if more than 4 bytes match.
-
-		// Call emitCopy, and then see if another emitCopy could be our next
-		// move. Repeat until we find no match for the input immediately after
-		// what was consumed by the last emitCopy call.
-		//
-		// If we exit this loop normally then we need to call emitLiteral next,
-		// though we don't yet know how big the literal will be. We handle that
-		// by proceeding to the next iteration of the main loop. We also can
-		// exit this loop via goto if we get close to exhausting the input.
-
-		// Invariant: we have a 4-byte match at s, and no need to emit any
-		// literal bytes prior to s.
 		base := s
 		repeat = base - candidate
 
@@ -429,18 +417,6 @@ func encodeBlockGo64K(dst, src []byte) (d int) {
 		}
 
 		// A 4-byte match has been found. We'll later see if more than 4 bytes match.
-
-		// Call emitCopy, and then see if another emitCopy could be our next
-		// move. Repeat until we find no match for the input immediately after
-		// what was consumed by the last emitCopy call.
-		//
-		// If we exit this loop normally then we need to call emitLiteral next,
-		// though we don't yet know how big the literal will be. We handle that
-		// by proceeding to the next iteration of the main loop. We also can
-		// exit this loop via goto if we get close to exhausting the input.
-
-		// Invariant: we have a 4-byte match at s, and no need to emit any
-		// literal bytes prior to s.
 		base := s
 		repeat = base - candidate
 

@@ -808,9 +808,11 @@ If you are interested in porting MinLZ to another language, open a discussion to
 
 If you do a port, feel free to send in a PR for this table:
 
-| Language | Repository Link                                          | License    | Features as described in SPEC.md                                                                                |
-|----------|----------------------------------------------------------|------------|-----------------------------------------------------------------------------------------------------------------|
-| Go       | [github.com/minio/minlz](https://github.com/minio/minlz) | Apache 2.0 | `[x] Block Read [x] Block Write [x] Stream Read [x] Stream Write [x] Index Support [x] Snappy Read Fallback`    |
+| Language | Repository Link                                                                         | License    | Block Read | Block Write | Stream Read | Stream Write | Index | Snappy Fallback |
+|----------|-----------------------------------------------------------------------------------------|------------|------------|-------------|-------------|--------------|-------|-----------------|
+| Go       | [github.com/minio/minlz](https://github.com/minio/minlz)                                | Apache 2.0 | ✅          | ✅           | ✅           | ✅            | ✅     | ✅               |  
+| C        | [Experimental GIST](https://gist.github.com/klauspost/5796a5aa116a15eb7341ffa8427bbe7a) | CC0        | ✅          | ✅           |             |              |       |                 |                                                                                                                 
+
 
 Indicated features must support all parts of each feature as described in the specification.
 However, it is up to the implementation to decide the encoding implementation(s).  
