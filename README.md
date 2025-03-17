@@ -34,7 +34,7 @@ For format specification see the included [SPEC.md](SPEC.md).
 # Changelog
 
 * [v1.0.0](https://github.com/minio/minlz/releases/tag/v1.0.0)
-  * [Initial Release Blog Post](https://gist.github.com/klauspost/a25b66198cdbdf7b5b224f670c894ed5).
+  * [Initial Release Blog Post](https://blog.min.io/minlz-compression-algorithm/).
 
 # Usage
 
