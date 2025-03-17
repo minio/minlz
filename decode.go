@@ -18,7 +18,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"strconv"
 
 	"github.com/klauspost/compress/s2"
 )
@@ -410,7 +409,7 @@ func minLZDecodeGo(dst, src []byte) int {
 				goto doCopy2
 			}
 
-			if length > len(dst)-d || length > len(src)-s || (strconv.IntSize == 32 && length <= 0) {
+			if length > len(dst)-d || length > len(src)-s {
 				if debugErrors {
 					fmt.Println("corrupt: lit size", length, "dst avail:", len(dst)-d, "src avail:", len(src)-s, "dst pos:", d)
 				}

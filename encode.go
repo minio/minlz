@@ -46,7 +46,7 @@ const (
 	minCopy2Length = 64
 
 	maxCopy3Lits   = 1<<copyLitBits - 1
-	minCopy3Offset = 65536         // 2MiB
+	minCopy3Offset = 65536
 	maxCopy3Offset = 2<<20 + 65535 // 2MiB
 	minCopy3Length = 64
 )

@@ -27,16 +27,19 @@ but retain high decompression speed.
 * Fast detection of pre-compressed data
 * Powerful commandline utility
 
-This package implements the MinLZ specification v1.0.
+This package implements the MinLZ specification v1.0 in Go.
 
 For format specification see the included [SPEC.md](SPEC.md).
 
 # Changelog
 
 * [v1.0.0](https://github.com/minio/minlz/releases/tag/v1.0.0)
-  * [Initial Release Blog Post](https://gist.github.com/klauspost/a25b66198cdbdf7b5b224f670c894ed5).
+  * [Initial Release Blog Post](https://blog.min.io/minlz-compression-algorithm/).
 
 # Usage
+
+[![Go Reference](https://pkg.go.dev/badge/minio/minlz.svg)](https://pkg.go.dev/github.com/minio/minlz?tab=subdirectories)
+[![Go](https://github.com/minio/minlz/actions/workflows/go.yml/badge.svg)](https://github.com/minio/minlz/actions/workflows/go.yml)
 
 MinLZ can operate on *blocks* up to 8 MB or *streams* with unlimited length.
 
@@ -808,9 +811,11 @@ If you are interested in porting MinLZ to another language, open a discussion to
 
 If you do a port, feel free to send in a PR for this table:
 
-| Language | Repository Link                                          | License    | Features as described in SPEC.md                                                                                |
-|----------|----------------------------------------------------------|------------|-----------------------------------------------------------------------------------------------------------------|
-| Go       | [github.com/minio/minlz](https://github.com/minio/minlz) | Apache 2.0 | `[x] Block Read [x] Block Write [x] Stream Read [x] Stream Write [x] Index Support [x] Snappy Read Fallback`    |
+| Language | Repository Link                                                                         | License    | Block Read | Block Write | Stream Read | Stream Write | Index | Snappy Fallback |
+|----------|-----------------------------------------------------------------------------------------|------------|------------|-------------|-------------|--------------|-------|-----------------|
+| Go       | [github.com/minio/minlz](https://github.com/minio/minlz)                                | Apache 2.0 | ✅          | ✅           | ✅           | ✅            | ✅     | ✅               |  
+| C        | [Experimental GIST](https://gist.github.com/klauspost/5796a5aa116a15eb7341ffa8427bbe7a) | CC0        | ✅          | ✅           |             |              |       |                 |                                                                                                                 
+
 
 Indicated features must support all parts of each feature as described in the specification.
 However, it is up to the implementation to decide the encoding implementation(s).  
