@@ -27,7 +27,7 @@ but retain high decompression speed.
 * Fast detection of pre-compressed data
 * Powerful commandline utility
 
-This package implements the MinLZ specification v1.0.
+This package implements the MinLZ specification v1.0 in Go.
 
 For format specification see the included [SPEC.md](SPEC.md).
 
@@ -37,6 +37,9 @@ For format specification see the included [SPEC.md](SPEC.md).
   * [Initial Release Blog Post](https://gist.github.com/klauspost/a25b66198cdbdf7b5b224f670c894ed5).
 
 # Usage
+
+[![Go Reference](https://pkg.go.dev/badge/minio/minlz.svg)](https://pkg.go.dev/github.com/minio/minlz?tab=subdirectories)
+[![Go](https://github.com/minio/minlz/actions/workflows/go.yml/badge.svg)](https://github.com/minio/minlz/actions/workflows/go.yml)
 
 MinLZ can operate on *blocks* up to 8 MB or *streams* with unlimited length.
 
