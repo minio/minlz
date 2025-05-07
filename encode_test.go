@@ -19,6 +19,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"testing"
+
+	"github.com/klauspost/compress/s2"
 )
 
 func TestEncodeHuge(t *testing.T) {
@@ -45,6 +47,29 @@ func TestEncodeHuge(t *testing.T) {
 		}
 	}
 	test(t, make([]byte, MaxBlockSize))
+}
+
+func TestEncodeHugeS2(t *testing.T) {
+	test := func(t *testing.T, data []byte) {
+		for i := LevelFastest; i <= LevelSmallest; i++ {
+			comp := s2.Encode(make([]byte, s2.MaxEncodedLen(len(data))), data)
+			decoded, err := Decode(nil, comp)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if !bytes.Equal(data, decoded) {
+				t.Error("block decoder mismatch")
+				return
+			}
+			if mel := s2.MaxEncodedLen(len(data)); len(comp) > mel {
+				t.Error(fmt.Errorf("MaxEncodedLen Exceed: input: %d, mel: %d, got %d", len(data), mel, len(comp)))
+				return
+			}
+		}
+	}
+	// Test we fall back correctly.
+	test(t, bytes.Repeat([]byte("a"), MaxBlockSize*2))
 }
 
 func TestSizes(t *testing.T) {
