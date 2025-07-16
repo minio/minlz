@@ -16,7 +16,6 @@ package main
 
 //go:generate go run gen.go -out ../asm_amd64.s -stubs ../asm_amd64.go -pkg=minlz
 //go:generate gofmt -w ../asm_amd64.go
-//go:generate go run cleanup.go ../asm_amd64.s
 
 import (
 	"flag"
@@ -41,15 +40,6 @@ func main() {
 	Constraint(buildtags.Not("noasm").ToConstraint())
 	Constraint(buildtags.Term("gc").ToConstraint())
 	Constraint(buildtags.Not("purego").ToConstraint())
-
-	// We need a function to add comments.
-	TEXT("_dummy_", 0, "func()")
-	Comment("#ifdef GOAMD64_v4")
-	Comment("#ifndef GOAMD64_v3")
-	Comment("#define GOAMD64_v3")
-	Comment("#endif")
-	Comment("#endif")
-	RET()
 
 	o := options{
 		bmi1:         false,
@@ -1880,11 +1870,11 @@ func hashN(o options, hashBytes, tablebits int) hashGen {
 		o:         o,
 	}
 	if o.bmi2 {
-		if hashBytes < 8 {
-			h.clear = GP64()
-			MOVQ(U8(hashBytes*8), h.clear)
+		if hashBytes < 8 && hashBytes != 4 {
+			MOVQ(U32(hashBytes*8), h.mulreg)
+		} else {
+			MOVQ(U32(tablebits), h.mulreg)
 		}
-		MOVQ(U8(tablebits), h.mulreg)
 		return h
 	}
 	primebytes := uint64(0)
@@ -1911,15 +1901,32 @@ func hashN(o options, hashBytes, tablebits int) hashGen {
 // hash uses multiply to get hash of the value.
 func (h hashGen) hash(val reg.GPVirtual) {
 	if h.o.bmi2 {
+		// Broken somehow...
 		if h.bytes < 8 {
-			BZHIQ(val, h.clear, val)
+			if h.bytes == 4 {
+				MOVL(val.As32(), val.As32())
+			} else {
+				//SHLQ(U8(64-8*h.bytes), val)
+				BZHIQ(val, h.mulreg, val)
+			}
 		}
 		CRC32Q(val, val)
-		BZHIQ(val, h.mulreg, val)
+		tmp := h.mulreg
+		if h.bytes < 8 && h.bytes != 4 {
+			tmp = GP64()
+			MOVQ(U32(h.tablebits), tmp)
+		}
+		//SHRQ(U8(32-h.tablebits), val)
+		BZHIQ(val, tmp, val)
+		return
 	}
 	// Move value to top of register.
 	if h.bytes < 8 {
-		SHLQ(U8(64-8*h.bytes), val)
+		if h.bytes == 4 {
+			MOVL(val.As32(), val.As32())
+		} else {
+			SHLQ(U8(64-8*h.bytes), val)
+		}
 	}
 	//  329 AMD64               :IMUL r64, r64                         L:   0.86ns=  3.0c  T:   0.29ns=  1.00c
 	// 2020 BMI2                :MULX r64, r64, r64                    L:   1.14ns=  4.0c  T:   0.29ns=  1.00c
@@ -3020,13 +3027,7 @@ func (o options) matchLen(name string, a, b, len, dst reg.GPVirtual, end LabelRe
 
 	Label("matchlen_bsf_16" + name)
 	// Not all match.
-	Comment("#ifdef GOAMD64_v3")
-	// 2016 BMI                 :TZCNT r64, r64                        L:   0.57ns=  2.0c  T:   0.29ns=  1.00c
-	//  315 AMD64               :BSF r64, r64                          L:   0.88ns=  3.1c  T:   0.86ns=  3.00c
 	TZCNTQ(tmp2, tmp2)
-	Comment("#else")
-	BSFQ(tmp2, tmp2)
-	Comment("#endif")
 
 	SARQ(U8(3), tmp2)
 	LEAL(Mem{Base: matched, Index: tmp2, Scale: 1, Disp: 8}, matched)
@@ -3045,14 +3046,8 @@ func (o options) matchLen(name string, a, b, len, dst reg.GPVirtual, end LabelRe
 	Label("matchlen_bsf_8_" + name)
 
 	// Not all match.
-	Comment("#ifdef GOAMD64_v3")
-	// 2016 BMI                 :TZCNT r64, r64                        L:   0.57ns=  2.0c  T:   0.29ns=  1.00c
-	//  315 AMD64               :BSF r64, r64                          L:   0.88ns=  3.1c  T:   0.86ns=  3.00c
 	TZCNTQ(tmp, tmp)
-	Comment("#else")
-	BSFQ(tmp, tmp)
-	Comment("#endif")
-
+	// tmp is the number of bits that matched.
 	SARQ(U8(3), tmp)
 	LEAL(Mem{Base: matched, Index: tmp, Scale: 1}, matched)
 	JMP(end)
@@ -3129,11 +3124,7 @@ func (o options) matchLenAVX2(name string, a, b, len reg.GPVirtual, cont, end La
 	Label(name + "cal_prefix")
 	{
 		NOTQ(equalMaskBits)
-		if o.bmi1 {
-			TZCNTQ(equalMaskBits, equalMaskBits)
-		} else {
-			BSFQ(equalMaskBits, equalMaskBits)
-		}
+		TZCNTQ(equalMaskBits, equalMaskBits)
 		ADDL(equalMaskBits.As32(), dst)
 	}
 	JMP(end)

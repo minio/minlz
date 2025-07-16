@@ -4,15 +4,6 @@
 
 #include "textflag.h"
 
-// func _dummy_()
-TEXT ·_dummy_(SB), $0
-#ifdef GOAMD64_v4
-#ifndef GOAMD64_v3
-#define GOAMD64_v3
-#endif
-#endif
-	RET
-
 // func encodeBlockAsm(dst []byte, src []byte, tmp *[131072]byte) int
 // Requires: BMI, CMOV, SSE2
 TEXT ·encodeBlockAsm(SB), $24-64
@@ -290,16 +281,10 @@ matchlen_loop_16_entry_repeat_extend_encodeBlockAsm:
 	JMP  matchlen_match8_repeat_extend_encodeBlockAsm
 
 matchlen_bsf_16repeat_extend_encodeBlockAsm:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    repeat_extend_forward_end_encodeBlockAsm
 
 matchlen_match8_repeat_extend_encodeBlockAsm:
 	CMPL R8, $0x08
@@ -312,16 +297,10 @@ matchlen_match8_repeat_extend_encodeBlockAsm:
 	JMP  matchlen_match4_repeat_extend_encodeBlockAsm
 
 matchlen_bsf_8_repeat_extend_encodeBlockAsm:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    repeat_extend_forward_end_encodeBlockAsm
 
 matchlen_match4_repeat_extend_encodeBlockAsm:
 	CMPL R8, $0x04
@@ -482,16 +461,10 @@ matchlen_loop_16_entry_match_nolit_encodeBlockAsm:
 	JMP  matchlen_match8_match_nolit_encodeBlockAsm
 
 matchlen_bsf_16match_nolit_encodeBlockAsm:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  match_nolit_end_encodeBlockAsm
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    match_nolit_end_encodeBlockAsm
 
 matchlen_match8_match_nolit_encodeBlockAsm:
 	CMPL DI, $0x08
@@ -504,16 +477,10 @@ matchlen_match8_match_nolit_encodeBlockAsm:
 	JMP  matchlen_match4_match_nolit_encodeBlockAsm
 
 matchlen_bsf_8_match_nolit_encodeBlockAsm:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  match_nolit_end_encodeBlockAsm
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    match_nolit_end_encodeBlockAsm
 
 matchlen_match4_match_nolit_encodeBlockAsm:
 	CMPL DI, $0x04
@@ -1025,16 +992,10 @@ matchlen_loop_16_entry_match_nolit2_encodeBlockAsm:
 	JMP  matchlen_match8_match_nolit2_encodeBlockAsm
 
 matchlen_bsf_16match_nolit2_encodeBlockAsm:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL 8(R11)(R10*1), R11
-	JMP  match_nolit2_end_encodeBlockAsm
+	SARQ   $0x03, R10
+	LEAL   8(R11)(R10*1), R11
+	JMP    match_nolit2_end_encodeBlockAsm
 
 matchlen_match8_match_nolit2_encodeBlockAsm:
 	CMPL DI, $0x08
@@ -1047,16 +1008,10 @@ matchlen_match8_match_nolit2_encodeBlockAsm:
 	JMP  matchlen_match4_match_nolit2_encodeBlockAsm
 
 matchlen_bsf_8_match_nolit2_encodeBlockAsm:
-#ifdef GOAMD64_v3
 	TZCNTQ R9, R9
-
-#else
-	BSFQ R9, R9
-
-#endif
-	SARQ $0x03, R9
-	LEAL (R11)(R9*1), R11
-	JMP  match_nolit2_end_encodeBlockAsm
+	SARQ   $0x03, R9
+	LEAL   (R11)(R9*1), R11
+	JMP    match_nolit2_end_encodeBlockAsm
 
 matchlen_match4_match_nolit2_encodeBlockAsm:
 	CMPL DI, $0x04
@@ -1562,16 +1517,10 @@ matchlen_loop_16_entry_repeat_extend_encodeBlockAsm2MB:
 	JMP  matchlen_match8_repeat_extend_encodeBlockAsm2MB
 
 matchlen_bsf_16repeat_extend_encodeBlockAsm2MB:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm2MB
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    repeat_extend_forward_end_encodeBlockAsm2MB
 
 matchlen_match8_repeat_extend_encodeBlockAsm2MB:
 	CMPL R8, $0x08
@@ -1584,16 +1533,10 @@ matchlen_match8_repeat_extend_encodeBlockAsm2MB:
 	JMP  matchlen_match4_repeat_extend_encodeBlockAsm2MB
 
 matchlen_bsf_8_repeat_extend_encodeBlockAsm2MB:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm2MB
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    repeat_extend_forward_end_encodeBlockAsm2MB
 
 matchlen_match4_repeat_extend_encodeBlockAsm2MB:
 	CMPL R8, $0x04
@@ -1742,16 +1685,10 @@ matchlen_loop_16_entry_match_nolit_encodeBlockAsm2MB:
 	JMP  matchlen_match8_match_nolit_encodeBlockAsm2MB
 
 matchlen_bsf_16match_nolit_encodeBlockAsm2MB:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  match_nolit_end_encodeBlockAsm2MB
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    match_nolit_end_encodeBlockAsm2MB
 
 matchlen_match8_match_nolit_encodeBlockAsm2MB:
 	CMPL DI, $0x08
@@ -1764,16 +1701,10 @@ matchlen_match8_match_nolit_encodeBlockAsm2MB:
 	JMP  matchlen_match4_match_nolit_encodeBlockAsm2MB
 
 matchlen_bsf_8_match_nolit_encodeBlockAsm2MB:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  match_nolit_end_encodeBlockAsm2MB
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    match_nolit_end_encodeBlockAsm2MB
 
 matchlen_match4_match_nolit_encodeBlockAsm2MB:
 	CMPL DI, $0x04
@@ -2279,16 +2210,10 @@ matchlen_loop_16_entry_match_nolit2_encodeBlockAsm2MB:
 	JMP  matchlen_match8_match_nolit2_encodeBlockAsm2MB
 
 matchlen_bsf_16match_nolit2_encodeBlockAsm2MB:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL 8(R11)(R10*1), R11
-	JMP  match_nolit2_end_encodeBlockAsm2MB
+	SARQ   $0x03, R10
+	LEAL   8(R11)(R10*1), R11
+	JMP    match_nolit2_end_encodeBlockAsm2MB
 
 matchlen_match8_match_nolit2_encodeBlockAsm2MB:
 	CMPL DI, $0x08
@@ -2301,16 +2226,10 @@ matchlen_match8_match_nolit2_encodeBlockAsm2MB:
 	JMP  matchlen_match4_match_nolit2_encodeBlockAsm2MB
 
 matchlen_bsf_8_match_nolit2_encodeBlockAsm2MB:
-#ifdef GOAMD64_v3
 	TZCNTQ R9, R9
-
-#else
-	BSFQ R9, R9
-
-#endif
-	SARQ $0x03, R9
-	LEAL (R11)(R9*1), R11
-	JMP  match_nolit2_end_encodeBlockAsm2MB
+	SARQ   $0x03, R9
+	LEAL   (R11)(R9*1), R11
+	JMP    match_nolit2_end_encodeBlockAsm2MB
 
 matchlen_match4_match_nolit2_encodeBlockAsm2MB:
 	CMPL DI, $0x04
@@ -2816,16 +2735,10 @@ matchlen_loop_16_entry_repeat_extend_encodeBlockAsm512K:
 	JMP  matchlen_match8_repeat_extend_encodeBlockAsm512K
 
 matchlen_bsf_16repeat_extend_encodeBlockAsm512K:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm512K
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    repeat_extend_forward_end_encodeBlockAsm512K
 
 matchlen_match8_repeat_extend_encodeBlockAsm512K:
 	CMPL R8, $0x08
@@ -2838,16 +2751,10 @@ matchlen_match8_repeat_extend_encodeBlockAsm512K:
 	JMP  matchlen_match4_repeat_extend_encodeBlockAsm512K
 
 matchlen_bsf_8_repeat_extend_encodeBlockAsm512K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm512K
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    repeat_extend_forward_end_encodeBlockAsm512K
 
 matchlen_match4_repeat_extend_encodeBlockAsm512K:
 	CMPL R8, $0x04
@@ -2996,16 +2903,10 @@ matchlen_loop_16_entry_match_nolit_encodeBlockAsm512K:
 	JMP  matchlen_match8_match_nolit_encodeBlockAsm512K
 
 matchlen_bsf_16match_nolit_encodeBlockAsm512K:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  match_nolit_end_encodeBlockAsm512K
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    match_nolit_end_encodeBlockAsm512K
 
 matchlen_match8_match_nolit_encodeBlockAsm512K:
 	CMPL DI, $0x08
@@ -3018,16 +2919,10 @@ matchlen_match8_match_nolit_encodeBlockAsm512K:
 	JMP  matchlen_match4_match_nolit_encodeBlockAsm512K
 
 matchlen_bsf_8_match_nolit_encodeBlockAsm512K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  match_nolit_end_encodeBlockAsm512K
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    match_nolit_end_encodeBlockAsm512K
 
 matchlen_match4_match_nolit_encodeBlockAsm512K:
 	CMPL DI, $0x04
@@ -3533,16 +3428,10 @@ matchlen_loop_16_entry_match_nolit2_encodeBlockAsm512K:
 	JMP  matchlen_match8_match_nolit2_encodeBlockAsm512K
 
 matchlen_bsf_16match_nolit2_encodeBlockAsm512K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL 8(R11)(R10*1), R11
-	JMP  match_nolit2_end_encodeBlockAsm512K
+	SARQ   $0x03, R10
+	LEAL   8(R11)(R10*1), R11
+	JMP    match_nolit2_end_encodeBlockAsm512K
 
 matchlen_match8_match_nolit2_encodeBlockAsm512K:
 	CMPL DI, $0x08
@@ -3555,16 +3444,10 @@ matchlen_match8_match_nolit2_encodeBlockAsm512K:
 	JMP  matchlen_match4_match_nolit2_encodeBlockAsm512K
 
 matchlen_bsf_8_match_nolit2_encodeBlockAsm512K:
-#ifdef GOAMD64_v3
 	TZCNTQ R9, R9
-
-#else
-	BSFQ R9, R9
-
-#endif
-	SARQ $0x03, R9
-	LEAL (R11)(R9*1), R11
-	JMP  match_nolit2_end_encodeBlockAsm512K
+	SARQ   $0x03, R9
+	LEAL   (R11)(R9*1), R11
+	JMP    match_nolit2_end_encodeBlockAsm512K
 
 matchlen_match4_match_nolit2_encodeBlockAsm512K:
 	CMPL DI, $0x04
@@ -4069,16 +3952,10 @@ matchlen_loop_16_entry_repeat_extend_encodeBlockAsm64K:
 	JMP  matchlen_match8_repeat_extend_encodeBlockAsm64K
 
 matchlen_bsf_16repeat_extend_encodeBlockAsm64K:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm64K
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    repeat_extend_forward_end_encodeBlockAsm64K
 
 matchlen_match8_repeat_extend_encodeBlockAsm64K:
 	CMPL R8, $0x08
@@ -4091,16 +3968,10 @@ matchlen_match8_repeat_extend_encodeBlockAsm64K:
 	JMP  matchlen_match4_repeat_extend_encodeBlockAsm64K
 
 matchlen_bsf_8_repeat_extend_encodeBlockAsm64K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm64K
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    repeat_extend_forward_end_encodeBlockAsm64K
 
 matchlen_match4_repeat_extend_encodeBlockAsm64K:
 	CMPL R8, $0x04
@@ -4249,16 +4120,10 @@ matchlen_loop_16_entry_match_nolit_encodeBlockAsm64K:
 	JMP  matchlen_match8_match_nolit_encodeBlockAsm64K
 
 matchlen_bsf_16match_nolit_encodeBlockAsm64K:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  match_nolit_end_encodeBlockAsm64K
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    match_nolit_end_encodeBlockAsm64K
 
 matchlen_match8_match_nolit_encodeBlockAsm64K:
 	CMPL DI, $0x08
@@ -4271,16 +4136,10 @@ matchlen_match8_match_nolit_encodeBlockAsm64K:
 	JMP  matchlen_match4_match_nolit_encodeBlockAsm64K
 
 matchlen_bsf_8_match_nolit_encodeBlockAsm64K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  match_nolit_end_encodeBlockAsm64K
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    match_nolit_end_encodeBlockAsm64K
 
 matchlen_match4_match_nolit_encodeBlockAsm64K:
 	CMPL DI, $0x04
@@ -4696,16 +4555,10 @@ matchlen_loop_16_entry_match_nolit2_encodeBlockAsm64K:
 	JMP  matchlen_match8_match_nolit2_encodeBlockAsm64K
 
 matchlen_bsf_16match_nolit2_encodeBlockAsm64K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL 8(R11)(R10*1), R11
-	JMP  match_nolit2_end_encodeBlockAsm64K
+	SARQ   $0x03, R10
+	LEAL   8(R11)(R10*1), R11
+	JMP    match_nolit2_end_encodeBlockAsm64K
 
 matchlen_match8_match_nolit2_encodeBlockAsm64K:
 	CMPL DI, $0x08
@@ -4718,16 +4571,10 @@ matchlen_match8_match_nolit2_encodeBlockAsm64K:
 	JMP  matchlen_match4_match_nolit2_encodeBlockAsm64K
 
 matchlen_bsf_8_match_nolit2_encodeBlockAsm64K:
-#ifdef GOAMD64_v3
 	TZCNTQ R9, R9
-
-#else
-	BSFQ R9, R9
-
-#endif
-	SARQ $0x03, R9
-	LEAL (R11)(R9*1), R11
-	JMP  match_nolit2_end_encodeBlockAsm64K
+	SARQ   $0x03, R9
+	LEAL   (R11)(R9*1), R11
+	JMP    match_nolit2_end_encodeBlockAsm64K
 
 matchlen_match4_match_nolit2_encodeBlockAsm64K:
 	CMPL DI, $0x04
@@ -5223,16 +5070,10 @@ matchlen_loop_16_entry_repeat_extend_encodeBlockAsm16K:
 	JMP  matchlen_match8_repeat_extend_encodeBlockAsm16K
 
 matchlen_bsf_16repeat_extend_encodeBlockAsm16K:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm16K
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    repeat_extend_forward_end_encodeBlockAsm16K
 
 matchlen_match8_repeat_extend_encodeBlockAsm16K:
 	CMPL R8, $0x08
@@ -5245,16 +5086,10 @@ matchlen_match8_repeat_extend_encodeBlockAsm16K:
 	JMP  matchlen_match4_repeat_extend_encodeBlockAsm16K
 
 matchlen_bsf_8_repeat_extend_encodeBlockAsm16K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm16K
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    repeat_extend_forward_end_encodeBlockAsm16K
 
 matchlen_match4_repeat_extend_encodeBlockAsm16K:
 	CMPL R8, $0x04
@@ -5403,16 +5238,10 @@ matchlen_loop_16_entry_match_nolit_encodeBlockAsm16K:
 	JMP  matchlen_match8_match_nolit_encodeBlockAsm16K
 
 matchlen_bsf_16match_nolit_encodeBlockAsm16K:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  match_nolit_end_encodeBlockAsm16K
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    match_nolit_end_encodeBlockAsm16K
 
 matchlen_match8_match_nolit_encodeBlockAsm16K:
 	CMPL DI, $0x08
@@ -5425,16 +5254,10 @@ matchlen_match8_match_nolit_encodeBlockAsm16K:
 	JMP  matchlen_match4_match_nolit_encodeBlockAsm16K
 
 matchlen_bsf_8_match_nolit_encodeBlockAsm16K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  match_nolit_end_encodeBlockAsm16K
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    match_nolit_end_encodeBlockAsm16K
 
 matchlen_match4_match_nolit_encodeBlockAsm16K:
 	CMPL DI, $0x04
@@ -5842,16 +5665,10 @@ matchlen_loop_16_entry_match_nolit2_encodeBlockAsm16K:
 	JMP  matchlen_match8_match_nolit2_encodeBlockAsm16K
 
 matchlen_bsf_16match_nolit2_encodeBlockAsm16K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL 8(R11)(R10*1), R11
-	JMP  match_nolit2_end_encodeBlockAsm16K
+	SARQ   $0x03, R10
+	LEAL   8(R11)(R10*1), R11
+	JMP    match_nolit2_end_encodeBlockAsm16K
 
 matchlen_match8_match_nolit2_encodeBlockAsm16K:
 	CMPL DI, $0x08
@@ -5864,16 +5681,10 @@ matchlen_match8_match_nolit2_encodeBlockAsm16K:
 	JMP  matchlen_match4_match_nolit2_encodeBlockAsm16K
 
 matchlen_bsf_8_match_nolit2_encodeBlockAsm16K:
-#ifdef GOAMD64_v3
 	TZCNTQ R9, R9
-
-#else
-	BSFQ R9, R9
-
-#endif
-	SARQ $0x03, R9
-	LEAL (R11)(R9*1), R11
-	JMP  match_nolit2_end_encodeBlockAsm16K
+	SARQ   $0x03, R9
+	LEAL   (R11)(R9*1), R11
+	JMP    match_nolit2_end_encodeBlockAsm16K
 
 matchlen_match4_match_nolit2_encodeBlockAsm16K:
 	CMPL DI, $0x04
@@ -6141,10 +5952,8 @@ search_loop_encodeBlockAsm4K:
 	MOVQ    DI, R10
 	MOVQ    DI, R11
 	SHRQ    $0x08, R11
-	SHLQ    $0x20, R10
 	IMULQ   R9, R10
 	SHRQ    $0x36, R10
-	SHLQ    $0x20, R11
 	IMULQ   R9, R11
 	SHRQ    $0x36, R11
 	MOVWLZX (AX)(R10*2), SI
@@ -6153,7 +5962,6 @@ search_loop_encodeBlockAsm4K:
 	MOVW    DX, (AX)(R11*2)
 	MOVQ    DI, R10
 	SHRQ    $0x10, R10
-	SHLQ    $0x20, R10
 	IMULQ   R9, R10
 	SHRQ    $0x36, R10
 	MOVL    DX, R9
@@ -6361,16 +6169,10 @@ matchlen_loop_16_entry_repeat_extend_encodeBlockAsm4K:
 	JMP  matchlen_match8_repeat_extend_encodeBlockAsm4K
 
 matchlen_bsf_16repeat_extend_encodeBlockAsm4K:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm4K
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    repeat_extend_forward_end_encodeBlockAsm4K
 
 matchlen_match8_repeat_extend_encodeBlockAsm4K:
 	CMPL R8, $0x08
@@ -6383,16 +6185,10 @@ matchlen_match8_repeat_extend_encodeBlockAsm4K:
 	JMP  matchlen_match4_repeat_extend_encodeBlockAsm4K
 
 matchlen_bsf_8_repeat_extend_encodeBlockAsm4K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm4K
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    repeat_extend_forward_end_encodeBlockAsm4K
 
 matchlen_match4_repeat_extend_encodeBlockAsm4K:
 	CMPL R8, $0x04
@@ -6541,16 +6337,10 @@ matchlen_loop_16_entry_match_nolit_encodeBlockAsm4K:
 	JMP  matchlen_match8_match_nolit_encodeBlockAsm4K
 
 matchlen_bsf_16match_nolit_encodeBlockAsm4K:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  match_nolit_end_encodeBlockAsm4K
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    match_nolit_end_encodeBlockAsm4K
 
 matchlen_match8_match_nolit_encodeBlockAsm4K:
 	CMPL DI, $0x08
@@ -6563,16 +6353,10 @@ matchlen_match8_match_nolit_encodeBlockAsm4K:
 	JMP  matchlen_match4_match_nolit_encodeBlockAsm4K
 
 matchlen_bsf_8_match_nolit_encodeBlockAsm4K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  match_nolit_end_encodeBlockAsm4K
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    match_nolit_end_encodeBlockAsm4K
 
 matchlen_match4_match_nolit_encodeBlockAsm4K:
 	CMPL DI, $0x04
@@ -6930,10 +6714,8 @@ match_nolit_dst_ok_encodeBlockAsm4K:
 	MOVQ    DI, R8
 	SHRQ    $0x10, DI
 	MOVQ    DI, R9
-	SHLQ    $0x20, R8
 	IMULQ   SI, R8
 	SHRQ    $0x36, R8
-	SHLQ    $0x20, R9
 	IMULQ   SI, R9
 	SHRQ    $0x36, R9
 	LEAL    -2(DX), R10
@@ -6980,16 +6762,10 @@ matchlen_loop_16_entry_match_nolit2_encodeBlockAsm4K:
 	JMP  matchlen_match8_match_nolit2_encodeBlockAsm4K
 
 matchlen_bsf_16match_nolit2_encodeBlockAsm4K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL 8(R11)(R10*1), R11
-	JMP  match_nolit2_end_encodeBlockAsm4K
+	SARQ   $0x03, R10
+	LEAL   8(R11)(R10*1), R11
+	JMP    match_nolit2_end_encodeBlockAsm4K
 
 matchlen_match8_match_nolit2_encodeBlockAsm4K:
 	CMPL DI, $0x08
@@ -7002,16 +6778,10 @@ matchlen_match8_match_nolit2_encodeBlockAsm4K:
 	JMP  matchlen_match4_match_nolit2_encodeBlockAsm4K
 
 matchlen_bsf_8_match_nolit2_encodeBlockAsm4K:
-#ifdef GOAMD64_v3
 	TZCNTQ R9, R9
-
-#else
-	BSFQ R9, R9
-
-#endif
-	SARQ $0x03, R9
-	LEAL (R11)(R9*1), R11
-	JMP  match_nolit2_end_encodeBlockAsm4K
+	SARQ   $0x03, R9
+	LEAL   (R11)(R9*1), R11
+	JMP    match_nolit2_end_encodeBlockAsm4K
 
 matchlen_match4_match_nolit2_encodeBlockAsm4K:
 	CMPL DI, $0x04
@@ -7279,10 +7049,8 @@ search_loop_encodeBlockAsm1K:
 	MOVQ    DI, R10
 	MOVQ    DI, R11
 	SHRQ    $0x08, R11
-	SHLQ    $0x20, R10
 	IMULQ   R9, R10
 	SHRQ    $0x37, R10
-	SHLQ    $0x20, R11
 	IMULQ   R9, R11
 	SHRQ    $0x37, R11
 	MOVWLZX (AX)(R10*2), SI
@@ -7291,7 +7059,6 @@ search_loop_encodeBlockAsm1K:
 	MOVW    DX, (AX)(R11*2)
 	MOVQ    DI, R10
 	SHRQ    $0x10, R10
-	SHLQ    $0x20, R10
 	IMULQ   R9, R10
 	SHRQ    $0x37, R10
 	MOVL    DX, R9
@@ -7499,16 +7266,10 @@ matchlen_loop_16_entry_repeat_extend_encodeBlockAsm1K:
 	JMP  matchlen_match8_repeat_extend_encodeBlockAsm1K
 
 matchlen_bsf_16repeat_extend_encodeBlockAsm1K:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm1K
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    repeat_extend_forward_end_encodeBlockAsm1K
 
 matchlen_match8_repeat_extend_encodeBlockAsm1K:
 	CMPL R8, $0x08
@@ -7521,16 +7282,10 @@ matchlen_match8_repeat_extend_encodeBlockAsm1K:
 	JMP  matchlen_match4_repeat_extend_encodeBlockAsm1K
 
 matchlen_bsf_8_repeat_extend_encodeBlockAsm1K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm1K
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    repeat_extend_forward_end_encodeBlockAsm1K
 
 matchlen_match4_repeat_extend_encodeBlockAsm1K:
 	CMPL R8, $0x04
@@ -7679,16 +7434,10 @@ matchlen_loop_16_entry_match_nolit_encodeBlockAsm1K:
 	JMP  matchlen_match8_match_nolit_encodeBlockAsm1K
 
 matchlen_bsf_16match_nolit_encodeBlockAsm1K:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  match_nolit_end_encodeBlockAsm1K
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    match_nolit_end_encodeBlockAsm1K
 
 matchlen_match8_match_nolit_encodeBlockAsm1K:
 	CMPL DI, $0x08
@@ -7701,16 +7450,10 @@ matchlen_match8_match_nolit_encodeBlockAsm1K:
 	JMP  matchlen_match4_match_nolit_encodeBlockAsm1K
 
 matchlen_bsf_8_match_nolit_encodeBlockAsm1K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  match_nolit_end_encodeBlockAsm1K
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    match_nolit_end_encodeBlockAsm1K
 
 matchlen_match4_match_nolit_encodeBlockAsm1K:
 	CMPL DI, $0x04
@@ -8068,10 +7811,8 @@ match_nolit_dst_ok_encodeBlockAsm1K:
 	MOVQ    DI, R8
 	SHRQ    $0x10, DI
 	MOVQ    DI, R9
-	SHLQ    $0x20, R8
 	IMULQ   SI, R8
 	SHRQ    $0x37, R8
-	SHLQ    $0x20, R9
 	IMULQ   SI, R9
 	SHRQ    $0x37, R9
 	LEAL    -2(DX), R10
@@ -8118,16 +7859,10 @@ matchlen_loop_16_entry_match_nolit2_encodeBlockAsm1K:
 	JMP  matchlen_match8_match_nolit2_encodeBlockAsm1K
 
 matchlen_bsf_16match_nolit2_encodeBlockAsm1K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL 8(R11)(R10*1), R11
-	JMP  match_nolit2_end_encodeBlockAsm1K
+	SARQ   $0x03, R10
+	LEAL   8(R11)(R10*1), R11
+	JMP    match_nolit2_end_encodeBlockAsm1K
 
 matchlen_match8_match_nolit2_encodeBlockAsm1K:
 	CMPL DI, $0x08
@@ -8140,16 +7875,10 @@ matchlen_match8_match_nolit2_encodeBlockAsm1K:
 	JMP  matchlen_match4_match_nolit2_encodeBlockAsm1K
 
 matchlen_bsf_8_match_nolit2_encodeBlockAsm1K:
-#ifdef GOAMD64_v3
 	TZCNTQ R9, R9
-
-#else
-	BSFQ R9, R9
-
-#endif
-	SARQ $0x03, R9
-	LEAL (R11)(R9*1), R11
-	JMP  match_nolit2_end_encodeBlockAsm1K
+	SARQ   $0x03, R9
+	LEAL   (R11)(R9*1), R11
+	JMP    match_nolit2_end_encodeBlockAsm1K
 
 matchlen_match4_match_nolit2_encodeBlockAsm1K:
 	CMPL DI, $0x04
@@ -8428,7 +8157,6 @@ check_maxskip_cont_encodeBetterBlockAsm:
 	SHLQ  $0x08, R12
 	IMULQ R11, R12
 	SHRQ  $0x2f, R12
-	SHLQ  $0x20, R13
 	IMULQ R8, R13
 	SHRQ  $0x32, R13
 	MOVL  (DI)(R12*4), R8
@@ -8669,16 +8397,10 @@ matchlen_loop_16_entry_repeat_extend_encodeBetterBlockAsm:
 	JMP  matchlen_match8_repeat_extend_encodeBetterBlockAsm
 
 matchlen_bsf_16repeat_extend_encodeBetterBlockAsm:
-#ifdef GOAMD64_v3
 	TZCNTQ R13, R13
-
-#else
-	BSFQ R13, R13
-
-#endif
-	SARQ $0x03, R13
-	LEAL 8(R12)(R13*1), R12
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm
+	SARQ   $0x03, R13
+	LEAL   8(R12)(R13*1), R12
+	JMP    repeat_extend_forward_end_encodeBetterBlockAsm
 
 matchlen_match8_repeat_extend_encodeBetterBlockAsm:
 	CMPL R9, $0x08
@@ -8691,16 +8413,10 @@ matchlen_match8_repeat_extend_encodeBetterBlockAsm:
 	JMP  matchlen_match4_repeat_extend_encodeBetterBlockAsm
 
 matchlen_bsf_8_repeat_extend_encodeBetterBlockAsm:
-#ifdef GOAMD64_v3
 	TZCNTQ R11, R11
-
-#else
-	BSFQ R11, R11
-
-#endif
-	SARQ $0x03, R11
-	LEAL (R12)(R11*1), R12
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm
+	SARQ   $0x03, R11
+	LEAL   (R12)(R11*1), R12
+	JMP    repeat_extend_forward_end_encodeBetterBlockAsm
 
 matchlen_match4_repeat_extend_encodeBetterBlockAsm:
 	CMPL R9, $0x04
@@ -8859,16 +8575,10 @@ matchlen_loop_16_entry_match_nolit_encodeBetterBlockAsm:
 	JMP  matchlen_match8_match_nolit_encodeBetterBlockAsm
 
 matchlen_bsf_16match_nolit_encodeBetterBlockAsm:
-#ifdef GOAMD64_v3
 	TZCNTQ R14, R14
-
-#else
-	BSFQ R14, R14
-
-#endif
-	SARQ $0x03, R14
-	LEAL 8(R13)(R14*1), R13
-	JMP  match_nolit_end_encodeBetterBlockAsm
+	SARQ   $0x03, R14
+	LEAL   8(R13)(R14*1), R13
+	JMP    match_nolit_end_encodeBetterBlockAsm
 
 matchlen_match8_match_nolit_encodeBetterBlockAsm:
 	CMPL R9, $0x08
@@ -8881,16 +8591,10 @@ matchlen_match8_match_nolit_encodeBetterBlockAsm:
 	JMP  matchlen_match4_match_nolit_encodeBetterBlockAsm
 
 matchlen_bsf_8_match_nolit_encodeBetterBlockAsm:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL (R13)(R12*1), R13
-	JMP  match_nolit_end_encodeBetterBlockAsm
+	SARQ   $0x03, R12
+	LEAL   (R13)(R12*1), R13
+	JMP    match_nolit_end_encodeBetterBlockAsm
 
 matchlen_match4_match_nolit_encodeBetterBlockAsm:
 	CMPL R9, $0x04
@@ -9568,13 +9272,11 @@ match_nolit_dst_ok_encodeBetterBlockAsm:
 	SHLQ  $0x08, R12
 	IMULQ R9, R12
 	SHRQ  $0x2f, R12
-	SHLQ  $0x20, R13
 	IMULQ R10, R13
 	SHRQ  $0x32, R13
 	SHLQ  $0x08, R14
 	IMULQ R9, R14
 	SHRQ  $0x2f, R14
-	SHLQ  $0x20, R15
 	IMULQ R10, R15
 	SHRQ  $0x32, R15
 	LEAQ  1(DI), R10
@@ -9869,7 +9571,6 @@ check_maxskip_cont_encodeBetterBlockAsm2MB:
 	SHLQ  $0x08, R10
 	IMULQ R9, R10
 	SHRQ  $0x2f, R10
-	SHLQ  $0x20, R11
 	IMULQ SI, R11
 	SHRQ  $0x32, R11
 	MOVL  (BX)(R10*4), SI
@@ -10101,16 +9802,10 @@ matchlen_loop_16_entry_repeat_extend_encodeBetterBlockAsm2MB:
 	JMP  matchlen_match8_repeat_extend_encodeBetterBlockAsm2MB
 
 matchlen_bsf_16repeat_extend_encodeBetterBlockAsm2MB:
-#ifdef GOAMD64_v3
 	TZCNTQ R11, R11
-
-#else
-	BSFQ R11, R11
-
-#endif
-	SARQ $0x03, R11
-	LEAL 8(R10)(R11*1), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm2MB
+	SARQ   $0x03, R11
+	LEAL   8(R10)(R11*1), R10
+	JMP    repeat_extend_forward_end_encodeBetterBlockAsm2MB
 
 matchlen_match8_repeat_extend_encodeBetterBlockAsm2MB:
 	CMPL DI, $0x08
@@ -10123,16 +9818,10 @@ matchlen_match8_repeat_extend_encodeBetterBlockAsm2MB:
 	JMP  matchlen_match4_repeat_extend_encodeBetterBlockAsm2MB
 
 matchlen_bsf_8_repeat_extend_encodeBetterBlockAsm2MB:
-#ifdef GOAMD64_v3
 	TZCNTQ R9, R9
-
-#else
-	BSFQ R9, R9
-
-#endif
-	SARQ $0x03, R9
-	LEAL (R10)(R9*1), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm2MB
+	SARQ   $0x03, R9
+	LEAL   (R10)(R9*1), R10
+	JMP    repeat_extend_forward_end_encodeBetterBlockAsm2MB
 
 matchlen_match4_repeat_extend_encodeBetterBlockAsm2MB:
 	CMPL DI, $0x04
@@ -10279,16 +9968,10 @@ matchlen_loop_16_entry_match_nolit_encodeBetterBlockAsm2MB:
 	JMP  matchlen_match8_match_nolit_encodeBetterBlockAsm2MB
 
 matchlen_bsf_16match_nolit_encodeBetterBlockAsm2MB:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm2MB
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    match_nolit_end_encodeBetterBlockAsm2MB
 
 matchlen_match8_match_nolit_encodeBetterBlockAsm2MB:
 	CMPL DI, $0x08
@@ -10301,16 +9984,10 @@ matchlen_match8_match_nolit_encodeBetterBlockAsm2MB:
 	JMP  matchlen_match4_match_nolit_encodeBetterBlockAsm2MB
 
 matchlen_bsf_8_match_nolit_encodeBetterBlockAsm2MB:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm2MB
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    match_nolit_end_encodeBetterBlockAsm2MB
 
 matchlen_match4_match_nolit_encodeBetterBlockAsm2MB:
 	CMPL DI, $0x04
@@ -10988,13 +10665,11 @@ match_nolit_dst_ok_encodeBetterBlockAsm2MB:
 	SHLQ  $0x08, R10
 	IMULQ DI, R10
 	SHRQ  $0x2f, R10
-	SHLQ  $0x20, R11
 	IMULQ R8, R11
 	SHRQ  $0x32, R11
 	SHLQ  $0x08, R12
 	IMULQ DI, R12
 	SHRQ  $0x2f, R12
-	SHLQ  $0x20, R13
 	IMULQ R8, R13
 	SHRQ  $0x32, R13
 	LEAQ  1(BX), R8
@@ -11289,7 +10964,6 @@ check_maxskip_cont_encodeBetterBlockAsm512K:
 	SHLQ  $0x08, R10
 	IMULQ R9, R10
 	SHRQ  $0x30, R10
-	SHLQ  $0x20, R11
 	IMULQ SI, R11
 	SHRQ  $0x33, R11
 	MOVL  (BX)(R10*4), SI
@@ -11530,16 +11204,10 @@ matchlen_loop_16_entry_repeat_extend_encodeBetterBlockAsm512K:
 	JMP  matchlen_match8_repeat_extend_encodeBetterBlockAsm512K
 
 matchlen_bsf_16repeat_extend_encodeBetterBlockAsm512K:
-#ifdef GOAMD64_v3
 	TZCNTQ R11, R11
-
-#else
-	BSFQ R11, R11
-
-#endif
-	SARQ $0x03, R11
-	LEAL 8(R10)(R11*1), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm512K
+	SARQ   $0x03, R11
+	LEAL   8(R10)(R11*1), R10
+	JMP    repeat_extend_forward_end_encodeBetterBlockAsm512K
 
 matchlen_match8_repeat_extend_encodeBetterBlockAsm512K:
 	CMPL DI, $0x08
@@ -11552,16 +11220,10 @@ matchlen_match8_repeat_extend_encodeBetterBlockAsm512K:
 	JMP  matchlen_match4_repeat_extend_encodeBetterBlockAsm512K
 
 matchlen_bsf_8_repeat_extend_encodeBetterBlockAsm512K:
-#ifdef GOAMD64_v3
 	TZCNTQ R9, R9
-
-#else
-	BSFQ R9, R9
-
-#endif
-	SARQ $0x03, R9
-	LEAL (R10)(R9*1), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm512K
+	SARQ   $0x03, R9
+	LEAL   (R10)(R9*1), R10
+	JMP    repeat_extend_forward_end_encodeBetterBlockAsm512K
 
 matchlen_match4_repeat_extend_encodeBetterBlockAsm512K:
 	CMPL DI, $0x04
@@ -11708,16 +11370,10 @@ matchlen_loop_16_entry_match_nolit_encodeBetterBlockAsm512K:
 	JMP  matchlen_match8_match_nolit_encodeBetterBlockAsm512K
 
 matchlen_bsf_16match_nolit_encodeBetterBlockAsm512K:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm512K
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    match_nolit_end_encodeBetterBlockAsm512K
 
 matchlen_match8_match_nolit_encodeBetterBlockAsm512K:
 	CMPL DI, $0x08
@@ -11730,16 +11386,10 @@ matchlen_match8_match_nolit_encodeBetterBlockAsm512K:
 	JMP  matchlen_match4_match_nolit_encodeBetterBlockAsm512K
 
 matchlen_bsf_8_match_nolit_encodeBetterBlockAsm512K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm512K
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    match_nolit_end_encodeBetterBlockAsm512K
 
 matchlen_match4_match_nolit_encodeBetterBlockAsm512K:
 	CMPL DI, $0x04
@@ -12435,13 +12085,11 @@ match_nolit_dst_ok_encodeBetterBlockAsm512K:
 	SHLQ  $0x08, R10
 	IMULQ DI, R10
 	SHRQ  $0x30, R10
-	SHLQ  $0x20, R11
 	IMULQ R8, R11
 	SHRQ  $0x33, R11
 	SHLQ  $0x08, R12
 	IMULQ DI, R12
 	SHRQ  $0x30, R12
-	SHLQ  $0x20, R13
 	IMULQ R8, R13
 	SHRQ  $0x33, R13
 	LEAQ  1(BX), R8
@@ -12728,7 +12376,6 @@ search_loop_encodeBetterBlockAsm64K:
 	SHLQ    $0x10, R10
 	IMULQ   R9, R10
 	SHRQ    $0x31, R10
-	SHLQ    $0x20, R11
 	IMULQ   SI, R11
 	SHRQ    $0x34, R11
 	MOVWLZX (BX)(R10*2), SI
@@ -12968,16 +12615,10 @@ matchlen_loop_16_entry_repeat_extend_encodeBetterBlockAsm64K:
 	JMP  matchlen_match8_repeat_extend_encodeBetterBlockAsm64K
 
 matchlen_bsf_16repeat_extend_encodeBetterBlockAsm64K:
-#ifdef GOAMD64_v3
 	TZCNTQ R11, R11
-
-#else
-	BSFQ R11, R11
-
-#endif
-	SARQ $0x03, R11
-	LEAL 8(R10)(R11*1), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm64K
+	SARQ   $0x03, R11
+	LEAL   8(R10)(R11*1), R10
+	JMP    repeat_extend_forward_end_encodeBetterBlockAsm64K
 
 matchlen_match8_repeat_extend_encodeBetterBlockAsm64K:
 	CMPL DI, $0x08
@@ -12990,16 +12631,10 @@ matchlen_match8_repeat_extend_encodeBetterBlockAsm64K:
 	JMP  matchlen_match4_repeat_extend_encodeBetterBlockAsm64K
 
 matchlen_bsf_8_repeat_extend_encodeBetterBlockAsm64K:
-#ifdef GOAMD64_v3
 	TZCNTQ R9, R9
-
-#else
-	BSFQ R9, R9
-
-#endif
-	SARQ $0x03, R9
-	LEAL (R10)(R9*1), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm64K
+	SARQ   $0x03, R9
+	LEAL   (R10)(R9*1), R10
+	JMP    repeat_extend_forward_end_encodeBetterBlockAsm64K
 
 matchlen_match4_repeat_extend_encodeBetterBlockAsm64K:
 	CMPL DI, $0x04
@@ -13146,16 +12781,10 @@ matchlen_loop_16_entry_match_nolit_encodeBetterBlockAsm64K:
 	JMP  matchlen_match8_match_nolit_encodeBetterBlockAsm64K
 
 matchlen_bsf_16match_nolit_encodeBetterBlockAsm64K:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm64K
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    match_nolit_end_encodeBetterBlockAsm64K
 
 matchlen_match8_match_nolit_encodeBetterBlockAsm64K:
 	CMPL DI, $0x08
@@ -13168,16 +12797,10 @@ matchlen_match8_match_nolit_encodeBetterBlockAsm64K:
 	JMP  matchlen_match4_match_nolit_encodeBetterBlockAsm64K
 
 matchlen_bsf_8_match_nolit_encodeBetterBlockAsm64K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm64K
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    match_nolit_end_encodeBetterBlockAsm64K
 
 matchlen_match4_match_nolit_encodeBetterBlockAsm64K:
 	CMPL DI, $0x04
@@ -13765,13 +13388,11 @@ match_nolit_dst_ok_encodeBetterBlockAsm64K:
 	SHLQ  $0x10, R10
 	IMULQ DI, R10
 	SHRQ  $0x31, R10
-	SHLQ  $0x20, R11
 	IMULQ R8, R11
 	SHRQ  $0x34, R11
 	SHLQ  $0x10, R12
 	IMULQ DI, R12
 	SHRQ  $0x31, R12
-	SHLQ  $0x20, R13
 	IMULQ R8, R13
 	SHRQ  $0x34, R13
 	LEAQ  1(BX), R8
@@ -14057,7 +13678,6 @@ search_loop_encodeBetterBlockAsm16K:
 	SHLQ    $0x10, R10
 	IMULQ   R9, R10
 	SHRQ    $0x32, R10
-	SHLQ    $0x20, R11
 	IMULQ   SI, R11
 	SHRQ    $0x35, R11
 	MOVWLZX (BX)(R10*2), SI
@@ -14289,16 +13909,10 @@ matchlen_loop_16_entry_repeat_extend_encodeBetterBlockAsm16K:
 	JMP  matchlen_match8_repeat_extend_encodeBetterBlockAsm16K
 
 matchlen_bsf_16repeat_extend_encodeBetterBlockAsm16K:
-#ifdef GOAMD64_v3
 	TZCNTQ R11, R11
-
-#else
-	BSFQ R11, R11
-
-#endif
-	SARQ $0x03, R11
-	LEAL 8(R10)(R11*1), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm16K
+	SARQ   $0x03, R11
+	LEAL   8(R10)(R11*1), R10
+	JMP    repeat_extend_forward_end_encodeBetterBlockAsm16K
 
 matchlen_match8_repeat_extend_encodeBetterBlockAsm16K:
 	CMPL DI, $0x08
@@ -14311,16 +13925,10 @@ matchlen_match8_repeat_extend_encodeBetterBlockAsm16K:
 	JMP  matchlen_match4_repeat_extend_encodeBetterBlockAsm16K
 
 matchlen_bsf_8_repeat_extend_encodeBetterBlockAsm16K:
-#ifdef GOAMD64_v3
 	TZCNTQ R9, R9
-
-#else
-	BSFQ R9, R9
-
-#endif
-	SARQ $0x03, R9
-	LEAL (R10)(R9*1), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm16K
+	SARQ   $0x03, R9
+	LEAL   (R10)(R9*1), R10
+	JMP    repeat_extend_forward_end_encodeBetterBlockAsm16K
 
 matchlen_match4_repeat_extend_encodeBetterBlockAsm16K:
 	CMPL DI, $0x04
@@ -14467,16 +14075,10 @@ matchlen_loop_16_entry_match_nolit_encodeBetterBlockAsm16K:
 	JMP  matchlen_match8_match_nolit_encodeBetterBlockAsm16K
 
 matchlen_bsf_16match_nolit_encodeBetterBlockAsm16K:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm16K
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    match_nolit_end_encodeBetterBlockAsm16K
 
 matchlen_match8_match_nolit_encodeBetterBlockAsm16K:
 	CMPL DI, $0x08
@@ -14489,16 +14091,10 @@ matchlen_match8_match_nolit_encodeBetterBlockAsm16K:
 	JMP  matchlen_match4_match_nolit_encodeBetterBlockAsm16K
 
 matchlen_bsf_8_match_nolit_encodeBetterBlockAsm16K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm16K
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    match_nolit_end_encodeBetterBlockAsm16K
 
 matchlen_match4_match_nolit_encodeBetterBlockAsm16K:
 	CMPL DI, $0x04
@@ -15070,13 +14666,11 @@ match_nolit_dst_ok_encodeBetterBlockAsm16K:
 	SHLQ  $0x10, R10
 	IMULQ DI, R10
 	SHRQ  $0x32, R10
-	SHLQ  $0x20, R11
 	IMULQ R8, R11
 	SHRQ  $0x35, R11
 	SHLQ  $0x10, R12
 	IMULQ DI, R12
 	SHRQ  $0x32, R12
-	SHLQ  $0x20, R13
 	IMULQ R8, R13
 	SHRQ  $0x35, R13
 	LEAQ  1(BX), R8
@@ -15354,7 +14948,6 @@ search_loop_encodeBetterBlockAsm4K:
 	SHLQ    $0x10, R10
 	IMULQ   R9, R10
 	SHRQ    $0x34, R10
-	SHLQ    $0x20, R11
 	IMULQ   SI, R11
 	SHRQ    $0x36, R11
 	MOVWLZX (BX)(R10*2), SI
@@ -15586,16 +15179,10 @@ matchlen_loop_16_entry_repeat_extend_encodeBetterBlockAsm4K:
 	JMP  matchlen_match8_repeat_extend_encodeBetterBlockAsm4K
 
 matchlen_bsf_16repeat_extend_encodeBetterBlockAsm4K:
-#ifdef GOAMD64_v3
 	TZCNTQ R11, R11
-
-#else
-	BSFQ R11, R11
-
-#endif
-	SARQ $0x03, R11
-	LEAL 8(R10)(R11*1), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm4K
+	SARQ   $0x03, R11
+	LEAL   8(R10)(R11*1), R10
+	JMP    repeat_extend_forward_end_encodeBetterBlockAsm4K
 
 matchlen_match8_repeat_extend_encodeBetterBlockAsm4K:
 	CMPL DI, $0x08
@@ -15608,16 +15195,10 @@ matchlen_match8_repeat_extend_encodeBetterBlockAsm4K:
 	JMP  matchlen_match4_repeat_extend_encodeBetterBlockAsm4K
 
 matchlen_bsf_8_repeat_extend_encodeBetterBlockAsm4K:
-#ifdef GOAMD64_v3
 	TZCNTQ R9, R9
-
-#else
-	BSFQ R9, R9
-
-#endif
-	SARQ $0x03, R9
-	LEAL (R10)(R9*1), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm4K
+	SARQ   $0x03, R9
+	LEAL   (R10)(R9*1), R10
+	JMP    repeat_extend_forward_end_encodeBetterBlockAsm4K
 
 matchlen_match4_repeat_extend_encodeBetterBlockAsm4K:
 	CMPL DI, $0x04
@@ -15764,16 +15345,10 @@ matchlen_loop_16_entry_match_nolit_encodeBetterBlockAsm4K:
 	JMP  matchlen_match8_match_nolit_encodeBetterBlockAsm4K
 
 matchlen_bsf_16match_nolit_encodeBetterBlockAsm4K:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm4K
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    match_nolit_end_encodeBetterBlockAsm4K
 
 matchlen_match8_match_nolit_encodeBetterBlockAsm4K:
 	CMPL DI, $0x08
@@ -15786,16 +15361,10 @@ matchlen_match8_match_nolit_encodeBetterBlockAsm4K:
 	JMP  matchlen_match4_match_nolit_encodeBetterBlockAsm4K
 
 matchlen_bsf_8_match_nolit_encodeBetterBlockAsm4K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm4K
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    match_nolit_end_encodeBetterBlockAsm4K
 
 matchlen_match4_match_nolit_encodeBetterBlockAsm4K:
 	CMPL DI, $0x04
@@ -16367,13 +15936,11 @@ match_nolit_dst_ok_encodeBetterBlockAsm4K:
 	SHLQ  $0x10, R10
 	IMULQ DI, R10
 	SHRQ  $0x34, R10
-	SHLQ  $0x20, R11
 	IMULQ R8, R11
 	SHRQ  $0x36, R11
 	SHLQ  $0x10, R12
 	IMULQ DI, R12
 	SHRQ  $0x34, R12
-	SHLQ  $0x20, R13
 	IMULQ R8, R13
 	SHRQ  $0x36, R13
 	LEAQ  1(BX), R8
@@ -16651,7 +16218,6 @@ search_loop_encodeBetterBlockAsm1K:
 	SHLQ    $0x10, R10
 	IMULQ   R9, R10
 	SHRQ    $0x35, R10
-	SHLQ    $0x20, R11
 	IMULQ   SI, R11
 	SHRQ    $0x38, R11
 	MOVWLZX (BX)(R10*2), SI
@@ -16883,16 +16449,10 @@ matchlen_loop_16_entry_repeat_extend_encodeBetterBlockAsm1K:
 	JMP  matchlen_match8_repeat_extend_encodeBetterBlockAsm1K
 
 matchlen_bsf_16repeat_extend_encodeBetterBlockAsm1K:
-#ifdef GOAMD64_v3
 	TZCNTQ R11, R11
-
-#else
-	BSFQ R11, R11
-
-#endif
-	SARQ $0x03, R11
-	LEAL 8(R10)(R11*1), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm1K
+	SARQ   $0x03, R11
+	LEAL   8(R10)(R11*1), R10
+	JMP    repeat_extend_forward_end_encodeBetterBlockAsm1K
 
 matchlen_match8_repeat_extend_encodeBetterBlockAsm1K:
 	CMPL DI, $0x08
@@ -16905,16 +16465,10 @@ matchlen_match8_repeat_extend_encodeBetterBlockAsm1K:
 	JMP  matchlen_match4_repeat_extend_encodeBetterBlockAsm1K
 
 matchlen_bsf_8_repeat_extend_encodeBetterBlockAsm1K:
-#ifdef GOAMD64_v3
 	TZCNTQ R9, R9
-
-#else
-	BSFQ R9, R9
-
-#endif
-	SARQ $0x03, R9
-	LEAL (R10)(R9*1), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm1K
+	SARQ   $0x03, R9
+	LEAL   (R10)(R9*1), R10
+	JMP    repeat_extend_forward_end_encodeBetterBlockAsm1K
 
 matchlen_match4_repeat_extend_encodeBetterBlockAsm1K:
 	CMPL DI, $0x04
@@ -17061,16 +16615,10 @@ matchlen_loop_16_entry_match_nolit_encodeBetterBlockAsm1K:
 	JMP  matchlen_match8_match_nolit_encodeBetterBlockAsm1K
 
 matchlen_bsf_16match_nolit_encodeBetterBlockAsm1K:
-#ifdef GOAMD64_v3
 	TZCNTQ R12, R12
-
-#else
-	BSFQ R12, R12
-
-#endif
-	SARQ $0x03, R12
-	LEAL 8(R11)(R12*1), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm1K
+	SARQ   $0x03, R12
+	LEAL   8(R11)(R12*1), R11
+	JMP    match_nolit_end_encodeBetterBlockAsm1K
 
 matchlen_match8_match_nolit_encodeBetterBlockAsm1K:
 	CMPL DI, $0x08
@@ -17083,16 +16631,10 @@ matchlen_match8_match_nolit_encodeBetterBlockAsm1K:
 	JMP  matchlen_match4_match_nolit_encodeBetterBlockAsm1K
 
 matchlen_bsf_8_match_nolit_encodeBetterBlockAsm1K:
-#ifdef GOAMD64_v3
 	TZCNTQ R10, R10
-
-#else
-	BSFQ R10, R10
-
-#endif
-	SARQ $0x03, R10
-	LEAL (R11)(R10*1), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm1K
+	SARQ   $0x03, R10
+	LEAL   (R11)(R10*1), R11
+	JMP    match_nolit_end_encodeBetterBlockAsm1K
 
 matchlen_match4_match_nolit_encodeBetterBlockAsm1K:
 	CMPL DI, $0x04
@@ -17664,13 +17206,11 @@ match_nolit_dst_ok_encodeBetterBlockAsm1K:
 	SHLQ  $0x10, R10
 	IMULQ DI, R10
 	SHRQ  $0x35, R10
-	SHLQ  $0x20, R11
 	IMULQ R8, R11
 	SHRQ  $0x38, R11
 	SHLQ  $0x10, R12
 	IMULQ DI, R12
 	SHRQ  $0x35, R12
-	SHLQ  $0x20, R13
 	IMULQ R8, R13
 	SHRQ  $0x38, R13
 	LEAQ  1(BX), R8
@@ -18497,16 +18037,10 @@ matchlen_loop_16_entry_standalone:
 	JMP  matchlen_match8_standalone
 
 matchlen_bsf_16standalone:
-#ifdef GOAMD64_v3
 	TZCNTQ DI, DI
-
-#else
-	BSFQ DI, DI
-
-#endif
-	SARQ $0x03, DI
-	LEAL 8(SI)(DI*1), SI
-	JMP  gen_match_len_end
+	SARQ   $0x03, DI
+	LEAL   8(SI)(DI*1), SI
+	JMP    gen_match_len_end
 
 matchlen_match8_standalone:
 	CMPL DX, $0x08
@@ -18519,16 +18053,10 @@ matchlen_match8_standalone:
 	JMP  matchlen_match4_standalone
 
 matchlen_bsf_8_standalone:
-#ifdef GOAMD64_v3
 	TZCNTQ BX, BX
-
-#else
-	BSFQ BX, BX
-
-#endif
-	SARQ $0x03, BX
-	LEAL (SI)(BX*1), SI
-	JMP  gen_match_len_end
+	SARQ   $0x03, BX
+	LEAL   (SI)(BX*1), SI
+	JMP    gen_match_len_end
 
 matchlen_match4_standalone:
 	CMPL DX, $0x04
