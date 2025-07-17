@@ -180,6 +180,20 @@ func (r regTable) LoadIdx(idx, dst reg.GPVirtual) {
 	}
 }
 
+// Pretty bad performance.
+func (r regTable) XchIdx(idx, val reg.GPVirtual) {
+	switch r.scale {
+	case 1:
+		XCHGB(Mem{Base: r.r, Index: idx, Scale: r.scale, Disp: r.disp}, val.As8())
+	case 2:
+		XCHGW(Mem{Base: r.r, Index: idx, Scale: r.scale, Disp: r.disp}, val.As16())
+	case 4:
+		XCHGL(Mem{Base: r.r, Index: idx, Scale: r.scale, Disp: r.disp}, val.As32())
+	default:
+		panic(r.scale)
+	}
+}
+
 func (r regTable) SaveIdx(val, idx reg.GPVirtual) {
 	switch r.scale {
 	case 1:
@@ -383,6 +397,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 	Load(Param("src").Base(), src)
 
 	// Load cv
+	PCALIGN(16)
 	Label("search_loop_" + name)
 	candidate := GP32()
 	{
@@ -425,12 +440,20 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 				ifok()
 				return
 			}
-			skip := fmt.Sprintf("offset_ok_%d_%s", ccCounter, name)
-			ccCounter++
-			CMPL(cand.As32(), minPos.As32())
-			JLE(LabelRef(skip))
-			ifok()
-			Label(skip)
+			if true {
+				// Use CMOV over JLE to avoid a jump.
+				// Intel seems to favor this.
+				CMPL(cand.As32(), minPos.As32())
+				CMOVLLE(minPos.As32(), cand.As32())
+				ifok()
+			} else {
+				skip := fmt.Sprintf("offset_ok_%d_%s", ccCounter, name)
+				ccCounter++
+				CMPL(cand.As32(), minPos.As32())
+				JLE(LabelRef(skip))
+				ifok()
+				Label(skip)
+			}
 		}
 		assert(func(ok LabelRef) {
 			// Check if s is valid (we should have jumped above if not)
@@ -600,6 +623,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 			}
 			JMP(LabelRef("search_loop_" + name))
 		}
+		PCALIGN(16)
 		Label("no_repeat_found_" + name)
 		{
 			// Check candidates are ok. All must be < s and < len(src)
@@ -658,11 +682,11 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 				JEQ(LabelRef("candidate2_match_" + name))
 			})
 
-			// table[hash2] = uint32(s + 2)
-			table.SaveIdx(tmp, hash2)
-
 			// cv >>= 8 (>> 16 total)
 			SHRQ(U8(8), cv)
+
+			// table[hash2] = uint32(s + 2)
+			table.SaveIdx(tmp, hash2)
 
 			// if uint32(cv>>16) == load32(src, candidate)
 			checkCandidate(candidate, func() {
@@ -690,6 +714,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 		}
 	}
 
+	PCALIGN(16)
 	Label("candidate_match_" + name)
 	// We have a match at 's' with src offset in "candidate" that matches at least 4 bytes.
 	// Extend backwards
@@ -829,6 +854,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 			o.emitLiteral("match_emit_"+name, litLen, nil, dst, litSrc, LabelRef("match_nolits_copy_"+name), true)
 		}
 
+		PCALIGN(16)
 		Label("match_nolits_copy_" + name)
 		o.emitCopy("match_nolit_"+name, length, offset, nil, dst, LabelRef("match_nolit_emitcopy_end_"+name))
 		Label("match_nolit_emitcopy_end_" + name)
@@ -1167,6 +1193,7 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 	Load(Param("src").Base(), src)
 
 	// Load cv
+	PCALIGN(16)
 	Label("search_loop_" + name)
 	reloadTables("tmp", &sTab, &lTab)
 	candidate := GP32()
@@ -1226,28 +1253,24 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 		// move nextS to stack.
 		MOVL(nextS.As32(), nextSTempL)
 
-		candidateS := GP32()
 		lHasher := hashN(o, lHashBytes, lTableBits)
 		{
-			sHasher := hashN(o, sHashBytes, sTableBits)
-			hash0, hash1 := GP64(), GP64()
+			hash0 := GP64()
 			MOVQ(cv, hash0)
-			MOVQ(cv, hash1)
 			lHasher.hash(hash0)
-			sHasher.hash(hash1)
-			lTab.LoadIdx(hash0, candidate)
-			sTab.LoadIdx(hash1, candidateS)
 			assert(func(ok LabelRef) {
 				CMPQ(hash0, U32(lTableSize))
 				JB(ok)
 			})
-			assert(func(ok LabelRef) {
-				CMPQ(hash1, U32(sTableSize))
-				JB(ok)
-			})
-
-			lTab.SaveIdx(s, hash0)
-			sTab.SaveIdx(s, hash1)
+			if false {
+				MOVL(s, candidate)
+				lTab.XchIdx(hash0, candidate)
+			} else {
+				// Load candidate from lTab
+				lTab.LoadIdx(hash0, candidate)
+				// Store s in lTab
+				lTab.SaveIdx(s, hash0)
+			}
 		}
 		// Check if offset exceeds max
 		var ccCounter int
@@ -1276,12 +1299,6 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 			MOVQ(Mem{Base: src, Index: candidate, Scale: 1}, longVal)
 			CMPQ(longVal, cv.As64())
 			JEQ(LabelRef("candidate_match_" + name))
-		})
-
-		// Load short early...
-		checkCandidate(candidateS, func() {
-			MOVQ(Mem{Base: src, Index: candidateS, Scale: 1}, shortVal)
-			CMPQ(shortVal, cv.As64())
 		})
 
 		// En/disable repeat matching.
@@ -1419,7 +1436,30 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 			}
 			JMP(LabelRef("search_loop_" + name))
 		}
+		PCALIGN(16)
 		Label("no_repeat_found_" + name)
+		candidateS := GP32()
+		{
+			sHasher := hashN(o, sHashBytes, sTableBits)
+			hash1 := GP64()
+			MOVQ(cv, hash1)
+			sHasher.hash(hash1)
+			assert(func(ok LabelRef) {
+				CMPQ(hash1, U32(sTableSize))
+				JB(ok)
+			})
+			if false {
+				MOVL(s.As32(), candidateS)
+				sTab.XchIdx(hash1, candidateS)
+			} else {
+				// Load candidateS from sTab
+				sTab.LoadIdx(hash1, candidateS)
+				// Store s in sTab
+				sTab.SaveIdx(s, hash1)
+			}
+			// Load short early...
+			MOVQ(Mem{Base: src, Index: candidateS, Scale: 1}, shortVal)
+		}
 		{
 			// Check candidates are ok. All must be < s and < len(src)
 			assert(func(ok LabelRef) {
@@ -1484,6 +1524,7 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 		}
 	}
 
+	PCALIGN(16)
 	Label("candidate_match_" + name)
 	// We have a match at 's' with src offset in "candidate" that matches at least 4 bytes.
 	// Extend backwards
@@ -2777,6 +2818,7 @@ func (o options) genMemMoveShort(name string, dst, src, length reg.GPVirtual, en
 	}
 
 	if minMove <= 16 {
+		PCALIGN(16)
 		Label(name + "move_8through16")
 		if margin < 16 {
 			MOVQ(Mem{Base: src}, AX)
@@ -3555,6 +3597,10 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	}
 
 	// LOOP
+	if !prefetch {
+		// Triggers https://github.com/golang/go/issues/74648
+		//PCALIGN(16)
+	}
 	Label(name + "_loop")
 	CMPQ(src, srcLimit)
 	JAE(LabelRef(name + "_end_copy"))
@@ -3562,7 +3608,10 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	MOVQ(tag, value)
 	SHRQ(U8(2), value)
 
-	Label(name + "_loop_nofetch")
+	if prefetch {
+		PCALIGN(16)
+		Label(name + "_loop_nofetch")
+	}
 	// Check destination
 	CMPQ(dst, dstLimit)
 	JAE(LabelRef(name + "_end_copy"))
@@ -3573,6 +3622,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	JNZ(LabelRef(name + "_copy"))
 	// TAG 00 Literals
 	length := GP64()
+	PCALIGN(16)
 	Label(name + "_lits")
 	{
 		MOVL(value.As32(), length.As32())
@@ -3585,6 +3635,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 		JMP(LabelRef(name + "_lit_3")) // Must be 31
 
 		// 1 - > 29 literals
+		PCALIGN(16)
 		Label(name + "_lit_0")
 		{
 			INCQ(src)
@@ -3709,6 +3760,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	JMP(LabelRef(name + "_copy_3"))
 
 	// TAG 1 - Copy 1
+	PCALIGN(16)
 	Label(name + "_copy_1")
 	{
 		if o.inputMargin < 2 {
@@ -3771,6 +3823,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	}
 
 	// TAG 2 - Copy 2
+	PCALIGN(16)
 	Label(name + "_copy_2")
 	{
 		// length = int(src[s-3]) >> 2
@@ -3862,6 +3915,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 		}
 	}
 	// TAG 3 - Copy 2/3 fused
+	PCALIGN(16)
 	Label(name + "_copy_3")
 	{
 		if o.inputMargin < 4 {
@@ -4048,6 +4102,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	}
 	// Length always < 64
 	copySrc := GP64()
+	PCALIGN(16)
 	Label(name + "_copy_exec_short")
 	{
 		CMPL(offset.As32(), dstPos.As32())
@@ -4067,6 +4122,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	o.outputMargin -= 4
 
 	// 64 offset, 64 length
+	PCALIGN(16)
 	Label(name + "_copy_exec_long_long")
 	{
 		MOVQ(dst, copySrc)
@@ -4080,8 +4136,10 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 		}
 		o.genMemMoveLong64(name+"_copy_long_long", dst, copySrc, length, LabelRef(name+"_copy_done"))
 	}
+
 	// length 4 -> 64, no overlap
 	// Very hot (16 byte copy mainly)
+	PCALIGN(16)
 	Label(name + "_copy_short_no_ol")
 	{
 		// Create source pointer with offset
@@ -4097,6 +4155,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 		o.genMemMoveShort(name+"_copy_short_no_ol", dst, copySrc, length, LabelRef(name+"_copy_done"), 4)
 	}
 	// Offset anything, length anything
+	PCALIGN(16)
 	Label(name + "_copy_exec")
 	{
 		CMPL(offset.As32(), dstPos.As32())
@@ -4272,4 +4331,11 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	// DONE - store if last was literal if needed.
 	Label(name + "_end_copy")
 	Label(name + "_end_done")
+}
+
+func PCALIGN(n int) {
+	Instruction(&ir.Instruction{
+		Opcode:   "PCALIGN",
+		Operands: []Op{Imm(uint64(n))},
+	})
 }
