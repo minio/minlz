@@ -31,8 +31,12 @@ import (
 	"github.com/mmcloughlin/avo/reg"
 )
 
-// insert extra checks here and there.
-const debug = false
+const (
+	// insert extra checks here and there.
+	debug = false
+	// matchOffsetCMOV is true if we should use CMOV to check match offsets.
+	matchOffsetCMOV = true
+)
 
 func main() {
 	flag.Parse()
@@ -440,7 +444,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 				ifok()
 				return
 			}
-			if true {
+			if matchOffsetCMOV {
 				// Use CMOV over JLE to avoid a jump.
 				// Intel seems to favor this.
 				CMPL(cand.As32(), minPos.As32())
@@ -1284,12 +1288,20 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 				ifok()
 				return
 			}
-			skip := fmt.Sprintf("offset_ok_%d_%s", ccCounter, name)
-			ccCounter++
-			CMPL(cand.As32(), minPos.As32())
-			JLE(LabelRef(skip))
-			ifok()
-			Label(skip)
+			if matchOffsetCMOV {
+				// Use CMOV over JLE to avoid a jump.
+				// Intel seems to favor this.
+				CMPL(cand.As32(), minPos.As32())
+				CMOVLLE(minPos.As32(), cand.As32())
+				ifok()
+			} else {
+				skip := fmt.Sprintf("offset_ok_%d_%s", ccCounter, name)
+				ccCounter++
+				CMPL(cand.As32(), minPos.As32())
+				JL(LabelRef(skip))
+				ifok()
+				Label(skip)
+			}
 		}
 		longVal := GP64()
 		shortVal := GP64()
