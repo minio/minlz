@@ -437,6 +437,8 @@ func (w *Writer) encodeBlock(obuf, uncompressed []byte) int {
 	var n int
 
 	switch w.level {
+	case LevelSuperFast:
+		n = encodeBlockFast(obuf, uncompressed)
 	case LevelFastest:
 		n = encodeBlock(obuf, uncompressed)
 	case LevelBalanced:

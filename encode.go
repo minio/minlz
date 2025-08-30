@@ -23,6 +23,9 @@ import (
 )
 
 const (
+	// LevelSuperFast is the fastest compression level.
+	LevelSuperFast = 0
+
 	// LevelFastest is the fastest compression level.
 	LevelFastest = 1
 
@@ -83,6 +86,8 @@ func Encode(dst, src []byte, level int) ([]byte, error) {
 
 	var n int
 	switch level {
+	case LevelSuperFast:
+		n = encodeBlockFast(dst[d:], src)
 	case LevelFastest:
 		n = encodeBlock(dst[d:], src)
 	case LevelBalanced:

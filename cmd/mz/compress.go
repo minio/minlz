@@ -39,6 +39,7 @@ func mainCompress(args []string) {
 	var (
 		fs = flag.NewFlagSet("compress", flag.ExitOnError)
 
+		superFast = fs.Bool("0", false, "Compress fastest, with a major compression loss")
 		faster    = fs.Bool("1", false, "Compress faster, but with a minor compression loss")
 		_         = fs.Bool("2", true, "Default compression speed")
 		slower    = fs.Bool("3", false, "Compress more, but a lot slower")
@@ -97,6 +98,9 @@ Options:`)
 	}
 	if *slower {
 		level = minlz.LevelSmallest
+	}
+	if *superFast {
+		level = minlz.LevelSuperFast
 	}
 	opts := []minlz.WriterOption{minlz.WriterBlockSize(int(sz)), minlz.WriterConcurrency(*cpu), minlz.WriterPadding(int(pad)), minlz.WriterLevel(level), minlz.WriterAddIndex(*index)}
 	wr := minlz.NewWriter(nil, opts...)

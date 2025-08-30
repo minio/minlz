@@ -30,9 +30,30 @@ const hasAsm = false
 // It also assumes that:
 //
 //	len(dst) >= MaxEncodedLen(len(src))
+func encodeBlockFast(dst, src []byte) (d int) {
+	if len(src) < minNonLiteralBlockSize {
+		return 0
+	}
+	if len(src) <= 65536 {
+		// Only very maginally faster...
+		return encodeFastBlockGo64K(dst, src)
+	}
+	return encodeFastBlockGo(dst, src)
+}
+
+// encodeBlock encodes a non-empty src to a guaranteed-large-enough dst. It
+// assumes that the varint-encoded length of the decompressed bytes has already
+// been written.
+//
+// It also assumes that:
+//
+//	len(dst) >= MaxEncodedLen(len(src))
 func encodeBlock(dst, src []byte) (d int) {
 	if len(src) < minNonLiteralBlockSize {
 		return 0
+	}
+	if len(src) <= 65536 {
+		return encodeBlockGo64K(dst, src)
 	}
 	return encodeBlockGo(dst, src)
 }
@@ -45,6 +66,9 @@ func encodeBlock(dst, src []byte) (d int) {
 //
 //	len(dst) >= MaxEncodedLen(len(src))
 func encodeBlockBetter(dst, src []byte) (d int) {
+	if len(src) <= 64<<10 {
+		return encodeBlockBetterGo64K(dst, src)
+	}
 	return encodeBlockBetterGo(dst, src)
 }
 

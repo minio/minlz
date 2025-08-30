@@ -21,14 +21,7 @@ import (
 	"math/bits"
 )
 
-// hash6 returns the hash of the lowest 6 bytes of u to fit in a hash table with h bits.
-// Preferably h should be a constant and should always be <64.
-func hash6(u uint64, h uint8) uint32 {
-	const prime6bytes = 227718039650203
-	return uint32(((u << (64 - 48)) * prime6bytes) >> ((64 - h) & 63))
-}
-
-// encodeBlockGo encodes a non-empty src to a guaranteed-large-enough dst. It
+// encodeFastBlockGo encodes a non-empty src to a guaranteed-large-enough dst. It
 // assumes that the varint-encoded length of the decompressed bytes has already
 // been written.
 //
@@ -36,12 +29,12 @@ func hash6(u uint64, h uint8) uint32 {
 //
 //	len(dst) >= MaxEncodedLen(len(src)) &&
 //	minNonLiteralBlockSize <= len(src) && len(src) <= maxBlockSize
-func encodeBlockGo(dst, src []byte) (d int) {
+func encodeFastBlockGo(dst, src []byte) (d int) {
 	// Initialize the hash table.
 	const (
-		tableBits    = 15
+		tableBits    = 13
 		maxTableSize = 1 << tableBits
-		skipLog      = 6
+		skipLog      = 5
 
 		debug = debugEncode
 	)
@@ -57,7 +50,7 @@ func encodeBlockGo(dst, src []byte) (d int) {
 	sLimit := len(src) - inputMargin
 
 	// Bail if we can't compress to at least this.
-	dstLimit := len(src) - len(src)>>5 - 6
+	dstLimit := len(src) - len(src)>>4 - 256
 
 	// nextEmit is where in src the next emitLiteral should start from.
 	nextEmit := 0
@@ -76,23 +69,25 @@ func encodeBlockGo(dst, src []byte) (d int) {
 		candidate := 0
 		for {
 			// Next src position to check
-			nextS := s + (s-nextEmit)>>skipLog + 4
+			nextS := s + (s-nextEmit)>>skipLog + 5
 			if nextS > sLimit {
 				goto emitRemainder
 			}
 			minSrcPos := s - maxCopy3Offset
-			hash0 := hash6(cv, tableBits)
-			hash1 := hash6(cv>>8, tableBits)
+			hash0 := hash8(cv, tableBits)
+			cv1 := load64(src, s+1)
+			hash1 := hash8(cv1, tableBits)
 			candidate = int(table[hash0])
 			candidate2 := int(table[hash1])
 			table[hash0] = uint32(s)
 			table[hash1] = uint32(s + 1)
-			hash2 := hash6(cv>>16, tableBits)
+			cv2 := load64(src, s+2)
+			hash2 := hash8(cv2, tableBits)
 
 			// Check repeat at offset checkRep.
 			// Speed impact is very small.
 			const checkRep = 1
-			if uint32(cv>>(checkRep*8)) == load32(src, s-repeat+checkRep) {
+			if uint32(cv1) == load32(src, s-repeat+checkRep) {
 				base := s + checkRep
 				// Extend back
 				for i := base - repeat; base > nextEmit && i > 0 && src[i-1] == src[base-1]; {
@@ -144,18 +139,18 @@ func encodeBlockGo(dst, src []byte) (d int) {
 				continue
 			}
 
-			if candidate >= minSrcPos && uint32(cv) == load32(src, candidate) {
+			if candidate >= minSrcPos && cv == load64(src, candidate) {
 				break
 			}
 			candidate = int(table[hash2])
-			if candidate2 >= minSrcPos && uint32(cv>>8) == load32(src, candidate2) {
+			if candidate2 >= minSrcPos && cv1 == load64(src, candidate2) {
 				table[hash2] = uint32(s + 2)
 				candidate = candidate2
 				s++
 				break
 			}
 			table[hash2] = uint32(s + 2)
-			if candidate >= minSrcPos && uint32(cv>>16) == load32(src, candidate) {
+			if candidate >= minSrcPos && cv2 == load64(src, candidate) {
 				s += 2
 				break
 			}
@@ -166,18 +161,18 @@ func encodeBlockGo(dst, src []byte) (d int) {
 
 		// Extend backwards.
 		// The top bytes will be rechecked to get the full match.
-		for candidate > 0 && s > nextEmit && src[candidate-1] == src[s-1] {
+		for false && candidate > 0 && s > nextEmit && src[candidate-1] == src[s-1] {
 			candidate--
 			s--
 		}
 
-		// A 4-byte match has been found. We'll later see if more than 4 bytes match.
+		// An 8-byte match has been found. We'll later see if more than 4 bytes match.
 		base := s
 		repeat = base - candidate
 
-		// Extend the 4-byte match as long as possible.
-		s += 4
-		candidate += 4
+		// Extend the 8-byte match as long as possible.
+		s += 8
+		candidate += 8
 		for s <= len(src)-8 {
 			if diff := load64(src, s) ^ load64(src, candidate); diff != 0 {
 				s += bits.TrailingZeros64(diff) >> 3
@@ -188,6 +183,7 @@ func encodeBlockGo(dst, src []byte) (d int) {
 		}
 		length := s - base
 		if nextEmit != base {
+			// No significant speedup when disabled.
 			if base-nextEmit > maxCopy3Lits || repeat < minCopy2Offset {
 				// Bail if we exceed the maximum size.
 				// We will not exceed dstLimit with the other encodings.
@@ -231,16 +227,16 @@ func encodeBlockGo(dst, src []byte) (d int) {
 				return 0
 			}
 			// Check for an immediate match, otherwise start search at s+1
-			m2Hash := hash6(x, tableBits)
-			x = x >> 16
-			currHash := hash6(x, tableBits)
+			m2Hash := hash8(x, tableBits)
+			x = load64(src, s)
+			currHash := hash8(x, tableBits)
 			candidate = int(table[currHash])
 			table[m2Hash] = uint32(s - 2)
 			table[currHash] = uint32(s)
 			if debug && s == candidate {
 				panic("s == candidate")
 			}
-			if s-candidate > maxCopy3Offset || uint32(x) != load32(src, candidate) {
+			if s-candidate > maxCopy3Offset || x != load64(src, candidate) {
 				cv = load64(src, s+1)
 				s++
 				break
@@ -248,8 +244,8 @@ func encodeBlockGo(dst, src []byte) (d int) {
 
 			repeat = s - candidate
 			base = s
-			s += 4
-			candidate += 4
+			s += 8
+			candidate += 8
 			for s <= len(src)-8 {
 				if diff := load64(src, s) ^ load64(src, candidate); diff != 0 {
 					s += bits.TrailingZeros64(diff) >> 3
@@ -282,12 +278,12 @@ emitRemainder:
 	return d
 }
 
-func encodeBlockGo64K(dst, src []byte) (d int) {
+func encodeFastBlockGo64K(dst, src []byte) (d int) {
 	// Initialize the hash table.
 	const (
-		tableBits    = 13
+		tableBits    = 12
 		maxTableSize = 1 << tableBits
-		skipLog      = 5
+		skipLog      = 4
 		debug        = debugEncode
 	)
 	// Having values inside the table is ~the same speed as looking up
@@ -301,7 +297,7 @@ func encodeBlockGo64K(dst, src []byte) (d int) {
 	sLimit := len(src) - inputMargin
 
 	// Bail if we can't compress to at least this.
-	dstLimit := len(src) - len(src)>>5 - 6
+	dstLimit := len(src) - len(src)>>4 - 32
 
 	// nextEmit is where in src the next emitLiteral should start from.
 	nextEmit := 0
@@ -324,13 +320,15 @@ func encodeBlockGo64K(dst, src []byte) (d int) {
 			if nextS > sLimit {
 				goto emitRemainder
 			}
-			hash0 := hash5(cv, tableBits)
-			hash1 := hash5(cv>>8, tableBits)
+			hash0 := hash8(cv, tableBits)
+			cv1 := load64(src, s+1)
+			hash1 := hash8(cv1, tableBits)
 			candidate = int(table[hash0])
 			candidate2 := int(table[hash1])
 			table[hash0] = uint16(s)
 			table[hash1] = uint16(s + 1)
-			hash2 := hash5(cv>>16, tableBits)
+			cv2 := load64(src, s+2)
+			hash2 := hash8(cv2, tableBits)
 
 			// Check repeat at offset checkRep.
 			// Speed impact is very small.
@@ -387,18 +385,18 @@ func encodeBlockGo64K(dst, src []byte) (d int) {
 				continue
 			}
 
-			if uint32(cv) == load32(src, candidate) {
+			if cv == load64(src, candidate) {
 				break
 			}
 			candidate = int(table[hash2])
-			if uint32(cv>>8) == load32(src, candidate2) {
+			if cv1 == load64(src, candidate2) {
 				table[hash2] = uint16(s + 2)
 				candidate = candidate2
 				s++
 				break
 			}
 			table[hash2] = uint16(s + 2)
-			if uint32(cv>>16) == load32(src, candidate) {
+			if cv2 == load64(src, candidate) {
 				s += 2
 				break
 			}
@@ -409,7 +407,7 @@ func encodeBlockGo64K(dst, src []byte) (d int) {
 
 		// Extend backwards.
 		// The top bytes will be rechecked to get the full match.
-		for candidate > 0 && s > nextEmit && src[candidate-1] == src[s-1] {
+		for false && candidate > 0 && s > nextEmit && src[candidate-1] == src[s-1] {
 			candidate--
 			s--
 		}
@@ -419,8 +417,8 @@ func encodeBlockGo64K(dst, src []byte) (d int) {
 		repeat = base - candidate
 
 		// Extend the 4-byte match as long as possible.
-		s += 4
-		candidate += 4
+		s += 8
+		candidate += 8
 		for s <= len(src)-8 {
 			if diff := load64(src, s) ^ load64(src, candidate); diff != 0 {
 				s += bits.TrailingZeros64(diff) >> 3
@@ -472,16 +470,16 @@ func encodeBlockGo64K(dst, src []byte) (d int) {
 				return 0
 			}
 			// Check for an immediate match, otherwise start search at s+1
-			m2Hash := hash5(x, tableBits)
-			x = x >> 16
-			currHash := hash5(x, tableBits)
+			m2Hash := hash8(x, tableBits)
+			x = load64(src, s)
+			currHash := hash8(x, tableBits)
 			candidate = int(table[currHash])
 			table[m2Hash] = uint16(s - 2)
 			table[currHash] = uint16(s)
 			if debug && s == candidate {
 				panic("s == candidate")
 			}
-			if uint32(x) != load32(src, candidate) {
+			if x != load64(src, candidate) {
 				cv = load64(src, s+1)
 				s++
 				break
@@ -489,8 +487,8 @@ func encodeBlockGo64K(dst, src []byte) (d int) {
 
 			repeat = s - candidate
 			base = s
-			s += 4
-			candidate += 4
+			s += 8
+			candidate += 8
 			for s <= len(src)-8 {
 				if diff := load64(src, s) ^ load64(src, candidate); diff != 0 {
 					s += bits.TrailingZeros64(diff) >> 3

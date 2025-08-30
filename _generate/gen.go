@@ -51,8 +51,10 @@ func main() {
 		avx2:         false,
 		outputMargin: 17,
 		inputMargin:  17,
-	}
+		skipOutput:   false}
+
 	// 16 bits has too big of a speed impact.
+	o.fastOpts = fastOpts{match8: false, fuselits: true, checkRepeats: false, checkBack: true, skipOne: false, incLoop: 4}
 	o.genEncodeBlockAsm("encodeBlockAsm", 15, 6, 6, 8<<20)
 	o.genEncodeBlockAsm("encodeBlockAsm2MB", 15, 6, 6, 2<<20)
 	o.genEncodeBlockAsm("encodeBlockAsm512K", 14, 6, 6, 512<<10)
@@ -60,6 +62,16 @@ func main() {
 	o.genEncodeBlockAsm("encodeBlockAsm16K", 12, 5, 5, 16<<10)
 	o.genEncodeBlockAsm("encodeBlockAsm4K", 10, 5, 4, 4<<10)
 	o.genEncodeBlockAsm("encodeBlockAsm1K", 9, 4, 4, 1<<10)
+
+	o.fastOpts = fastOpts{match8: true, fuselits: false, checkRepeats: true, checkBack: false, skipOne: false, incLoop: 4}
+	const fastHashBytes = 8
+	o.genEncodeBlockAsm("encodeFastBlockAsm", 14, 5, fastHashBytes, 8<<20)
+	o.genEncodeBlockAsm("encodeFastBlockAsm2MB", 13, 5, fastHashBytes, 2<<20)
+	o.genEncodeBlockAsm("encodeFastBlockAsm512K", 13, 5, fastHashBytes, 512<<10)
+	o.genEncodeBlockAsm("encodeFastBlockAsm64K", 12, 4, fastHashBytes, 64<<10)
+	o.genEncodeBlockAsm("encodeFastBlockAsm16K", 11, 4, fastHashBytes, 16<<10)
+	o.genEncodeBlockAsm("encodeFastBlockAsm4K", 10, 4, fastHashBytes, 4<<10)
+	o.genEncodeBlockAsm("encodeFastBlockAsm1K", 9, 3, fastHashBytes, 1<<10)
 
 	o.maxSkip = 100 // Blocks can be long, limit max skipping.
 	o.genEncodeBetterBlockAsm("encodeBetterBlockAsm", 17, 14, 8, 7, 8<<20)
@@ -184,20 +196,6 @@ func (r regTable) LoadIdx(idx, dst reg.GPVirtual) {
 	}
 }
 
-// Pretty bad performance.
-func (r regTable) XchIdx(idx, val reg.GPVirtual) {
-	switch r.scale {
-	case 1:
-		XCHGB(Mem{Base: r.r, Index: idx, Scale: r.scale, Disp: r.disp}, val.As8())
-	case 2:
-		XCHGW(Mem{Base: r.r, Index: idx, Scale: r.scale, Disp: r.disp}, val.As16())
-	case 4:
-		XCHGL(Mem{Base: r.r, Index: idx, Scale: r.scale, Disp: r.disp}, val.As32())
-	default:
-		panic(r.scale)
-	}
-}
-
 func (r regTable) SaveIdx(val, idx reg.GPVirtual) {
 	switch r.scale {
 	case 1:
@@ -228,6 +226,27 @@ type options struct {
 	inputMargin   int
 	maxSkip       int
 	ignoreMargins bool
+	fastOpts
+}
+
+type fastOpts struct {
+	// Do 8 byte minimum match
+	match8 bool
+
+	// Do fused literals when emitting
+	fuselits bool
+
+	// Check for repeats
+	checkRepeats bool
+
+	// Extend matches backwards
+	checkBack bool
+
+	// Skip checking s+1 when looking for a match.
+	skipOne bool
+
+	// Increment loop by this many bytes when match fails.
+	incLoop int
 }
 
 func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, maxLen int) {
@@ -328,6 +347,12 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 		JNZ(LabelRef("zero_loop_" + name))
 	}
 
+	match8 := o.match8
+	fuselits := o.fuselits
+	checkRepeats := o.checkRepeats
+	checkBack := o.checkBack
+	skipOne := o.skipOne
+
 	{
 		// nextEmit is offset n src where the next emitLiteral should start from.
 		MOVL(U32(0), nextEmitL)
@@ -401,7 +426,6 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 	Load(Param("src").Base(), src)
 
 	// Load cv
-	PCALIGN(16)
 	Label("search_loop_" + name)
 	candidate := GP32()
 	{
@@ -421,7 +445,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 			MOVL(s, tmp.As32())           // tmp = s
 			SUBL(nextEmitL, tmp.As32())   // tmp = s - nextEmit
 			SHRL(U8(skipLog), tmp.As32()) // tmp = (s - nextEmit) >> skipLog
-			LEAL(Mem{Base: s, Disp: 4, Index: tmp, Scale: 1}, nextS)
+			LEAL(Mem{Base: s, Disp: o.incLoop, Index: tmp, Scale: 1}, nextS)
 		} else {
 			panic("maxskip not implemented")
 		}
@@ -474,23 +498,31 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 		{
 			hash0, hash1 := GP64(), GP64()
 			MOVQ(cv, hash0)
-			MOVQ(cv, hash1)
-			SHRQ(U8(8), hash1)
 			hasher.hash(hash0)
-			hasher.hash(hash1)
+			if !skipOne {
+				if hashBytes > 7 {
+					MOVQ(Mem{Base: src, Index: s, Disp: 1, Scale: 1}, hash1)
+				} else {
+					MOVQ(cv, hash1)
+					SHRQ(U8(8), hash1)
+				}
+				hasher.hash(hash1)
+				assert(func(ok LabelRef) {
+					CMPQ(hash1, U32(tableSize))
+					JB(ok)
+				})
+			}
 			table.LoadIdx(hash0, candidate)
 			assert(func(ok LabelRef) {
 				CMPQ(hash0, U32(tableSize))
 				JB(ok)
 			})
-			assert(func(ok LabelRef) {
-				CMPQ(hash1, U32(tableSize))
-				JB(ok)
-			})
 
-			table.LoadIdx(hash1, candidate2)
 			table.SaveIdx(s, hash0)
-			table.SaveIdx(s, hash1)
+			if !skipOne {
+				table.LoadIdx(hash1, candidate2)
+				table.SaveIdx(s, hash1)
+			}
 		}
 
 		// Can be moved up if registers are available.
@@ -498,8 +530,12 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 		{
 			// hash2 := hash6(cv>>16, tableBits)
 			// hasher = hash6(tableBits)
-			MOVQ(cv, hash2)
-			SHRQ(U8(16), hash2)
+			if hashBytes > 6 {
+				MOVQ(Mem{Base: src, Index: s, Disp: 2, Scale: 1}, hash2)
+			} else {
+				MOVQ(cv, hash2)
+				SHRQ(U8(16), hash2)
+			}
 			hasher.hash(hash2)
 			assert(func(ok LabelRef) {
 				CMPQ(hash2, U32(tableSize))
@@ -508,7 +544,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 		}
 
 		// En/disable repeat matching.
-		if true {
+		if checkRepeats {
 			// Check repeat at offset checkRep
 			const checkRep = 1
 			{
@@ -535,7 +571,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 			MOVL(nextEmitL, nextEmit)
 
 			// Extend back
-			if true {
+			if checkBack {
 				i := GP32()
 				MOVL(base, i)
 				SUBL(repeatL, i)
@@ -627,7 +663,6 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 			}
 			JMP(LabelRef("search_loop_" + name))
 		}
-		PCALIGN(16)
 		Label("no_repeat_found_" + name)
 		{
 			// Check candidates are ok. All must be < s and < len(src)
@@ -641,26 +676,38 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 				CMPL(s, cand)
 				JA(ok)
 			})
-			assertCand(candidate2, func(cand reg.Register, ok LabelRef) {
-				tmp := GP64()
-				MOVQ(lenSrcQ, tmp)
-				CMPL(tmp.As32(), cand)
-				JA(ok)
-			})
-			assertCand(candidate2, func(cand reg.Register, ok LabelRef) {
-				CMPL(s, cand)
-				// Candidate2 is at s+1, so s is ok.
-				JAE(ok)
-			})
+			if !skipOne {
+				assertCand(candidate2, func(cand reg.Register, ok LabelRef) {
+					tmp := GP64()
+					MOVQ(lenSrcQ, tmp)
+					CMPL(tmp.As32(), cand)
+					JA(ok)
+				})
+				assertCand(candidate2, func(cand reg.Register, ok LabelRef) {
+					CMPL(s, cand)
+					// Candidate2 is at s+1, so s is ok.
+					JAE(ok)
+				})
+			}
 
 			checkCandidate(candidate, func() {
-				CMPL(Mem{Base: src, Index: candidate, Scale: 1}, cv.As32()) // <<-- Hot
+				if match8 {
+					CMPQ(Mem{Base: src, Index: candidate, Scale: 1}, cv.As64()) // <<-- Hot
+				} else {
+					CMPL(Mem{Base: src, Index: candidate, Scale: 1}, cv.As32()) // <<-- Hot
+				}
 				JEQ(LabelRef("candidate_match_" + name))
 			})
 
 			tmp := GP32()
 			// cv >>= 8
-			SHRQ(U8(8), cv)
+			if !skipOne {
+				if hashBytes > 7 {
+					MOVQ(Mem{Base: src, Index: s, Disp: 1, Scale: 1}, cv)
+				} else {
+					SHRQ(U8(8), cv)
+				}
+			}
 
 			// candidate = int(table[hash2]) - load early.
 			table.LoadIdx(hash2, candidate)
@@ -681,20 +728,38 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 			LEAL(Mem{Base: s, Disp: 2}, tmp)
 
 			//if uint32(cv>>8) == load32(src, candidate2)
-			checkCandidate(candidate2, func() {
-				CMPL(Mem{Base: src, Index: candidate2, Scale: 1}, cv.As32())
-				JEQ(LabelRef("candidate2_match_" + name))
-			})
-
-			// cv >>= 8 (>> 16 total)
-			SHRQ(U8(8), cv)
+			if !skipOne {
+				checkCandidate(candidate2, func() {
+					if match8 {
+						CMPQ(Mem{Base: src, Index: candidate2, Scale: 1}, cv.As64())
+					} else {
+						CMPL(Mem{Base: src, Index: candidate2, Scale: 1}, cv.As32())
+					}
+					JEQ(LabelRef("candidate2_match_" + name))
+				})
+			}
 
 			// table[hash2] = uint32(s + 2)
 			table.SaveIdx(tmp, hash2)
 
+			// cv >>= 8 (>> 16 total)
+			if hashBytes > 6 {
+				MOVQ(Mem{Base: src, Index: s, Disp: 2, Scale: 1}, cv)
+			} else {
+				if skipOne {
+					SHRQ(U8(16), cv)
+				} else {
+					SHRQ(U8(8), cv)
+				}
+			}
+
 			// if uint32(cv>>16) == load32(src, candidate)
 			checkCandidate(candidate, func() {
-				CMPL(Mem{Base: src, Index: candidate, Scale: 1}, cv.As32())
+				if match8 {
+					CMPQ(Mem{Base: src, Index: candidate, Scale: 1}, cv.As64())
+				} else {
+					CMPL(Mem{Base: src, Index: candidate, Scale: 1}, cv.As32())
+				}
 				JEQ(LabelRef("candidate3_match_" + name))
 			})
 
@@ -718,11 +783,10 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 		}
 	}
 
-	PCALIGN(16)
 	Label("candidate_match_" + name)
 	// We have a match at 's' with src offset in "candidate" that matches at least 4 bytes.
 	// Extend backwards
-	if true {
+	if checkBack {
 		ne := GP32()
 		MOVL(nextEmitL, ne)
 		TESTL(candidate, candidate)
@@ -763,9 +827,15 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 		MOVL(repeatVal, repeatL)
 	}
 	// s+=4, candidate+=4
-	ADDL(U8(4), s)
-	ADDL(U8(4), candidate)
-	// Extend the 4-byte match as long as possible and emit copy.
+	if match8 {
+		ADDL(U8(8), s)
+		ADDL(U8(8), candidate)
+	} else {
+		ADDL(U8(4), s)
+		ADDL(U8(4), candidate)
+	}
+
+	// Extend the 4/8-byte match as long as possible and emit copy.
 	{
 		assert(func(ok LabelRef) {
 			// s must be > candidate cannot be equal.
@@ -800,13 +870,16 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 
 		// s += length (length is destroyed, use it now)
 		ADDL(length.As32(), s)
-		ADDL(U8(4), length.As32()) // length += 4
+		if match8 {
+			ADDL(U8(8), length.As32()) // length += 8
+		} else {
+			ADDL(U8(4), length.As32()) // length += 4
+		}
 
 		// Load offset from repeat value.
 		offset := GP64()
 		MOVL(repeatL, offset.As32())
 		// Emit lits
-		const fuselits = true
 		{
 			litLen, nextEmit := GP64(), GP64()
 			MOVL(nextEmitL, nextEmit.As32())
@@ -892,7 +965,11 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 		hasher := hashN(o, hashBytes, tableBits)
 		hash0, hash1 := GP64(), GP64()
 		MOVQ(cv, hash0) // src[s-2]
-		SHRQ(U8(16), cv)
+		if hashBytes > 6 {
+			MOVQ(Mem{Base: src, Index: s, Disp: 0, Scale: 1}, cv)
+		} else {
+			SHRQ(U8(16), cv)
+		}
 		MOVQ(cv, hash1) // src[s]
 		hasher.hash(hash0)
 		hasher.hash(hash1)
@@ -923,7 +1000,11 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 			JMP(LabelRef("search_loop_" + name))
 			Label("match_nolit_len_ok" + name)
 		}
-		CMPL(Mem{Base: src, Index: candidate, Scale: 1}, cv.As32())
+		if match8 {
+			CMPQ(Mem{Base: src, Index: candidate, Scale: 1}, cv.As64())
+		} else {
+			CMPL(Mem{Base: src, Index: candidate, Scale: 1}, cv.As32())
+		}
 		JNE(LabelRef("search_loop_" + name)) // << -- Hot
 		// Prepare for emit
 		// Update repeat
@@ -936,8 +1017,13 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 		}
 		// s+=4, candidate+=4
 		checkDst(0, nil)
-		ADDL(U8(3), s)
-		ADDL(U8(4), candidate)
+		if match8 {
+			ADDL(U8(7), s)
+			ADDL(U8(8), candidate)
+		} else {
+			ADDL(U8(3), s)
+			ADDL(U8(4), candidate)
+		}
 		{
 			// Extend the 4-byte match as long as possible and emit copy.
 			assertCand(candidate, func(cand reg.Register, ok LabelRef) {
@@ -972,8 +1058,12 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 
 			// s += length (length is destroyed, use it now)
 			ADDL(length.As32(), s)
-			ADDL(U8(4), length.As32()) // length += 4
-			MOVL(s, nextEmitL)         // nextEmit = s
+			if match8 {
+				ADDL(U8(8), length.As32()) // length += 4
+			} else {
+				ADDL(U8(4), length.As32()) // length += 4
+			}
+			MOVL(s, nextEmitL) // nextEmit = s
 		}
 		// Load offset from repeat value.
 		MOVL(repeatL, offset.As32())
@@ -1257,24 +1347,28 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 		// move nextS to stack.
 		MOVL(nextS.As32(), nextSTempL)
 
+		candidateS := GP32()
 		lHasher := hashN(o, lHashBytes, lTableBits)
 		{
-			hash0 := GP64()
+			sHasher := hashN(o, sHashBytes, sTableBits)
+			hash0, hash1 := GP64(), GP64()
 			MOVQ(cv, hash0)
+			MOVQ(cv, hash1)
 			lHasher.hash(hash0)
+			sHasher.hash(hash1)
+			lTab.LoadIdx(hash0, candidate)
+			sTab.LoadIdx(hash1, candidateS)
 			assert(func(ok LabelRef) {
 				CMPQ(hash0, U32(lTableSize))
 				JB(ok)
 			})
-			if false {
-				MOVL(s, candidate)
-				lTab.XchIdx(hash0, candidate)
-			} else {
-				// Load candidate from lTab
-				lTab.LoadIdx(hash0, candidate)
-				// Store s in lTab
-				lTab.SaveIdx(s, hash0)
-			}
+			assert(func(ok LabelRef) {
+				CMPQ(hash1, U32(sTableSize))
+				JB(ok)
+			})
+
+			lTab.SaveIdx(s, hash0)
+			sTab.SaveIdx(s, hash1)
 		}
 		// Check if offset exceeds max
 		var ccCounter int
@@ -1311,6 +1405,12 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 			MOVQ(Mem{Base: src, Index: candidate, Scale: 1}, longVal)
 			CMPQ(longVal, cv.As64())
 			JEQ(LabelRef("candidate_match_" + name))
+		})
+
+		// Load short early...
+		checkCandidate(candidateS, func() {
+			MOVQ(Mem{Base: src, Index: candidateS, Scale: 1}, shortVal)
+			CMPQ(shortVal, cv.As64())
 		})
 
 		// En/disable repeat matching.
@@ -1450,28 +1550,6 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 		}
 		PCALIGN(16)
 		Label("no_repeat_found_" + name)
-		candidateS := GP32()
-		{
-			sHasher := hashN(o, sHashBytes, sTableBits)
-			hash1 := GP64()
-			MOVQ(cv, hash1)
-			sHasher.hash(hash1)
-			assert(func(ok LabelRef) {
-				CMPQ(hash1, U32(sTableSize))
-				JB(ok)
-			})
-			if false {
-				MOVL(s.As32(), candidateS)
-				sTab.XchIdx(hash1, candidateS)
-			} else {
-				// Load candidateS from sTab
-				sTab.LoadIdx(hash1, candidateS)
-				// Store s in sTab
-				sTab.SaveIdx(s, hash1)
-			}
-			// Load short early...
-			MOVQ(Mem{Base: src, Index: candidateS, Scale: 1}, shortVal)
-		}
 		{
 			// Check candidates are ok. All must be < s and < len(src)
 			assert(func(ok LabelRef) {
@@ -1923,11 +2001,11 @@ func hashN(o options, hashBytes, tablebits int) hashGen {
 		o:         o,
 	}
 	if o.bmi2 {
-		if hashBytes < 8 && hashBytes != 4 {
-			MOVQ(U32(hashBytes*8), h.mulreg)
-		} else {
-			MOVQ(U32(tablebits), h.mulreg)
+		if hashBytes < 8 {
+			h.clear = GP64()
+			MOVQ(U8(hashBytes*8), h.clear)
 		}
+		MOVQ(U8(tablebits), h.mulreg)
 		return h
 	}
 	primebytes := uint64(0)
@@ -1954,32 +2032,15 @@ func hashN(o options, hashBytes, tablebits int) hashGen {
 // hash uses multiply to get hash of the value.
 func (h hashGen) hash(val reg.GPVirtual) {
 	if h.o.bmi2 {
-		// Broken somehow...
 		if h.bytes < 8 {
-			if h.bytes == 4 {
-				MOVL(val.As32(), val.As32())
-			} else {
-				//SHLQ(U8(64-8*h.bytes), val)
-				BZHIQ(val, h.mulreg, val)
-			}
+			BZHIQ(val, h.clear, val)
 		}
 		CRC32Q(val, val)
-		tmp := h.mulreg
-		if h.bytes < 8 && h.bytes != 4 {
-			tmp = GP64()
-			MOVQ(U32(h.tablebits), tmp)
-		}
-		//SHRQ(U8(32-h.tablebits), val)
-		BZHIQ(val, tmp, val)
-		return
+		BZHIQ(val, h.mulreg, val)
 	}
 	// Move value to top of register.
 	if h.bytes < 8 {
-		if h.bytes == 4 {
-			MOVL(val.As32(), val.As32())
-		} else {
-			SHLQ(U8(64-8*h.bytes), val)
-		}
+		SHLQ(U8(64-8*h.bytes), val)
 	}
 	//  329 AMD64               :IMUL r64, r64                         L:   0.86ns=  3.0c  T:   0.29ns=  1.00c
 	// 2020 BMI2                :MULX r64, r64, r64                    L:   1.14ns=  4.0c  T:   0.29ns=  1.00c
