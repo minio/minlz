@@ -54,7 +54,7 @@ func main() {
 		skipOutput:   false}
 
 	// 16 bits has too big of a speed impact.
-	o.fastOpts = fastOpts{match8: false, fuselits: true, checkRepeats: false, checkBack: true, skipOne: false, incLoop: 4}
+	o.fastOpts = fastOpts{match8: false, fuselits: true, checkRepeats: false, checkBack: true, skipOne: false, incLoop: 4, minSizeLog: 5}
 	o.genEncodeBlockAsm("encodeBlockAsm", 15, 6, 6, 8<<20)
 	o.genEncodeBlockAsm("encodeBlockAsm2MB", 15, 6, 6, 2<<20)
 	o.genEncodeBlockAsm("encodeBlockAsm512K", 14, 6, 6, 512<<10)
@@ -63,7 +63,7 @@ func main() {
 	o.genEncodeBlockAsm("encodeBlockAsm4K", 10, 5, 4, 4<<10)
 	o.genEncodeBlockAsm("encodeBlockAsm1K", 9, 4, 4, 1<<10)
 
-	o.fastOpts = fastOpts{match8: true, fuselits: false, checkRepeats: true, checkBack: false, skipOne: false, incLoop: 4}
+	o.fastOpts = fastOpts{match8: true, fuselits: false, checkRepeats: true, checkBack: false, skipOne: false, incLoop: 4, minSizeLog: 3}
 	const fastHashBytes = 8
 	o.genEncodeBlockAsm("encodeFastBlockAsm", 14, 5, fastHashBytes, 8<<20)
 	o.genEncodeBlockAsm("encodeFastBlockAsm2MB", 13, 5, fastHashBytes, 2<<20)
@@ -247,6 +247,8 @@ type fastOpts struct {
 
 	// Increment loop by this many bytes when match fails.
 	incLoop int
+
+	minSizeLog int
 }
 
 func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, maxLen int) {
@@ -372,8 +374,8 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 
 		MOVL(tmp3.As32(), sLimitL)
 
-		// dstLimit := (len(src) - outputMargin ) - len(src)>>5
-		SHRQ(U8(5), tmp)
+		// dstLimit := (len(src) - outputMargin ) - len(src)>>minSizeLog
+		SHRQ(U8(o.minSizeLog), tmp)
 		SUBL(tmp.As32(), tmp2.As32()) // tmp2 = tmp2 - tmp
 
 		assert(func(ok LabelRef) {

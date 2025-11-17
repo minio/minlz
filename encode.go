@@ -24,6 +24,8 @@ import (
 
 const (
 	// LevelSuperFast is the fastest compression level.
+	// This will take significant shortcuts and usually provide much worse compression.
+	// Use only if LevelFastest is confirmed to be too slow.
 	LevelSuperFast = 0
 
 	// LevelFastest is the fastest compression level.

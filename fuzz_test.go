@@ -71,7 +71,7 @@ func FuzzEncodingBlocks(f *testing.F) {
 		}(decDst[len(decDst)-4:])
 		decDst = decDst[:len(data):len(data)]
 		const levelReference = LevelSmallest + 1
-		for l := LevelFastest; l <= levelReference; l++ {
+		for l := LevelSuperFast; l <= levelReference; l++ {
 			for i := range decDst {
 				decDst[i] = 0xfe
 			}
@@ -242,7 +242,7 @@ func FuzzStreamEncode(f *testing.F) {
 	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, false)
 
 	var encoders []*Writer
-	for l := LevelFastest; l <= LevelSmallest; l++ {
+	for l := LevelSuperFast; l <= LevelSmallest; l++ {
 		encoders = append(encoders, NewWriter(nil, WriterLevel(l), WriterConcurrency(1), WriterBlockSize(128<<10)))
 		if !testing.Short() && l == LevelFastest {
 			// Try some combinations...

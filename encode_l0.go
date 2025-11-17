@@ -50,7 +50,7 @@ func encodeFastBlockGo(dst, src []byte) (d int) {
 	sLimit := len(src) - inputMargin
 
 	// Bail if we can't compress to at least this.
-	dstLimit := len(src) - len(src)>>4 - 256
+	dstLimit := len(src) - len(src)>>3 - 6
 
 	// nextEmit is where in src the next emitLiteral should start from.
 	nextEmit := 0

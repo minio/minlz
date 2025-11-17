@@ -6057,7 +6057,7 @@ zero_loop_encodeFastBlockAsm:
 	LEAQ  -17(DX), BX
 	LEAQ  -17(DX), SI
 	MOVL  SI, 8(SP)
-	SHRQ  $0x05, DX
+	SHRQ  $0x03, DX
 	SUBL  DX, BX
 	LEAQ  (CX)(BX*1), BX
 	MOVQ  BX, (SP)
@@ -7147,7 +7147,7 @@ zero_loop_encodeFastBlockAsm2MB:
 	LEAQ  -17(DX), BX
 	LEAQ  -17(DX), SI
 	MOVL  SI, 8(SP)
-	SHRQ  $0x05, DX
+	SHRQ  $0x03, DX
 	SUBL  DX, BX
 	LEAQ  (CX)(BX*1), BX
 	MOVQ  BX, (SP)
@@ -8224,7 +8224,7 @@ zero_loop_encodeFastBlockAsm512K:
 	LEAQ  -17(DX), BX
 	LEAQ  -17(DX), SI
 	MOVL  SI, 8(SP)
-	SHRQ  $0x05, DX
+	SHRQ  $0x03, DX
 	SUBL  DX, BX
 	LEAQ  (CX)(BX*1), BX
 	MOVQ  BX, (SP)
@@ -9301,7 +9301,7 @@ zero_loop_encodeFastBlockAsm64K:
 	LEAQ  -17(DX), BX
 	LEAQ  -17(DX), SI
 	MOVL  SI, 8(SP)
-	SHRQ  $0x05, DX
+	SHRQ  $0x03, DX
 	SUBL  DX, BX
 	LEAQ  (CX)(BX*1), BX
 	MOVQ  BX, (SP)
@@ -10332,7 +10332,7 @@ zero_loop_encodeFastBlockAsm16K:
 	LEAQ  -17(DX), BX
 	LEAQ  -17(DX), SI
 	MOVL  SI, 8(SP)
-	SHRQ  $0x05, DX
+	SHRQ  $0x03, DX
 	SUBL  DX, BX
 	LEAQ  (CX)(BX*1), BX
 	MOVQ  BX, (SP)
@@ -11339,7 +11339,7 @@ zero_loop_encodeFastBlockAsm4K:
 	LEAQ  -17(DX), BX
 	LEAQ  -17(DX), SI
 	MOVL  SI, 8(SP)
-	SHRQ  $0x05, DX
+	SHRQ  $0x03, DX
 	SUBL  DX, BX
 	LEAQ  (CX)(BX*1), BX
 	MOVQ  BX, (SP)
@@ -12346,7 +12346,7 @@ zero_loop_encodeFastBlockAsm1K:
 	LEAQ  -17(DX), BX
 	LEAQ  -17(DX), SI
 	MOVL  SI, 8(SP)
-	SHRQ  $0x05, DX
+	SHRQ  $0x03, DX
 	SUBL  DX, BX
 	LEAQ  (CX)(BX*1), BX
 	MOVQ  BX, (SP)
