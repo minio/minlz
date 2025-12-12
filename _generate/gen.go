@@ -636,6 +636,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 
 					length := o.matchLen("repeat_extend_"+name, forwardStart, backStart, srcLeft, nil, LabelRef("repeat_extend_forward_end_"+name))
 					forwardStart, backStart, srcLeft = nil, nil, nil
+					PCALIGN(16)
 					Label("repeat_extend_forward_end_" + name)
 					// s+= length
 					ADDL(length.As32(), s)
@@ -862,6 +863,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 			nil,
 			LabelRef("match_nolit_end_"+name),
 		)
+		PCALIGN(16)
 		Label("match_nolit_end_" + name)
 		assert(func(ok LabelRef) {
 			// Should never exceed max block size...
@@ -1051,6 +1053,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 				length,
 				LabelRef("match_nolit2_end_"+name),
 			)
+			PCALIGN(16)
 			Label("match_nolit2_end_" + name)
 			assert(func(ok LabelRef) {
 				// Should never exceed max block size...
@@ -1521,6 +1524,7 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 
 					length := o.matchLen("repeat_extend_"+name, forwardStart, backStart, srcLeft, nil, LabelRef("repeat_extend_forward_end_"+name))
 					forwardStart, backStart, srcLeft = nil, nil, nil
+					PCALIGN(16)
 					Label("repeat_extend_forward_end_" + name)
 					// s+= length
 					ADDL(length.As32(), s)
@@ -1699,6 +1703,7 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 			nil,
 			LabelRef("match_nolit_end_"+name),
 		)
+		PCALIGN(16)
 		Label("match_nolit_end_" + name)
 		assert(func(ok LabelRef) {
 			CMPL(length.As32(), U32(math.MaxInt32))
@@ -3125,6 +3130,7 @@ func (o options) matchLen(name string, a, b, len, dst reg.GPVirtual, end LabelRe
 	Label("avx2_continue_" + name)
 
 	JMP(LabelRef("matchlen_loop_16_entry_" + name))
+	PCALIGN(16)
 	Label("matchlen_loopback_16_" + name)
 	tmp2 := GP64()
 	MOVQ(Mem{Base: a, Index: matched, Scale: 1}, tmp)
@@ -3142,6 +3148,7 @@ func (o options) matchLen(name string, a, b, len, dst reg.GPVirtual, end LabelRe
 	JAE(LabelRef("matchlen_loopback_16_" + name))
 	JMP(LabelRef("matchlen_match8_" + name))
 
+	PCALIGN(16)
 	Label("matchlen_bsf_16" + name)
 	// Not all match.
 	TZCNTQ(tmp2, tmp2)
@@ -3160,13 +3167,14 @@ func (o options) matchLen(name string, a, b, len, dst reg.GPVirtual, end LabelRe
 	LEAL(Mem{Base: len, Disp: -8}, len.As32())
 	LEAL(Mem{Base: matched, Disp: 8}, matched)
 	JMP(LabelRef("matchlen_match4_" + name))
-	Label("matchlen_bsf_8_" + name)
 
+	PCALIGN(16)
+	Label("matchlen_bsf_8_" + name)
 	// Not all match.
 	TZCNTQ(tmp, tmp)
 	// tmp is the number of bits that matched.
 	SARQ(U8(3), tmp)
-	LEAL(Mem{Base: matched, Index: tmp, Scale: 1}, matched)
+	ADDL(tmp.As32(), matched)
 	JMP(end)
 
 	// Less than 8 bytes left.
@@ -3232,7 +3240,7 @@ func (o options) matchLenAVX2(name string, a, b, len reg.GPVirtual, cont, end La
 		JNE(LabelRef(name + "cal_prefix"))
 		ADDQ(U8(32), a)
 		ADDQ(U8(32), b)
-		ADDL(U8(32), dst)
+		ADDL(U8(32), dst.As32())
 		SUBQ(U8(32), len)
 		JZ(end)
 		JMP(LabelRef(name + "loop"))
@@ -3242,7 +3250,7 @@ func (o options) matchLenAVX2(name string, a, b, len reg.GPVirtual, cont, end La
 	{
 		NOTQ(equalMaskBits)
 		TZCNTQ(equalMaskBits, equalMaskBits)
-		ADDL(equalMaskBits.As32(), dst)
+		ADDL(equalMaskBits.As32(), dst.As32())
 	}
 	JMP(end)
 	return
