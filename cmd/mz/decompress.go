@@ -254,28 +254,67 @@ Options:`)
 		if *verify {
 			dstFilename = "(verify)"
 		}
-		decompressFile(quiet, filename, dstFilename, block, tailBytes, offset, safe, verify, stdout, blockDebug, tailNextNL, r, limitBytes, limitNextNL, cpu, remove, follow)
+		cfg := &decompressConfig{
+			quiet:       quiet,
+			filename:    filename,
+			dstFilename: dstFilename,
+			block:       block,
+			tailBytes:   tailBytes,
+			offset:      offset,
+			safe:        safe,
+			verify:      verify,
+			stdout:      stdout,
+			blockDebug:  blockDebug,
+			tailNextNL:  tailNextNL,
+			reader:      r,
+			limitBytes:  limitBytes,
+			limitNextNL: limitNextNL,
+			cpu:         cpu,
+			remove:      remove,
+			follow:      follow,
+		}
+		cfg.decompressFile()
 	}
 }
 
-func decompressFile(quiet *bool, filename string, dstFilename string, block bool, tailBytes int64, offset int64, safe *bool, verify *bool, stdout *bool, blockDebug *bool, tailNextNL bool, r *minlz.Reader, limitBytes int64, limitNextNL bool, cpu *int, remove *bool, follow *bool) {
+type decompressConfig struct {
+	quiet       *bool
+	filename    string
+	dstFilename string
+	block       bool
+	tailBytes   int64
+	offset      int64
+	safe        *bool
+	verify      *bool
+	stdout      *bool
+	blockDebug  *bool
+	tailNextNL  bool
+	reader      *minlz.Reader
+	limitBytes  int64
+	limitNextNL bool
+	cpu         *int
+	remove      *bool
+	follow      *bool
+}
+
+func (cfg *decompressConfig) decompressFile() {
 	var closeOnce sync.Once
-	if !*quiet {
-		fmt.Print("Decompressing ", filename, " -> ", dstFilename)
+	if !*cfg.quiet {
+		fmt.Print("Decompressing ", cfg.filename, " -> ", cfg.dstFilename)
 	}
-	seeker := !block && (tailBytes > 0 || offset > 0)
+	seeker := !cfg.block && (cfg.tailBytes > 0 || cfg.offset > 0)
 
 	// Input file with optional following behavior
 	var file io.ReadCloser
 	var mode os.FileMode
-	if *follow {
-		followReader, err := newFollowingReader(filename, true)
+	if *cfg.follow {
+		followReader, err := newFollowingReader(cfg.filename, true)
 		exitErr(err)
 		file = followReader
 		mode = os.ModePerm
 	} else {
 		var size int64
-		file, size, mode = openFile(filename, seeker)
+		file, size, mode = openFile(cfg.filename, seeker)
 		_ = size // size not used with followingReader
 	}
 	defer closeOnce.Do(func() { file.Close() })
@@ -283,7 +322,7 @@ func decompressFile(quiet *bool, filename string, dstFilename string, block bool
 		io.Reader
 		BytesRead() int64
 	}
-	if *follow {
+	if *cfg.follow {
 		// followingReader already implements BytesRead() and Seek()
 		if seeker {
 			rc = &rCountSeeker{in: file.(*followingReader)}
@@ -292,7 +331,7 @@ func decompressFile(quiet *bool, filename string, dstFilename string, block bool
 		}
 	} else if seeker {
 		rs, ok := file.(io.ReadSeeker)
-		if !ok && tailBytes > 0 {
+		if !ok && cfg.tailBytes > 0 {
 			exitErr(errors.New("cannot tail with non-seekable input"))
 		}
 		if ok {
@@ -304,7 +343,7 @@ func decompressFile(quiet *bool, filename string, dstFilename string, block bool
 		rc = &rCounter{in: file}
 	}
 	var src io.Reader
-	if !seeker && !*follow {
+	if !seeker && !*cfg.follow {
 		ra, err := readahead.NewReaderSize(rc, 2, 8<<20)
 		exitErr(err)
 		defer ra.Close()
@@ -312,24 +351,24 @@ func decompressFile(quiet *bool, filename string, dstFilename string, block bool
 	} else {
 		src = rc
 	}
-	if *safe {
-		_, err := os.Stat(dstFilename)
+	if *cfg.safe {
+		_, err := os.Stat(cfg.dstFilename)
 		if !os.IsNotExist(err) {
 			exitErr(errors.New("destination files exists"))
 		}
 	}
 	var out io.Writer
 	switch {
-	case *verify:
+	case *cfg.verify:
 		out = io.Discard
-	case *stdout:
+	case *cfg.stdout:
 		out = os.Stdout
 	default:
-		dstFile, err := os.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+		dstFile, err := os.OpenFile(cfg.dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 		exitErr(err)
 		defer dstFile.Close()
 		out = dstFile
-		if !block {
+		if !cfg.block {
 			bw := bufio.NewWriterSize(dstFile, 4<<20)
 			defer bw.Flush()
 			out = bw
@@ -337,19 +376,19 @@ func decompressFile(quiet *bool, filename string, dstFilename string, block bool
 	}
 	var decoded io.Reader
 	start := time.Now()
-	if block {
+	if cfg.block {
 		all, err := io.ReadAll(src)
 		exitErr(err)
-		if *blockDebug {
+		if *cfg.blockDebug {
 			DecodeDebug(nil, all)
 		}
 		b, err := minlz.Decode(nil, all)
-		if offset > 0 {
-			b = b[min(offset, int64(len(all))):]
+		if cfg.offset > 0 {
+			b = b[min(cfg.offset, int64(len(all))):]
 		}
-		if tailBytes > 0 {
-			b = b[len(b)-min(len(b), int(tailBytes)):]
-			for len(b) > 0 && tailNextNL {
+		if cfg.tailBytes > 0 {
+			b = b[len(b)-min(len(b), int(cfg.tailBytes)):]
+			for len(b) > 0 && cfg.tailNextNL {
 				if b[0] == '\n' {
 					b = b[1:]
 					break
@@ -361,30 +400,30 @@ func decompressFile(quiet *bool, filename string, dstFilename string, block bool
 		exitErr(err)
 		decoded = bytes.NewReader(b)
 	} else {
-		r.Reset(src)
-		if tailBytes > 0 || offset > 0 {
-			rs, err := r.ReadSeeker(nil)
-			if tailBytes > 0 {
+		cfg.reader.Reset(src)
+		if cfg.tailBytes > 0 || cfg.offset > 0 {
+			rs, err := cfg.reader.ReadSeeker(nil)
+			if cfg.tailBytes > 0 {
 				exitErr(err)
 			}
 		retry:
 			if rs != nil {
-				if tailBytes > 0 {
-					_, err = rs.Seek(-tailBytes, io.SeekEnd)
+				if cfg.tailBytes > 0 {
+					_, err = rs.Seek(-cfg.tailBytes, io.SeekEnd)
 				} else {
-					_, err = rs.Seek(offset, io.SeekStart)
+					_, err = rs.Seek(cfg.offset, io.SeekStart)
 				}
 				exitErr(err)
 			} else {
-				r.Reset(src)
-				err = r.Skip(offset)
+				cfg.reader.Reset(src)
+				err = cfg.reader.Skip(cfg.offset)
 				exitErr(err)
 			}
-			if tailNextNL {
+			if cfg.tailNextNL {
 				for {
-					v, err := r.ReadByte()
+					v, err := cfg.reader.ReadByte()
 					if err == io.EOF {
-						tailNextNL = false
+						cfg.tailNextNL = false
 						goto retry
 					}
 					if v == '\n' {
@@ -397,32 +436,32 @@ func decompressFile(quiet *bool, filename string, dstFilename string, block bool
 			}
 
 		}
-		decoded = r
+		decoded = cfg.reader
 	}
-	if limitBytes > 0 {
-		decoded = limitReaderNL(decoded, limitBytes, limitNextNL)
+	if cfg.limitBytes > 0 {
+		decoded = limitReaderNL(decoded, cfg.limitBytes, cfg.limitNextNL)
 	}
 	var err error
 	var output int64
-	if dec, ok := decoded.(*minlz.Reader); ok && tailBytes == 0 && offset == 0 {
-		output, err = dec.DecodeConcurrent(out, *cpu)
+	if dec, ok := decoded.(*minlz.Reader); ok && cfg.tailBytes == 0 && cfg.offset == 0 {
+		output, err = dec.DecodeConcurrent(out, *cfg.cpu)
 	} else {
 		output, err = io.Copy(out, decoded)
 	}
 	exitErr(err)
-	if !*quiet {
+	if !*cfg.quiet {
 		elapsed := time.Since(start)
 		mbPerSec := (float64(output) / 1e6) / (float64(elapsed) / (float64(time.Second)))
 		pct := float64(output) * 100 / float64(rc.BytesRead())
 		fmt.Printf(" %d -> %d [%.02f%%]; %.01fMB/s\n", rc.BytesRead(), output, pct, mbPerSec)
 	}
-	if *remove && !*verify {
+	if *cfg.remove && !*cfg.verify {
 		closeOnce.Do(func() {
 			file.Close()
-			if !*quiet {
-				fmt.Println("Removing", filename)
+			if !*cfg.quiet {
+				fmt.Println("Removing", cfg.filename)
 			}
-			err := os.Remove(filename)
+			err := os.Remove(cfg.filename)
 			exitErr(err)
 		})
 	}
