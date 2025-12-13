@@ -60,6 +60,7 @@ func mainDecompress(args []string, cat, tail bool) {
 		quiet      = fs.Bool("q", false, "Don't write any output to terminal, except errors")
 		help       = fs.Bool("help", false, "Display help")
 		verify     = fs.Bool("verify", false, "Verify files, but do not write output")
+		follow     = fs.Bool("follow", false, "Follow file like tail -f, reopening when EOF is reached")
 	)
 
 	var offsetString *string
@@ -206,6 +207,21 @@ Options:`)
 		exitErr(errors.New("-out parameter can only be used with one input"))
 	}
 
+	if *follow {
+		if limitBytes > 0 || tailBytes > 0 {
+			exitErr(errors.New("--tail and --limit cannot be used with --follow"))
+		}
+		if *bench > 0 {
+			exitErr(errors.New("--follow cannot be used with benchmarks"))
+		}
+		if len(files) > 1 {
+			exitErr(errors.New("--follow can only be used with one input file"))
+		}
+		if len(files) == 1 && (files[0] == "-" || isHTTP(files[0])) {
+			exitErr(errors.New("--follow cannot be used with stdin or HTTP URLs"))
+		}
+	}
+
 	for _, filename := range files {
 		dstFilename := cleanFileName(filename)
 		block := *block
@@ -238,24 +254,43 @@ Options:`)
 		if *verify {
 			dstFilename = "(verify)"
 		}
-		decompressFile(quiet, filename, dstFilename, block, tailBytes, offset, safe, verify, stdout, blockDebug, tailNextNL, r, limitBytes, limitNextNL, cpu, remove)
+		decompressFile(quiet, filename, dstFilename, block, tailBytes, offset, safe, verify, stdout, blockDebug, tailNextNL, r, limitBytes, limitNextNL, cpu, remove, follow)
 	}
 }
 
-func decompressFile(quiet *bool, filename string, dstFilename string, block bool, tailBytes int64, offset int64, safe *bool, verify *bool, stdout *bool, blockDebug *bool, tailNextNL bool, r *minlz.Reader, limitBytes int64, limitNextNL bool, cpu *int, remove *bool) {
+func decompressFile(quiet *bool, filename string, dstFilename string, block bool, tailBytes int64, offset int64, safe *bool, verify *bool, stdout *bool, blockDebug *bool, tailNextNL bool, r *minlz.Reader, limitBytes int64, limitNextNL bool, cpu *int, remove *bool, follow *bool) {
 	var closeOnce sync.Once
 	if !*quiet {
 		fmt.Print("Decompressing ", filename, " -> ", dstFilename)
 	}
 	seeker := !block && (tailBytes > 0 || offset > 0)
-	// Input file.
-	file, _, mode := openFile(filename, seeker)
+
+	// Input file with optional following behavior
+	var file io.ReadCloser
+	var mode os.FileMode
+	if *follow {
+		followReader, err := newFollowingReader(filename, true)
+		exitErr(err)
+		file = followReader
+		mode = os.ModePerm
+	} else {
+		var size int64
+		file, size, mode = openFile(filename, seeker)
+		_ = size // size not used with followingReader
+	}
 	defer closeOnce.Do(func() { file.Close() })
 	var rc interface {
 		io.Reader
 		BytesRead() int64
 	}
-	if seeker {
+	if *follow {
+		// followingReader already implements BytesRead() and Seek()
+		if seeker {
+			rc = &rCountSeeker{in: file.(*followingReader)}
+		} else {
+			rc = file.(*followingReader)
+		}
+	} else if seeker {
 		rs, ok := file.(io.ReadSeeker)
 		if !ok && tailBytes > 0 {
 			exitErr(errors.New("cannot tail with non-seekable input"))
@@ -269,7 +304,7 @@ func decompressFile(quiet *bool, filename string, dstFilename string, block bool
 		rc = &rCounter{in: file}
 	}
 	var src io.Reader
-	if !seeker {
+	if !seeker && !*follow {
 		ra, err := readahead.NewReaderSize(rc, 2, 8<<20)
 		exitErr(err)
 		defer ra.Close()
@@ -329,14 +364,22 @@ func decompressFile(quiet *bool, filename string, dstFilename string, block bool
 		r.Reset(src)
 		if tailBytes > 0 || offset > 0 {
 			rs, err := r.ReadSeeker(nil)
-			exitErr(err)
-		retry:
 			if tailBytes > 0 {
-				_, err = rs.Seek(-tailBytes, io.SeekEnd)
-			} else {
-				_, err = rs.Seek(offset, io.SeekStart)
+				exitErr(err)
 			}
-			exitErr(err)
+		retry:
+			if rs != nil {
+				if tailBytes > 0 {
+					_, err = rs.Seek(-tailBytes, io.SeekEnd)
+				} else {
+					_, err = rs.Seek(offset, io.SeekStart)
+				}
+				exitErr(err)
+			} else {
+				r.Reset(src)
+				err = r.Skip(offset)
+				exitErr(err)
+			}
 			if tailNextNL {
 				for {
 					v, err := r.ReadByte()
@@ -352,6 +395,7 @@ func decompressFile(quiet *bool, filename string, dstFilename string, block bool
 					}
 				}
 			}
+
 		}
 		decoded = r
 	}
@@ -878,6 +922,89 @@ func minLZDecodeDebug(dst, src []byte) int {
 		return decodeErrCodeCorrupt
 	}
 	return 0
+}
+
+// followingReader wraps a file and reopens it when EOF is reached
+// to simulate tail -f behavior
+type followingReader struct {
+	filename string
+	file     *os.File
+	offset   int64
+	follows  bool
+}
+
+// newFollowingReader creates a new following reader
+func newFollowingReader(filename string, follows bool) (*followingReader, error) {
+	if isHTTP(filename) {
+		return nil, errors.New("follow mode not supported for HTTP URLs")
+	}
+	if filename == "-" {
+		return nil, errors.New("follow mode not supported for stdin")
+	}
+
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	return &followingReader{
+		filename: filename,
+		file:     file,
+		offset:   0,
+		follows:  follows,
+	}, nil
+}
+
+func (f *followingReader) BytesRead() int64 {
+	return f.offset
+}
+
+func (f *followingReader) Read(p []byte) (n int, err error) {
+	for {
+		n, err = f.file.Read(p)
+		f.offset += int64(n)
+
+		if err != io.EOF || !f.follows {
+			return n, err
+		}
+
+		// EOF reached and "following" is enabled
+		f.file.Close()
+		time.Sleep(time.Second)
+
+		// Reopen and seek to last position
+		f.file, err = os.Open(f.filename)
+		if err != nil {
+			return n, err
+		}
+
+		_, err = f.file.Seek(f.offset, io.SeekStart)
+		if err != nil {
+			return n, err
+		}
+	}
+}
+
+func (f *followingReader) Seek(offset int64, whence int) (int64, error) {
+	if f.file == nil {
+		return 0, errors.New("file not open")
+	}
+
+	newOffset, err := f.file.Seek(offset, whence)
+	if err != nil {
+		return newOffset, err
+	}
+
+	// Update our tracked offset to match the new file position
+	f.offset = newOffset
+	return newOffset, nil
+}
+
+func (f *followingReader) Close() error {
+	if f.file != nil {
+		return f.file.Close()
+	}
+	return nil
 }
 
 // limitReaderNL returns a Reader that reads from r

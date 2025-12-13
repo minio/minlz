@@ -1319,7 +1319,7 @@ type ReadSeeker struct {
 // No functions should be used concurrently.
 // The returned ReadSeeker contains a shallow reference to the existing Reader,
 // meaning changes performed to one is reflected in the other.
-func (r *Reader) ReadSeeker(index []byte) (*ReadSeeker, error) {
+func (r *Reader) ReadSeeker(index []byte) (rrs *ReadSeeker, err error) {
 	// Read index if provided.
 	if len(index) != 0 {
 		if r.index == nil {
@@ -1349,6 +1349,15 @@ func (r *Reader) ReadSeeker(index []byte) (*ReadSeeker, error) {
 	if err != nil {
 		return nil, ErrCantSeek{Reason: "seeking input returned: " + err.Error()}
 	}
+
+	defer func() {
+		// reset position.
+		_, err2 := rs.Seek(pos, io.SeekStart)
+		if err2 != nil && err == nil {
+			err = ErrCantSeek{Reason: "seeking input returned: " + err2.Error()}
+		}
+	}()
+
 	err = r.index.LoadStream(rs)
 	if err != nil {
 		if err == ErrUnsupported {
@@ -1357,11 +1366,6 @@ func (r *Reader) ReadSeeker(index []byte) (*ReadSeeker, error) {
 		return nil, ErrCantSeek{Reason: "reading index returned: " + err.Error()}
 	}
 
-	// reset position.
-	_, err = rs.Seek(pos, io.SeekStart)
-	if err != nil {
-		return nil, ErrCantSeek{Reason: "seeking input returned: " + err.Error()}
-	}
 	return &ReadSeeker{Reader: r, seek: rs}, nil
 }
 
