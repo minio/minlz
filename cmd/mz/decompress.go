@@ -665,7 +665,7 @@ func minLZDecodeDebug(dst, src []byte) int {
 			}
 			if isRepeat {
 				if debug {
-					fmt.Print("[REP   ]")
+					fmt.Print("[REPEAT]")
 				}
 				goto doCopy2
 			}
@@ -689,7 +689,7 @@ func minLZDecodeDebug(dst, src []byte) int {
 
 		case tagCopy1:
 			if debug {
-				fmt.Print("[COPY1 ]")
+				fmt.Print("[COPY 1]")
 			}
 			s += 2
 			if s > len(src) {
@@ -712,7 +712,7 @@ func minLZDecodeDebug(dst, src []byte) int {
 			}
 		case tagCopy2:
 			if debug {
-				fmt.Print("[COPY2 ]")
+				fmt.Print("[COPY 2]")
 			}
 			s += 3
 			if uint(s) > uint(len(src)) {
@@ -779,7 +779,7 @@ func minLZDecodeDebug(dst, src []byte) int {
 			} else {
 				if debug {
 					if litLen == 0 {
-						fmt.Print("[COPY3 ]")
+						fmt.Print("[COPY 3]")
 					} else {
 						fmt.Print("[COPY3F]")
 					}
