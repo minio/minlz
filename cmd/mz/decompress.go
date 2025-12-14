@@ -387,7 +387,8 @@ func (cfg *decompressConfig) decompressFile() {
 			b = b[min(cfg.offset, int64(len(all))):]
 		}
 		if cfg.tailBytes > 0 {
-			b = b[len(b)-min(len(b), int(cfg.tailBytes)):]
+			tb := min(cfg.tailBytes, int64(len(b)))
+			b = b[len(b)-min(len(b), int(tb)):]
 			for len(b) > 0 && cfg.tailNextNL {
 				if b[0] == '\n' {
 					b = b[1:]
