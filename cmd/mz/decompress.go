@@ -624,6 +624,7 @@ func minLZDecodeDebug(dst, src []byte) int {
 	for s < len(src) {
 		if debug {
 			// fmt.Printf("in:%x, tag: %02b va:%x - src: %d, dst: %d\n", src[s], src[s]&3, src[s]>>2, s, d)
+			fmt.Printf("%04d:%04d\t", s, d)
 		}
 		switch src[s] & 0x03 {
 		case tagLiteral:
@@ -664,7 +665,7 @@ func minLZDecodeDebug(dst, src []byte) int {
 			}
 			if isRepeat {
 				if debug {
-					fmt.Print(d, ": (repeat)")
+					fmt.Print("[REPEAT]")
 				}
 				goto doCopy2
 			}
@@ -675,7 +676,7 @@ func minLZDecodeDebug(dst, src []byte) int {
 				return decodeErrCodeCorrupt
 			}
 			if debug {
-				fmt.Print(d, ": (literals), length: ", length, "... [d-after: ", d+length, " s-after:", s+length, "]")
+				fmt.Print("[LITS  ] - length: ", length)
 			}
 
 			copy(dst[d:], src[s:s+length])
@@ -688,7 +689,7 @@ func minLZDecodeDebug(dst, src []byte) int {
 
 		case tagCopy1:
 			if debug {
-				fmt.Print(d, ": (copy1)")
+				fmt.Print("[COPY 1]")
 			}
 			s += 2
 			if s > len(src) {
@@ -711,7 +712,7 @@ func minLZDecodeDebug(dst, src []byte) int {
 			}
 		case tagCopy2:
 			if debug {
-				fmt.Print(d, ": (copy2)")
+				fmt.Print("[COPY 2]")
 			}
 			s += 3
 			if uint(s) > uint(len(src)) {
@@ -769,7 +770,7 @@ func minLZDecodeDebug(dst, src []byte) int {
 			litLen := int(val>>3) & 3
 			if !isCopy3 {
 				if debug {
-					fmt.Print(d, ": (copy2f)")
+					fmt.Print("[COPY2F]")
 				}
 				length = 4 + int(val>>5)&7
 				offset = int(val>>8)&65535 + 64
@@ -777,7 +778,11 @@ func minLZDecodeDebug(dst, src []byte) int {
 				litLen++
 			} else {
 				if debug {
-					fmt.Print(d, ": (copy3)")
+					if litLen == 0 {
+						fmt.Print("[COPY 3]")
+					} else {
+						fmt.Print("[COPY3F]")
+					}
 				}
 				lengthTmp := (val >> 5) & 63
 				offset = int(val>>11) + 65536
@@ -818,7 +823,7 @@ func minLZDecodeDebug(dst, src []byte) int {
 
 			if litLen > 0 {
 				if debug {
-					fmt.Print(" (fused lits: ", litLen, ")")
+					fmt.Print(" - lits: ", litLen)
 				}
 
 				if litLen > len(dst)-d || s+litLen > len(src) {
@@ -842,7 +847,7 @@ func minLZDecodeDebug(dst, src []byte) int {
 		}
 
 		if debug {
-			fmt.Println(" - copy, length:", length, "offset:", offset, "... [d-after:", d+length, "s-after:", s, "]")
+			fmt.Print(" - copy, length: ", length, " offset: ", offset, "\n")
 		}
 
 		// Copy from an earlier sub-slice of dst to a later sub-slice.
