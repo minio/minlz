@@ -364,8 +364,8 @@ func TestSrcMarginBoundary(t *testing.T) {
 		t.Run("size_"+string(rune('0'+size/10))+string(rune('0'+size%10)), func(t *testing.T) {
 			// Test with various data patterns
 			patterns := [][]byte{
-				bytes.Repeat([]byte{'a'}, size),                          // compressible
-				bytes.Repeat([]byte{'a', 'b'}, size/2+1)[:size],          // 2-byte pattern
+				bytes.Repeat([]byte{'a'}, size),                           // compressible
+				bytes.Repeat([]byte{'a', 'b'}, size/2+1)[:size],           // 2-byte pattern
 				bytes.Repeat([]byte{'a', 'b', 'c', 'd'}, size/4+1)[:size], // 4-byte pattern
 			}
 
