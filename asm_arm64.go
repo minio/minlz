@@ -1,4 +1,4 @@
-// Copyright 2025 MinIO Inc.
+// Copyright 2026 MinIO Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,15 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build (!amd64 && !arm64) || appengine || !gc || noasm || purego
+//go:build arm64 && !appengine && !noasm && gc && !purego
 
 package minlz
 
-// minLZDecode writes the decoding of src to dst. It assumes that the varint-encoded
-// length of the decompressed bytes has already been read, and that len(dst)
-// equals that length.
+// decodeBlockAsm decodes a non-empty src to a guaranteed-large-enough dst.
+// It assumes that the varint-encoded length of the decompressed bytes has already been read.
 //
-// It returns 0 on success or a decodeErrCodeXxx error code on failure.
-func minLZDecode(dst, src []byte) int {
-	return minLZDecodeGo(dst, src)
-}
+//go:noescape
+func decodeBlockAsm(dst []byte, src []byte) int
