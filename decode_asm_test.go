@@ -350,3 +350,67 @@ func generateTestData(size int) []byte {
 	}
 	return data
 }
+
+// TestSrcMarginBoundary tests the source buffer margin boundary.
+// This is a regression test for a security issue where the fast loop
+// could over-read the source buffer when a 4-byte tag header was consumed
+// just before a 32-byte NEON load, requiring 36-byte margin instead of 32.
+func TestSrcMarginBoundary(t *testing.T) {
+	// Test various small sizes that stress the margin boundary
+	// The fast loop requires srcLen >= 36 bytes (32 for NEON + 4 for tag header)
+	sizes := []int{30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 50, 60, 70, 80}
+
+	for _, size := range sizes {
+		t.Run("size_"+string(rune('0'+size/10))+string(rune('0'+size%10)), func(t *testing.T) {
+			// Test with various data patterns
+			patterns := [][]byte{
+				bytes.Repeat([]byte{'a'}, size),                          // compressible
+				bytes.Repeat([]byte{'a', 'b'}, size/2+1)[:size],          // 2-byte pattern
+				bytes.Repeat([]byte{'a', 'b', 'c', 'd'}, size/4+1)[:size], // 4-byte pattern
+			}
+
+			// Add random-like pattern
+			random := make([]byte, size)
+			for i := range random {
+				random[i] = byte((i*17 + i*i) % 256)
+			}
+			patterns = append(patterns, random)
+
+			for i, data := range patterns {
+				for level := LevelFastest; level <= LevelSmallest; level++ {
+					encoded, err := Encode(nil, data, level)
+					if err != nil {
+						t.Fatalf("pattern %d, level %d: Encode failed: %v", i, level, err)
+					}
+
+					// Get block info
+					_, _, block, dLen, err := isMinLZ(encoded)
+					if err != nil {
+						t.Fatalf("pattern %d, level %d: isMinLZ failed: %v", i, level, err)
+					}
+
+					// Decode with ASM
+					dstAsm := make([]byte, dLen)
+					errAsm := decodeBlockAsm(dstAsm, block)
+
+					// Decode with Go
+					dstGo := make([]byte, dLen)
+					errGo := minLZDecodeGo(dstGo, block)
+
+					if errAsm != errGo {
+						t.Errorf("pattern %d, level %d: error mismatch: ASM=%d, Go=%d", i, level, errAsm, errGo)
+						continue
+					}
+
+					if errAsm == 0 && !bytes.Equal(dstAsm, dstGo) {
+						t.Errorf("pattern %d, level %d: content mismatch", i, level)
+					}
+
+					if errAsm == 0 && !bytes.Equal(dstAsm, data) {
+						t.Errorf("pattern %d, level %d: decoded data doesn't match original", i, level)
+					}
+				}
+			}
+		})
+	}
+}

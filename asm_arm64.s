@@ -69,21 +69,22 @@ TEXT ·decodeBlockAsm(SB), NOSPLIT, $0-56
 	MOVD ZR, R8
 
 	// Check if we have enough data for fast loop margins
-	// Skip directly to slow loop if srcLen < 32 or dstLen < 32
-	// We need 32-byte margin for safe NEON over-writes (32-byte copies)
-	CMP $32, R4
-	BLO decode_remain_loop      // srcLen < 32, use slow loop
+	// Skip directly to slow loop if srcLen < 36 or dstLen < 32
+	// We need 36-byte src margin (32 for NEON loads + 4 for max tag header size)
+	// We need 32-byte dst margin for safe NEON over-writes
+	CMP $36, R4
+	BLO decode_remain_loop      // srcLen < 36, use slow loop
 	CMP $32, R2
 	BLO decode_remain_loop      // dstLen < 32, use slow loop
 
 	// Calculate limits with margins for fast loop
-	// srcLimit = srcEnd - 32
+	// srcLimit = srcEnd - 36 (ensures safe 32-byte reads after 4-byte tag consumption)
 	// dstLimit = dstEnd - 32
-	SUB $32, R6, R12            // srcLimit
+	SUB $36, R6, R12            // srcLimit
 	SUB $32, R5, R13            // dstLimit
 
 	// ============================================
-	// FAST LOOP - with 32-byte input/output margins
+	// FAST LOOP - with 36-byte src / 32-byte dst margins
 	// ============================================
 decode_fast_loop:
 	// Note: Go ARM64 CMP Rm, Rn computes Rn - Rm, so CMP Ra, Rb; BHS branches when Rb >= Ra
