@@ -1,4 +1,4 @@
-// Copyright 2025 MinIO Inc.
+// Copyright 2026 MinIO Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build (!amd64 && !arm64) || appengine || !gc || noasm || purego
+//go:build arm64 && !appengine && !noasm && gc && !purego
 
 package minlz
+
+import (
+	"github.com/minio/minlz/internal/race"
+)
 
 // minLZDecode writes the decoding of src to dst. It assumes that the varint-encoded
 // length of the decompressed bytes has already been read, and that len(dst)
@@ -22,5 +26,11 @@ package minlz
 //
 // It returns 0 on success or a decodeErrCodeXxx error code on failure.
 func minLZDecode(dst, src []byte) int {
-	return minLZDecodeGo(dst, src)
+	if dst == nil {
+		panic("nil dst")
+	}
+
+	race.ReadSlice(src)
+	race.WriteSlice(dst)
+	return decodeBlockAsm(dst, src)
 }
