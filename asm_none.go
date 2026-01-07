@@ -66,6 +66,9 @@ func encodeBlock(dst, src []byte) (d int) {
 //
 //	len(dst) >= MaxEncodedLen(len(src))
 func encodeBlockBetter(dst, src []byte) (d int) {
+	if len(src) < minNonLiteralBlockSize {
+		return 0
+	}
 	if len(src) <= 64<<10 {
 		return encodeBlockBetterGo64K(dst, src)
 	}
