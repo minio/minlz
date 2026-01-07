@@ -134,6 +134,7 @@ func FuzzDecode(f *testing.F) {
 	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, addCompressed)
 	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, addCompressed)
 	fuzz.AddFromZip(f, "testdata/dec-block-regressions.zip", fuzz.TypeRaw, false)
+	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-dec.zip", fuzz.TypeGoFuzz, false)
 
 	dec := NewReader(nil, ReaderIgnoreCRC())
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -143,17 +144,19 @@ func FuzzDecode(f *testing.F) {
 		if bytes.HasPrefix(data, []byte(magicChunk)) {
 			dec.Reset(bytes.NewReader(data))
 			_, err := io.Copy(io.Discard, dec)
-			if true {
-				dec.Reset(bytes.NewReader(data))
-				_, cErr := dec.DecodeConcurrent(io.Discard, 2)
-				if (err == nil) != (cErr == nil) {
-					t.Error("error mismatch", err, cErr)
-				}
+			dec.Reset(bytes.NewReader(data))
+			_, cErr := dec.DecodeConcurrent(io.Discard, 2)
+			if (err == nil) != (cErr == nil) {
+				t.Error("error mismatch", err, cErr)
 			}
 			return
 		}
 		dCopy := append([]byte{}, data...)
-		dlen, err := DecodedLen(data)
+		isMz, dlen, err := IsMinLZ(data)
+		if !isMz && dlen > MaxBlockSize {
+			// Don't do s2/snappy fallback if big.
+			return
+		}
 		base, baseErr := Decode(nil, data)
 		if !bytes.Equal(data, dCopy) {
 			t.Fatal("data was changed")
@@ -163,9 +166,6 @@ func FuzzDecode(f *testing.F) {
 		dataCapped = append(dataCapped, data...)
 		dataCapped = append(dataCapped, bytes.Repeat([]byte{0xff, 0xff, 0xff, 0xff}, 1024/4)...)
 		dataCapped = dataCapped[:len(data):len(data)]
-		if dlen > MaxBlockSize {
-			dlen = MaxBlockSize
-		}
 		dst2 := bytes.Repeat([]byte{0xfe}, dlen+1024)
 		got, err := Decode(dst2[:dlen:dlen], dataCapped[:len(data)])
 		if !bytes.Equal(dataCapped[:len(data)], dCopy) {

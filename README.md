@@ -695,6 +695,7 @@ File names beginning with 'http://' and 'https://' will be downloaded and compre
 Only http response code 200 is accepted.
 
 Options:
+  -0    Perform no compression
   -1    Compress faster, but with a minor compression loss
   -2    Default compression speed (default true)
   -3    Compress more, but a lot slower
@@ -724,6 +725,8 @@ Options:
         Do not overwrite output files
   -verify
         Verify files, but do not write output
+  -xfast
+        Compress fastest, with a major compression loss
 
 Example:
 
@@ -760,10 +763,12 @@ Options:
   -c    Write all output to stdout. Multiple input files will be concatenated
   -cpu int
         Maximum number of threads to use (default 32)
+  -follow
+        Follow file like tail -f, reopening when EOF is reached
   -help
         Display help
   -limit string
-        Return at most this much data. Examples: 92, 64K, 256K, 1M, 4M        
+        Return at most this much data. Examples: 92, 64K, 256K, 1M, 4M
   -o string
         Write output to another file. Single input file only
   -offset string
