@@ -7,14 +7,15 @@ where encoding and/or decoding speed is the primary concern.
 
 MinLZ is designed to operate *faster than IO* for both compression and decompression and be a viable "always on"
 option even if some content already is compressed.
-If slow compression is acceptable, MinLZ can be configured to produce high compression ratio, 
-but retain high decompression speed.
+If slow compression is acceptable, MinLZ can be configured to produce a high compression ratio, 
+while retaining high decompression speed.
 
 * Best in class compression
 * Block or Streaming interfaces
 * Very fast decompression, even as pure Go
 * AMD64 encoder+decoder assembly
-* Adjustable Compression (3 levels)
+* ARM64 decoder assembly
+* Adjustable Compression (4 levels)
 * Concurrent stream Compression
 * Concurrent stream Decompression
 * Skip forward in compressed stream via independent blocks
@@ -32,6 +33,11 @@ This package implements the MinLZ specification v1.0 in Go.
 For format specification see the included [SPEC.md](SPEC.md).
 
 # Changelog
+* [v1.1.0](https://github.com/minio/minlz/releases/tag/v1.1.0)
+  * Added SuperFast compression mode. See LevelSuperFast below.
+  * Added ARM64 decompression assembly.
+  * Added `-follow` to mz command to allow reading files while they are being written.
+  * Improve default compression.
 
 * [v1.0.0](https://github.com/minio/minlz/releases/tag/v1.0.0)
   * [Initial Release Blog Post](https://blog.min.io/minlz-compression-algorithm/).
@@ -49,8 +55,9 @@ Blocks are mainly useful for small data sizes.
 Streams are a collection of independent blocks, which each have checksums and EOF checks, 
 which ensures against corruption and truncation.
 
-3 compression levels are provided:
+4 compression levels are provided:
 
+* Level -1, "SuperFast": Provides the fastest compression, but at a very reduced compression ratio.
 * Level 1, "Fastest": Provides the fastest compression with reasonable compression. 
 * Level 2, "Balanced": Provides a good balance between compression and speed. ~50% the speed of the fastest level.
 * Level 3, "Smallest": Provides the smallest output possible. Not tuned for speed.
@@ -156,6 +163,24 @@ levels 1,2 and 3 respectively.
 Setting level 0 will disable compression and write the data as an uncompressed stream.
 
 The default level is `LevelBalanced`.
+
+Typical speeds are `LevelFastest` is 2x the speed of `LevelBalanced` 
+and `LevelSmallest` is at least an order of magnitude slower.
+
+### LevelSuperFast
+
+Furthermore `LevelSuperFast` is provided. This compression mode is aimed purely at reducing
+slowdown when compressing hard-to-compress data. In practice that is short matches.
+
+The compression ratio can greatly suffer in this mode, but in these cases it can be faster.
+So if you have a very high throughput (> 1GB/core/s) and a time-sensitive use case, 
+this can be used to ensure the compression doesn't take too much longer on this content.
+
+For these cases the speed difference can be *up to* 2x over `LevelFastest`, but also with a
+much worse compression ratio. 
+However, most often it will be around 15% faster with a similar drop in the compression ratio.
+
+Typically, the performance difference will also be the same for decompression.  
 
 #### Writer Block Size
 
@@ -344,20 +369,22 @@ Click below to see some sample benchmarks compared to Snappy and LZ4:
 ### Protobuf Sample
 
 
-| Compressor   | Size   | Comp MB/s | Decomp MB/s | Reduction % |
-|--------------|--------|----------:|-------------|-------------|
-| MinLZ 1      | 17,613 |    27,837 |     116,762 |      85.15% |
-| MinLZ 1 (Go) | 17,479 |    22,036 |      61,652 |      85.26% |
-| MinLZ 2      | 16,345 |    12,797 |     103,100 |      86.22% |
-| MinLZ 2 (Go) | 16,345 |     9,732 |      52,964 |      86.22% |
-| MinLZ 3      | 14,766 |       210 |     126,385 |      87.55% |
-| MinLZ 3 (Go) | 14,766 |           |      68,411 |      87.55% |
-| Snappy       | 23,335 |    24,052 |      61,002 |      80.32% |
-| Snappy (Go)  | 23,335 |    10,055 |      35,699 |      80.32% |
-| LZ4 0        | 18,766 |    12,649 |     137,553 |      84.18% |
-| LZ4 0 (Go)   | 18,766 |           |      64,092 |      84.18% |
-| LZ4 9        | 15,844 |    12,649 |     139,801 |      86.64% |
-| LZ4 9 (Go)   | 15,844 |           |      66,904 |      86.64% |
+| Compressor    | Size    | Comp MB/s | Decomp MB/s | Reduction % |
+|---------------|---------|----------:|-------------|-------------|
+| MinLZ 1       | 17,613  |    27,837 |     116,762 | 85.15%      |
+| MinLZ 1 (Go)  | 17,479  |    22,036 |      61,652 | 85.26%      |
+| MinLZ 2       | 16,345  |    12,797 |     103,100 | 86.22%      |
+| MinLZ 2 (Go)  | 16,345  |     9,732 |      52,964 | 86.22%      |
+| MinLZ 3       | 14,766  |       210 |     126,385 | 87.55%      |
+| MinLZ 3 (Go)  | 14,766  |           |      68,411 | 87.55%      |
+| Snappy        | 23,335  |    24,052 |      61,002 | 80.32%      |
+| Snappy (Go)   | 23,335  |    10,055 |      35,699 | 80.32%      |
+| LZ4 0         | 18,766  |    12,649 |     137,553 | 84.18%      |
+| LZ4 0 (Go)    | 18,766  |           |      64,092 | 84.18%      |
+| LZ4 9         | 15,844  |    12,649 |     139,801 | 86.64%      |
+| LZ4 9 (Go)    | 15,844  |           |      66,904 | 86.64%      |
+| MinLZ -1      | 19,889  |    ------ |     ------- | 83.23%      |
+| MinLZ -1 (Go) | 19,218  |    ------ |     ------- | 83.74%      |
 
 ![Compression vs Size](img/pb-block.png)
 
@@ -369,20 +396,22 @@ Source file: https://github.com/google/snappy/blob/main/testdata/geo.protodata
 <details>
   <summary>Click To See Data + Charts (102,400 bytes input)</summary>
 
-| Compressor   | Size   | Comp MB/s | Decomp MB/s | Reduction % |
-|--------------|--------|----------:|-------------|-------------|
-| MinLZ 1      | 20,184 |    17,558 |      82,292 |      80.29% |
-| MinLZ 1 (Go) | 19,849 |    15,035 |      32,327 |      80.62% |
-| MinLZ 2      | 17,831 |     9,260 |      58,432 |      82.59% |
-| MinLZ 2 (Go) | 17,831 |     7,524 |      25,728 |      82.59% |
-| MinLZ 3      | 16,025 |       180 |      80,445 |      84.35% |
-| MinLZ 3 (Go) | 16,025 |           |      33,382 |      84.35% |
-| Snappy       | 22,843 |    17,469 |      44,765 |      77.69% |
-| Snappy (Go)  | 22,843 |     8,161 |      21,082 |      77.69% |
-| LZ4 0        | 21,216 |     9,452 |     101,490 |      79.28% |
-| LZ4 0 (Go)   | 21,216 |           |      40,674 |      79.28% |
-| LZ4 9        | 17,139 |     1,407 |      95,706 |      83.26% |
-| LZ4 9 (Go)   | 17,139 |           |      39,709 |      83.26% |
+| Compressor    | Size   | Comp MB/s | Decomp MB/s | Reduction % |
+|---------------|--------|----------:|-------------|-------------|
+| MinLZ 1       | 20,184 |    17,558 | 82,292      | 80.29%      |
+| MinLZ 1 (Go)  | 19,849 |    15,035 | 32,327      | 80.62%      |
+| MinLZ 2       | 17,831 |     9,260 | 58,432      | 82.59%      |
+| MinLZ 2 (Go)  | 17,831 |     7,524 | 25,728      | 82.59%      |
+| MinLZ 3       | 16,025 |       180 | 80,445      | 84.35%      |
+| MinLZ 3 (Go)  | 16,025 |           | 33,382      | 84.35%      |
+| Snappy        | 22,843 |    17,469 | 44,765      | 77.69%      |
+| Snappy (Go)   | 22,843 |     8,161 | 21,082      | 77.69%      |
+| LZ4 0         | 21,216 |     9,452 | 101,490     | 79.28%      |
+| LZ4 0 (Go)    | 21,216 |           | 40,674      | 79.28%      |
+| LZ4 9         | 17,139 |     1,407 | 95,706      | 83.26%      |
+| LZ4 9 (Go)    | 17,139 |           | 39,709      | 83.26%      |
+| MinLZ -1      | 23,487 |    ------ | -------     | 77.06%      |
+| MinLZ -1 (Go) | 22,911 |    ------ | -------     | 77.63%      |
 
 ![Compression vs Size](img/html-block.png)
 
@@ -666,6 +695,7 @@ File names beginning with 'http://' and 'https://' will be downloaded and compre
 Only http response code 200 is accepted.
 
 Options:
+  -0    Perform no compression
   -1    Compress faster, but with a minor compression loss
   -2    Default compression speed (default true)
   -3    Compress more, but a lot slower
@@ -695,6 +725,8 @@ Options:
         Do not overwrite output files
   -verify
         Verify files, but do not write output
+  -xfast
+        Compress fastest, with a major compression loss
 
 Example:
 
@@ -731,10 +763,12 @@ Options:
   -c    Write all output to stdout. Multiple input files will be concatenated
   -cpu int
         Maximum number of threads to use (default 32)
+  -follow
+        Follow file like tail -f, reopening when EOF is reached
   -help
         Display help
   -limit string
-        Return at most this much data. Examples: 92, 64K, 256K, 1M, 4M        
+        Return at most this much data. Examples: 92, 64K, 256K, 1M, 4M
   -o string
         Write output to another file. Single input file only
   -offset string

@@ -66,9 +66,7 @@ func encodeBlockBetterGo(dst, src []byte) (d int) {
 	if len(src) < minNonLiteralBlockSize {
 		return 0
 	}
-	if len(src) <= 64<<10 {
-		return encodeBlockBetterGo64K(dst, src)
-	}
+
 	// Initialize the hash tables.
 	const (
 		// Long hash matches.

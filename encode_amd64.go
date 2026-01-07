@@ -24,6 +24,88 @@ import (
 
 const hasAsm = true
 
+var encFastPools [7]sync.Pool
+
+// encodeBlock encodes a non-empty src to a guaranteed-large-enough dst. It
+// assumes that the varint-encoded length of the decompressed bytes has already
+// been written.
+//
+// It also assumes that:
+//
+//	len(dst) >= MaxEncodedLen(len(src)) &&
+//	minNonLiteralBlockSize <= len(src) && len(src) <= maxBlockSize
+func encodeBlockFast(dst, src []byte) (d int) {
+	race.ReadSlice(src)
+	race.WriteSlice(dst)
+
+	switch {
+	case len(src) > 2<<20:
+		const sz, pool = 65536, 5
+		tmp, ok := encFastPools[pool].Get().(*[sz]byte)
+		if !ok {
+			tmp = &[sz]byte{}
+		}
+		race.WriteSlice(tmp[:])
+		defer encPools[pool].Put(tmp)
+		return encodeFastBlockAsm(dst, src, tmp)
+	case len(src) > 512<<10:
+		const sz, pool = 32768, 0
+		tmp, ok := encFastPools[pool].Get().(*[sz]byte)
+		if !ok {
+			tmp = &[sz]byte{}
+		}
+		race.WriteSlice(tmp[:])
+		defer encPools[pool].Put(tmp)
+		return encodeFastBlockAsm2MB(dst, src, tmp)
+	case len(src) > 64<<10:
+		const sz, pool = 32768, 0
+		tmp, ok := encFastPools[pool].Get().(*[sz]byte)
+		if !ok {
+			tmp = &[sz]byte{}
+		}
+		race.WriteSlice(tmp[:])
+		defer encPools[pool].Put(tmp)
+		return encodeFastBlockAsm512K(dst, src, tmp)
+	case len(src) > 16<<10:
+		const sz, pool = 8192, 1
+		tmp, ok := encFastPools[pool].Get().(*[sz]byte)
+		if !ok {
+			tmp = &[sz]byte{}
+		}
+		race.WriteSlice(tmp[:])
+		defer encPools[pool].Put(tmp)
+		return encodeFastBlockAsm64K(dst, src, tmp)
+	case len(src) > 4<<10:
+		const sz, pool = 4096, 2
+		tmp, ok := encFastPools[pool].Get().(*[sz]byte)
+		if !ok {
+			tmp = &[sz]byte{}
+		}
+		race.WriteSlice(tmp[:])
+		defer encPools[pool].Put(tmp)
+		return encodeFastBlockAsm16K(dst, src, tmp)
+	case len(src) > 1<<10:
+		const sz, pool = 2048, 3
+		tmp, ok := encFastPools[pool].Get().(*[sz]byte)
+		if !ok {
+			tmp = &[sz]byte{}
+		}
+		race.WriteSlice(tmp[:])
+		defer encPools[pool].Put(tmp)
+		return encodeFastBlockAsm4K(dst, src, tmp)
+	case len(src) > 32:
+		const sz, pool = 1024, 4
+		tmp, ok := encFastPools[pool].Get().(*[sz]byte)
+		if !ok {
+			tmp = &[sz]byte{}
+		}
+		race.WriteSlice(tmp[:])
+		defer encPools[pool].Put(tmp)
+		return encodeFastBlockAsm1K(dst, src, tmp)
+	}
+	return 0
+}
+
 var encPools [7]sync.Pool
 
 // encodeBlock encodes a non-empty src to a guaranteed-large-enough dst. It

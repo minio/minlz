@@ -45,9 +45,7 @@ func encodeBlockGo(dst, src []byte) (d int) {
 
 		debug = debugEncode
 	)
-	if len(src) <= 65536 {
-		return encodeBlockGo64K(dst, src)
-	}
+
 	// Having values inside the table is ~the same speed as looking up
 	// - maybe slightly faster on bigger blocks.
 	// We go for the smaller stack allocation for now.
