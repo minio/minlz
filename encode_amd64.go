@@ -93,7 +93,7 @@ func encodeBlockFast(dst, src []byte) (d int) {
 		race.WriteSlice(tmp[:])
 		defer encPools[pool].Put(tmp)
 		return encodeFastBlockAsm4K(dst, src, tmp)
-	case len(src) > minNonLiteralBlockSize:
+	case len(src) > 32:
 		const sz, pool = 1024, 4
 		tmp, ok := encFastPools[pool].Get().(*[sz]byte)
 		if !ok {

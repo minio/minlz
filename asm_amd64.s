@@ -434,20 +434,21 @@ memmove_long_match_emit_encodeBlockAsm:
 	LEAQ (CX)(R8*1), R9
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(R8*1), X2
-	MOVOU -16(DI)(R8*1), X3
-	MOVQ  R8, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeBlockAsmlarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(R8*1), X2
+	MOVOU   -16(DI)(R8*1), X3
+	MOVQ    R8, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeBlockAsmlarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeBlockAsmlarge_big_loop_back:
 	MOVOU (R10), X4
@@ -899,20 +900,21 @@ memmove_long_emit_remainder_encodeBlockAsm:
 	LEAQ (CX)(AX*1), BX
 
 	// genMemMoveLong
-	MOVOU (DX), X0
-	MOVOU 16(DX), X1
-	MOVOU -32(DX)(AX*1), X2
-	MOVOU -16(DX)(AX*1), X3
-	MOVQ  AX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeBlockAsmlarge_forward_sse_loop_32
-	LEAQ  -32(DX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (DX), X0
+	MOVOU   16(DX), X1
+	MOVOU   -32(DX)(AX*1), X2
+	MOVOU   -16(DX)(AX*1), X3
+	MOVQ    AX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeBlockAsmlarge_forward_sse_loop_32
+	LEAQ    -32(DX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeBlockAsmlarge_big_loop_back:
 	MOVOU (SI), X4
@@ -1368,20 +1370,21 @@ memmove_long_match_emit_encodeBlockAsm2MB:
 	LEAQ (CX)(R8*1), R9
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(R8*1), X2
-	MOVOU -16(DI)(R8*1), X3
-	MOVQ  R8, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeBlockAsm2MBlarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(R8*1), X2
+	MOVOU   -16(DI)(R8*1), X3
+	MOVQ    R8, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeBlockAsm2MBlarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeBlockAsm2MBlarge_big_loop_back:
 	MOVOU (R10), X4
@@ -1827,20 +1830,21 @@ memmove_long_emit_remainder_encodeBlockAsm2MB:
 	LEAQ (CX)(AX*1), BX
 
 	// genMemMoveLong
-	MOVOU (DX), X0
-	MOVOU 16(DX), X1
-	MOVOU -32(DX)(AX*1), X2
-	MOVOU -16(DX)(AX*1), X3
-	MOVQ  AX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeBlockAsm2MBlarge_forward_sse_loop_32
-	LEAQ  -32(DX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (DX), X0
+	MOVOU   16(DX), X1
+	MOVOU   -32(DX)(AX*1), X2
+	MOVOU   -16(DX)(AX*1), X3
+	MOVQ    AX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeBlockAsm2MBlarge_forward_sse_loop_32
+	LEAQ    -32(DX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeBlockAsm2MBlarge_big_loop_back:
 	MOVOU (SI), X4
@@ -2296,20 +2300,21 @@ memmove_long_match_emit_encodeBlockAsm512K:
 	LEAQ (CX)(R8*1), R9
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(R8*1), X2
-	MOVOU -16(DI)(R8*1), X3
-	MOVQ  R8, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeBlockAsm512Klarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(R8*1), X2
+	MOVOU   -16(DI)(R8*1), X3
+	MOVQ    R8, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeBlockAsm512Klarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeBlockAsm512Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -2755,20 +2760,21 @@ memmove_long_emit_remainder_encodeBlockAsm512K:
 	LEAQ (CX)(AX*1), BX
 
 	// genMemMoveLong
-	MOVOU (DX), X0
-	MOVOU 16(DX), X1
-	MOVOU -32(DX)(AX*1), X2
-	MOVOU -16(DX)(AX*1), X3
-	MOVQ  AX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeBlockAsm512Klarge_forward_sse_loop_32
-	LEAQ  -32(DX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (DX), X0
+	MOVOU   16(DX), X1
+	MOVOU   -32(DX)(AX*1), X2
+	MOVOU   -16(DX)(AX*1), X3
+	MOVQ    AX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeBlockAsm512Klarge_forward_sse_loop_32
+	LEAQ    -32(DX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeBlockAsm512Klarge_big_loop_back:
 	MOVOU (SI), X4
@@ -3177,20 +3183,21 @@ memmove_long_match_emit_encodeBlockAsm64K:
 	LEAQ (CX)(R8*1), R9
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(R8*1), X2
-	MOVOU -16(DI)(R8*1), X3
-	MOVQ  R8, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeBlockAsm64Klarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(R8*1), X2
+	MOVOU   -16(DI)(R8*1), X3
+	MOVQ    R8, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeBlockAsm64Klarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeBlockAsm64Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -3592,20 +3599,21 @@ memmove_long_emit_remainder_encodeBlockAsm64K:
 	LEAQ (CX)(AX*1), BX
 
 	// genMemMoveLong
-	MOVOU (DX), X0
-	MOVOU 16(DX), X1
-	MOVOU -32(DX)(AX*1), X2
-	MOVOU -16(DX)(AX*1), X3
-	MOVQ  AX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeBlockAsm64Klarge_forward_sse_loop_32
-	LEAQ  -32(DX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (DX), X0
+	MOVOU   16(DX), X1
+	MOVOU   -32(DX)(AX*1), X2
+	MOVOU   -16(DX)(AX*1), X3
+	MOVQ    AX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeBlockAsm64Klarge_forward_sse_loop_32
+	LEAQ    -32(DX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeBlockAsm64Klarge_big_loop_back:
 	MOVOU (SI), X4
@@ -4006,20 +4014,21 @@ memmove_long_match_emit_encodeBlockAsm16K:
 	LEAQ (CX)(R8*1), R9
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(R8*1), X2
-	MOVOU -16(DI)(R8*1), X3
-	MOVQ  R8, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeBlockAsm16Klarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(R8*1), X2
+	MOVOU   -16(DI)(R8*1), X3
+	MOVQ    R8, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeBlockAsm16Klarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeBlockAsm16Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -4413,20 +4422,21 @@ memmove_long_emit_remainder_encodeBlockAsm16K:
 	LEAQ (CX)(AX*1), BX
 
 	// genMemMoveLong
-	MOVOU (DX), X0
-	MOVOU 16(DX), X1
-	MOVOU -32(DX)(AX*1), X2
-	MOVOU -16(DX)(AX*1), X3
-	MOVQ  AX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeBlockAsm16Klarge_forward_sse_loop_32
-	LEAQ  -32(DX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (DX), X0
+	MOVOU   16(DX), X1
+	MOVOU   -32(DX)(AX*1), X2
+	MOVOU   -16(DX)(AX*1), X3
+	MOVQ    AX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeBlockAsm16Klarge_forward_sse_loop_32
+	LEAQ    -32(DX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeBlockAsm16Klarge_big_loop_back:
 	MOVOU (SI), X4
@@ -4827,20 +4837,21 @@ memmove_long_match_emit_encodeBlockAsm4K:
 	LEAQ (CX)(R8*1), R9
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(R8*1), X2
-	MOVOU -16(DI)(R8*1), X3
-	MOVQ  R8, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeBlockAsm4Klarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(R8*1), X2
+	MOVOU   -16(DI)(R8*1), X3
+	MOVQ    R8, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeBlockAsm4Klarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeBlockAsm4Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -5234,20 +5245,21 @@ memmove_long_emit_remainder_encodeBlockAsm4K:
 	LEAQ (CX)(AX*1), BX
 
 	// genMemMoveLong
-	MOVOU (DX), X0
-	MOVOU 16(DX), X1
-	MOVOU -32(DX)(AX*1), X2
-	MOVOU -16(DX)(AX*1), X3
-	MOVQ  AX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeBlockAsm4Klarge_forward_sse_loop_32
-	LEAQ  -32(DX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (DX), X0
+	MOVOU   16(DX), X1
+	MOVOU   -32(DX)(AX*1), X2
+	MOVOU   -16(DX)(AX*1), X3
+	MOVQ    AX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeBlockAsm4Klarge_forward_sse_loop_32
+	LEAQ    -32(DX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeBlockAsm4Klarge_big_loop_back:
 	MOVOU (SI), X4
@@ -5648,20 +5660,21 @@ memmove_long_match_emit_encodeBlockAsm1K:
 	LEAQ (CX)(R8*1), R9
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(R8*1), X2
-	MOVOU -16(DI)(R8*1), X3
-	MOVQ  R8, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeBlockAsm1Klarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(R8*1), X2
+	MOVOU   -16(DI)(R8*1), X3
+	MOVQ    R8, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeBlockAsm1Klarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeBlockAsm1Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -6055,20 +6068,21 @@ memmove_long_emit_remainder_encodeBlockAsm1K:
 	LEAQ (CX)(AX*1), BX
 
 	// genMemMoveLong
-	MOVOU (DX), X0
-	MOVOU 16(DX), X1
-	MOVOU -32(DX)(AX*1), X2
-	MOVOU -16(DX)(AX*1), X3
-	MOVQ  AX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeBlockAsm1Klarge_forward_sse_loop_32
-	LEAQ  -32(DX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (DX), X0
+	MOVOU   16(DX), X1
+	MOVOU   -32(DX)(AX*1), X2
+	MOVOU   -16(DX)(AX*1), X3
+	MOVQ    AX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeBlockAsm1Klarge_forward_sse_loop_32
+	LEAQ    -32(DX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeBlockAsm1Klarge_big_loop_back:
 	MOVOU (SI), X4
@@ -6289,20 +6303,21 @@ memmove_long_repeat_emit_lits_encodeFastBlockAsm:
 	LEAQ (CX)(SI*1), R9
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(SI*1), X2
-	MOVOU -16(R8)(SI*1), X3
-	MOVQ  SI, R11
-	SHRQ  $0x05, R11
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R12
-	SUBQ  R10, R12
-	DECQ  R11
-	JA    emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsmlarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R12*1), R10
-	LEAQ  -32(CX)(R12*1), R13
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(SI*1), X2
+	MOVOU   -16(R8)(SI*1), X3
+	MOVQ    SI, R11
+	SHRQ    $0x05, R11
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R12
+	SUBQ    R10, R12
+	DECQ    R11
+	JA      emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsmlarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R12*1), R10
+	LEAQ    -32(CX)(R12*1), R13
+	PCALIGN $0x10
 
 emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsmlarge_big_loop_back:
 	MOVOU (R10), X4
@@ -6697,20 +6712,21 @@ memmove_long_match_emit_encodeFastBlockAsm:
 	LEAQ (CX)(R8*1), R9
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(R8*1), X2
-	MOVOU -16(DI)(R8*1), X3
-	MOVQ  R8, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeFastBlockAsmlarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(R8*1), X2
+	MOVOU   -16(DI)(R8*1), X3
+	MOVQ    R8, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeFastBlockAsmlarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeFastBlockAsmlarge_big_loop_back:
 	MOVOU (R10), X4
@@ -7160,20 +7176,21 @@ memmove_long_emit_remainder_encodeFastBlockAsm:
 	LEAQ (CX)(AX*1), BX
 
 	// genMemMoveLong
-	MOVOU (DX), X0
-	MOVOU 16(DX), X1
-	MOVOU -32(DX)(AX*1), X2
-	MOVOU -16(DX)(AX*1), X3
-	MOVQ  AX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeFastBlockAsmlarge_forward_sse_loop_32
-	LEAQ  -32(DX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (DX), X0
+	MOVOU   16(DX), X1
+	MOVOU   -32(DX)(AX*1), X2
+	MOVOU   -16(DX)(AX*1), X3
+	MOVQ    AX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeFastBlockAsmlarge_forward_sse_loop_32
+	LEAQ    -32(DX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeFastBlockAsmlarge_big_loop_back:
 	MOVOU (SI), X4
@@ -7393,20 +7410,21 @@ memmove_long_repeat_emit_lits_encodeFastBlockAsm2MB:
 	LEAQ (CX)(SI*1), R9
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(SI*1), X2
-	MOVOU -16(R8)(SI*1), X3
-	MOVQ  SI, R11
-	SHRQ  $0x05, R11
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R12
-	SUBQ  R10, R12
-	DECQ  R11
-	JA    emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm2MBlarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R12*1), R10
-	LEAQ  -32(CX)(R12*1), R13
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(SI*1), X2
+	MOVOU   -16(R8)(SI*1), X3
+	MOVQ    SI, R11
+	SHRQ    $0x05, R11
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R12
+	SUBQ    R10, R12
+	DECQ    R11
+	JA      emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm2MBlarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R12*1), R10
+	LEAQ    -32(CX)(R12*1), R13
+	PCALIGN $0x10
 
 emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm2MBlarge_big_loop_back:
 	MOVOU (R10), X4
@@ -7795,20 +7813,21 @@ memmove_long_match_emit_encodeFastBlockAsm2MB:
 	LEAQ (CX)(R8*1), R9
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(R8*1), X2
-	MOVOU -16(DI)(R8*1), X3
-	MOVQ  R8, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeFastBlockAsm2MBlarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(R8*1), X2
+	MOVOU   -16(DI)(R8*1), X3
+	MOVQ    R8, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeFastBlockAsm2MBlarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeFastBlockAsm2MBlarge_big_loop_back:
 	MOVOU (R10), X4
@@ -8252,20 +8271,21 @@ memmove_long_emit_remainder_encodeFastBlockAsm2MB:
 	LEAQ (CX)(AX*1), BX
 
 	// genMemMoveLong
-	MOVOU (DX), X0
-	MOVOU 16(DX), X1
-	MOVOU -32(DX)(AX*1), X2
-	MOVOU -16(DX)(AX*1), X3
-	MOVQ  AX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm2MBlarge_forward_sse_loop_32
-	LEAQ  -32(DX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (DX), X0
+	MOVOU   16(DX), X1
+	MOVOU   -32(DX)(AX*1), X2
+	MOVOU   -16(DX)(AX*1), X3
+	MOVQ    AX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm2MBlarge_forward_sse_loop_32
+	LEAQ    -32(DX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm2MBlarge_big_loop_back:
 	MOVOU (SI), X4
@@ -8485,20 +8505,21 @@ memmove_long_repeat_emit_lits_encodeFastBlockAsm512K:
 	LEAQ (CX)(SI*1), R9
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(SI*1), X2
-	MOVOU -16(R8)(SI*1), X3
-	MOVQ  SI, R11
-	SHRQ  $0x05, R11
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R12
-	SUBQ  R10, R12
-	DECQ  R11
-	JA    emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm512Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R12*1), R10
-	LEAQ  -32(CX)(R12*1), R13
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(SI*1), X2
+	MOVOU   -16(R8)(SI*1), X3
+	MOVQ    SI, R11
+	SHRQ    $0x05, R11
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R12
+	SUBQ    R10, R12
+	DECQ    R11
+	JA      emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm512Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R12*1), R10
+	LEAQ    -32(CX)(R12*1), R13
+	PCALIGN $0x10
 
 emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm512Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -8887,20 +8908,21 @@ memmove_long_match_emit_encodeFastBlockAsm512K:
 	LEAQ (CX)(R8*1), R9
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(R8*1), X2
-	MOVOU -16(DI)(R8*1), X3
-	MOVQ  R8, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeFastBlockAsm512Klarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(R8*1), X2
+	MOVOU   -16(DI)(R8*1), X3
+	MOVQ    R8, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeFastBlockAsm512Klarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeFastBlockAsm512Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -9344,20 +9366,21 @@ memmove_long_emit_remainder_encodeFastBlockAsm512K:
 	LEAQ (CX)(AX*1), BX
 
 	// genMemMoveLong
-	MOVOU (DX), X0
-	MOVOU 16(DX), X1
-	MOVOU -32(DX)(AX*1), X2
-	MOVOU -16(DX)(AX*1), X3
-	MOVQ  AX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm512Klarge_forward_sse_loop_32
-	LEAQ  -32(DX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (DX), X0
+	MOVOU   16(DX), X1
+	MOVOU   -32(DX)(AX*1), X2
+	MOVOU   -16(DX)(AX*1), X3
+	MOVQ    AX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm512Klarge_forward_sse_loop_32
+	LEAQ    -32(DX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm512Klarge_big_loop_back:
 	MOVOU (SI), X4
@@ -9576,20 +9599,21 @@ memmove_long_repeat_emit_lits_encodeFastBlockAsm64K:
 	LEAQ (CX)(SI*1), R9
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(SI*1), X2
-	MOVOU -16(R8)(SI*1), X3
-	MOVQ  SI, R11
-	SHRQ  $0x05, R11
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R12
-	SUBQ  R10, R12
-	DECQ  R11
-	JA    emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm64Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R12*1), R10
-	LEAQ  -32(CX)(R12*1), R13
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(SI*1), X2
+	MOVOU   -16(R8)(SI*1), X3
+	MOVQ    SI, R11
+	SHRQ    $0x05, R11
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R12
+	SUBQ    R10, R12
+	DECQ    R11
+	JA      emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm64Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R12*1), R10
+	LEAQ    -32(CX)(R12*1), R13
+	PCALIGN $0x10
 
 emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm64Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -9977,20 +10001,21 @@ memmove_long_match_emit_encodeFastBlockAsm64K:
 	LEAQ (CX)(R8*1), R9
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(R8*1), X2
-	MOVOU -16(DI)(R8*1), X3
-	MOVQ  R8, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeFastBlockAsm64Klarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(R8*1), X2
+	MOVOU   -16(DI)(R8*1), X3
+	MOVQ    R8, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeFastBlockAsm64Klarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeFastBlockAsm64Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -10390,20 +10415,21 @@ memmove_long_emit_remainder_encodeFastBlockAsm64K:
 	LEAQ (CX)(AX*1), BX
 
 	// genMemMoveLong
-	MOVOU (DX), X0
-	MOVOU 16(DX), X1
-	MOVOU -32(DX)(AX*1), X2
-	MOVOU -16(DX)(AX*1), X3
-	MOVQ  AX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm64Klarge_forward_sse_loop_32
-	LEAQ  -32(DX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (DX), X0
+	MOVOU   16(DX), X1
+	MOVOU   -32(DX)(AX*1), X2
+	MOVOU   -16(DX)(AX*1), X3
+	MOVQ    AX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm64Klarge_forward_sse_loop_32
+	LEAQ    -32(DX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm64Klarge_big_loop_back:
 	MOVOU (SI), X4
@@ -10614,20 +10640,21 @@ memmove_long_repeat_emit_lits_encodeFastBlockAsm16K:
 	LEAQ (CX)(SI*1), R9
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(SI*1), X2
-	MOVOU -16(R8)(SI*1), X3
-	MOVQ  SI, R11
-	SHRQ  $0x05, R11
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R12
-	SUBQ  R10, R12
-	DECQ  R11
-	JA    emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm16Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R12*1), R10
-	LEAQ  -32(CX)(R12*1), R13
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(SI*1), X2
+	MOVOU   -16(R8)(SI*1), X3
+	MOVQ    SI, R11
+	SHRQ    $0x05, R11
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R12
+	SUBQ    R10, R12
+	DECQ    R11
+	JA      emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm16Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R12*1), R10
+	LEAQ    -32(CX)(R12*1), R13
+	PCALIGN $0x10
 
 emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm16Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -11007,20 +11034,21 @@ memmove_long_match_emit_encodeFastBlockAsm16K:
 	LEAQ (CX)(R8*1), R9
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(R8*1), X2
-	MOVOU -16(DI)(R8*1), X3
-	MOVQ  R8, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeFastBlockAsm16Klarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(R8*1), X2
+	MOVOU   -16(DI)(R8*1), X3
+	MOVQ    R8, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeFastBlockAsm16Klarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeFastBlockAsm16Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -11412,20 +11440,21 @@ memmove_long_emit_remainder_encodeFastBlockAsm16K:
 	LEAQ (CX)(AX*1), BX
 
 	// genMemMoveLong
-	MOVOU (DX), X0
-	MOVOU 16(DX), X1
-	MOVOU -32(DX)(AX*1), X2
-	MOVOU -16(DX)(AX*1), X3
-	MOVQ  AX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm16Klarge_forward_sse_loop_32
-	LEAQ  -32(DX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (DX), X0
+	MOVOU   16(DX), X1
+	MOVOU   -32(DX)(AX*1), X2
+	MOVOU   -16(DX)(AX*1), X3
+	MOVQ    AX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm16Klarge_forward_sse_loop_32
+	LEAQ    -32(DX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm16Klarge_big_loop_back:
 	MOVOU (SI), X4
@@ -11636,20 +11665,21 @@ memmove_long_repeat_emit_lits_encodeFastBlockAsm4K:
 	LEAQ (CX)(SI*1), R9
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(SI*1), X2
-	MOVOU -16(R8)(SI*1), X3
-	MOVQ  SI, R11
-	SHRQ  $0x05, R11
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R12
-	SUBQ  R10, R12
-	DECQ  R11
-	JA    emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm4Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R12*1), R10
-	LEAQ  -32(CX)(R12*1), R13
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(SI*1), X2
+	MOVOU   -16(R8)(SI*1), X3
+	MOVQ    SI, R11
+	SHRQ    $0x05, R11
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R12
+	SUBQ    R10, R12
+	DECQ    R11
+	JA      emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm4Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R12*1), R10
+	LEAQ    -32(CX)(R12*1), R13
+	PCALIGN $0x10
 
 emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm4Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -12029,20 +12059,21 @@ memmove_long_match_emit_encodeFastBlockAsm4K:
 	LEAQ (CX)(R8*1), R9
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(R8*1), X2
-	MOVOU -16(DI)(R8*1), X3
-	MOVQ  R8, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeFastBlockAsm4Klarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(R8*1), X2
+	MOVOU   -16(DI)(R8*1), X3
+	MOVQ    R8, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeFastBlockAsm4Klarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeFastBlockAsm4Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -12434,20 +12465,21 @@ memmove_long_emit_remainder_encodeFastBlockAsm4K:
 	LEAQ (CX)(AX*1), BX
 
 	// genMemMoveLong
-	MOVOU (DX), X0
-	MOVOU 16(DX), X1
-	MOVOU -32(DX)(AX*1), X2
-	MOVOU -16(DX)(AX*1), X3
-	MOVQ  AX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm4Klarge_forward_sse_loop_32
-	LEAQ  -32(DX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (DX), X0
+	MOVOU   16(DX), X1
+	MOVOU   -32(DX)(AX*1), X2
+	MOVOU   -16(DX)(AX*1), X3
+	MOVQ    AX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm4Klarge_forward_sse_loop_32
+	LEAQ    -32(DX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm4Klarge_big_loop_back:
 	MOVOU (SI), X4
@@ -12658,20 +12690,21 @@ memmove_long_repeat_emit_lits_encodeFastBlockAsm1K:
 	LEAQ (CX)(SI*1), R9
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(SI*1), X2
-	MOVOU -16(R8)(SI*1), X3
-	MOVQ  SI, R11
-	SHRQ  $0x05, R11
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R12
-	SUBQ  R10, R12
-	DECQ  R11
-	JA    emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm1Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R12*1), R10
-	LEAQ  -32(CX)(R12*1), R13
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(SI*1), X2
+	MOVOU   -16(R8)(SI*1), X3
+	MOVQ    SI, R11
+	SHRQ    $0x05, R11
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R12
+	SUBQ    R10, R12
+	DECQ    R11
+	JA      emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm1Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R12*1), R10
+	LEAQ    -32(CX)(R12*1), R13
+	PCALIGN $0x10
 
 emit_lit_memmove_long_repeat_emit_lits_encodeFastBlockAsm1Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -13051,20 +13084,21 @@ memmove_long_match_emit_encodeFastBlockAsm1K:
 	LEAQ (CX)(R8*1), R9
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(R8*1), X2
-	MOVOU -16(DI)(R8*1), X3
-	MOVQ  R8, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeFastBlockAsm1Klarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(R8*1), X2
+	MOVOU   -16(DI)(R8*1), X3
+	MOVQ    R8, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeFastBlockAsm1Klarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeFastBlockAsm1Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -13456,20 +13490,21 @@ memmove_long_emit_remainder_encodeFastBlockAsm1K:
 	LEAQ (CX)(AX*1), BX
 
 	// genMemMoveLong
-	MOVOU (DX), X0
-	MOVOU 16(DX), X1
-	MOVOU -32(DX)(AX*1), X2
-	MOVOU -16(DX)(AX*1), X3
-	MOVQ  AX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm1Klarge_forward_sse_loop_32
-	LEAQ  -32(DX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (DX), X0
+	MOVOU   16(DX), X1
+	MOVOU   -32(DX)(AX*1), X2
+	MOVOU   -16(DX)(AX*1), X3
+	MOVQ    AX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm1Klarge_forward_sse_loop_32
+	LEAQ    -32(DX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeFastBlockAsm1Klarge_big_loop_back:
 	MOVOU (SI), X4
@@ -13730,20 +13765,21 @@ memmove_long_repeat_emit_encodeBetterBlockAsm:
 	LEAQ (CX)(DI*1), SI
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(DI*1), X2
-	MOVOU -16(R8)(DI*1), X3
-	MOVQ  DI, R10
-	SHRQ  $0x05, R10
-	MOVQ  CX, R9
-	ANDL  $0x0000001f, R9
-	MOVQ  $0x00000040, R11
-	SUBQ  R9, R11
-	DECQ  R10
-	JA    emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsmlarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R11*1), R9
-	LEAQ  -32(CX)(R11*1), R12
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(DI*1), X2
+	MOVOU   -16(R8)(DI*1), X3
+	MOVQ    DI, R10
+	SHRQ    $0x05, R10
+	MOVQ    CX, R9
+	ANDL    $0x0000001f, R9
+	MOVQ    $0x00000040, R11
+	SUBQ    R9, R11
+	DECQ    R10
+	JA      emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsmlarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R11*1), R9
+	LEAQ    -32(CX)(R11*1), R12
+	PCALIGN $0x10
 
 emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsmlarge_big_loop_back:
 	MOVOU (R9), X4
@@ -14277,20 +14313,21 @@ memmove_long_match_emit_encodeBetterBlockAsm:
 	LEAQ (CX)(SI*1), R9
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(SI*1), X2
-	MOVOU -16(R8)(SI*1), X3
-	MOVQ  SI, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeBetterBlockAsmlarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(SI*1), X2
+	MOVOU   -16(R8)(SI*1), X3
+	MOVQ    SI, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeBetterBlockAsmlarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeBetterBlockAsmlarge_big_loop_back:
 	MOVOU (R10), X4
@@ -14584,20 +14621,21 @@ memmove_long_match_emit_repeat_encodeBetterBlockAsm:
 	LEAQ (CX)(DI*1), SI
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(DI*1), X2
-	MOVOU -16(R8)(DI*1), X3
-	MOVQ  DI, R10
-	SHRQ  $0x05, R10
-	MOVQ  CX, R9
-	ANDL  $0x0000001f, R9
-	MOVQ  $0x00000040, R12
-	SUBQ  R9, R12
-	DECQ  R10
-	JA    emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsmlarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R12*1), R9
-	LEAQ  -32(CX)(R12*1), R13
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(DI*1), X2
+	MOVOU   -16(R8)(DI*1), X3
+	MOVQ    DI, R10
+	SHRQ    $0x05, R10
+	MOVQ    CX, R9
+	ANDL    $0x0000001f, R9
+	MOVQ    $0x00000040, R12
+	SUBQ    R9, R12
+	DECQ    R10
+	JA      emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsmlarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R12*1), R9
+	LEAQ    -32(CX)(R12*1), R13
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsmlarge_big_loop_back:
 	MOVOU (R9), X4
@@ -14880,20 +14918,21 @@ memmove_long_emit_remainder_encodeBetterBlockAsm:
 	MOVL SI, BX
 
 	// genMemMoveLong
-	MOVOU (AX), X0
-	MOVOU 16(AX), X1
-	MOVOU -32(AX)(BX*1), X2
-	MOVOU -16(AX)(BX*1), X3
-	MOVQ  BX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsmlarge_forward_sse_loop_32
-	LEAQ  -32(AX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (AX), X0
+	MOVOU   16(AX), X1
+	MOVOU   -32(AX)(BX*1), X2
+	MOVOU   -16(AX)(BX*1), X3
+	MOVQ    BX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsmlarge_forward_sse_loop_32
+	LEAQ    -32(AX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsmlarge_big_loop_back:
 	MOVOU (SI), X4
@@ -15149,20 +15188,21 @@ memmove_long_repeat_emit_encodeBetterBlockAsm2MB:
 	LEAQ (CX)(DI*1), SI
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(DI*1), X2
-	MOVOU -16(R8)(DI*1), X3
-	MOVQ  DI, R10
-	SHRQ  $0x05, R10
-	MOVQ  CX, R9
-	ANDL  $0x0000001f, R9
-	MOVQ  $0x00000040, R11
-	SUBQ  R9, R11
-	DECQ  R10
-	JA    emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm2MBlarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R11*1), R9
-	LEAQ  -32(CX)(R11*1), R12
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(DI*1), X2
+	MOVOU   -16(R8)(DI*1), X3
+	MOVQ    DI, R10
+	SHRQ    $0x05, R10
+	MOVQ    CX, R9
+	ANDL    $0x0000001f, R9
+	MOVQ    $0x00000040, R11
+	SUBQ    R9, R11
+	DECQ    R10
+	JA      emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm2MBlarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R11*1), R9
+	LEAQ    -32(CX)(R11*1), R12
+	PCALIGN $0x10
 
 emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm2MBlarge_big_loop_back:
 	MOVOU (R9), X4
@@ -15690,20 +15730,21 @@ memmove_long_match_emit_encodeBetterBlockAsm2MB:
 	LEAQ (CX)(SI*1), R9
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(SI*1), X2
-	MOVOU -16(R8)(SI*1), X3
-	MOVQ  SI, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeBetterBlockAsm2MBlarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(SI*1), X2
+	MOVOU   -16(R8)(SI*1), X3
+	MOVQ    SI, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeBetterBlockAsm2MBlarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeBetterBlockAsm2MBlarge_big_loop_back:
 	MOVOU (R10), X4
@@ -15997,20 +16038,21 @@ memmove_long_match_emit_repeat_encodeBetterBlockAsm2MB:
 	LEAQ (CX)(DI*1), SI
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(DI*1), X2
-	MOVOU -16(R8)(DI*1), X3
-	MOVQ  DI, R10
-	SHRQ  $0x05, R10
-	MOVQ  CX, R9
-	ANDL  $0x0000001f, R9
-	MOVQ  $0x00000040, R12
-	SUBQ  R9, R12
-	DECQ  R10
-	JA    emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm2MBlarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R12*1), R9
-	LEAQ  -32(CX)(R12*1), R13
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(DI*1), X2
+	MOVOU   -16(R8)(DI*1), X3
+	MOVQ    DI, R10
+	SHRQ    $0x05, R10
+	MOVQ    CX, R9
+	ANDL    $0x0000001f, R9
+	MOVQ    $0x00000040, R12
+	SUBQ    R9, R12
+	DECQ    R10
+	JA      emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm2MBlarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R12*1), R9
+	LEAQ    -32(CX)(R12*1), R13
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm2MBlarge_big_loop_back:
 	MOVOU (R9), X4
@@ -16293,20 +16335,21 @@ memmove_long_emit_remainder_encodeBetterBlockAsm2MB:
 	MOVL SI, BX
 
 	// genMemMoveLong
-	MOVOU (AX), X0
-	MOVOU 16(AX), X1
-	MOVOU -32(AX)(BX*1), X2
-	MOVOU -16(AX)(BX*1), X3
-	MOVQ  BX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm2MBlarge_forward_sse_loop_32
-	LEAQ  -32(AX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (AX), X0
+	MOVOU   16(AX), X1
+	MOVOU   -32(AX)(BX*1), X2
+	MOVOU   -16(AX)(BX*1), X3
+	MOVQ    BX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm2MBlarge_forward_sse_loop_32
+	LEAQ    -32(AX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm2MBlarge_big_loop_back:
 	MOVOU (SI), X4
@@ -16571,20 +16614,21 @@ memmove_long_repeat_emit_encodeBetterBlockAsm512K:
 	LEAQ (CX)(DI*1), SI
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(DI*1), X2
-	MOVOU -16(R8)(DI*1), X3
-	MOVQ  DI, R10
-	SHRQ  $0x05, R10
-	MOVQ  CX, R9
-	ANDL  $0x0000001f, R9
-	MOVQ  $0x00000040, R11
-	SUBQ  R9, R11
-	DECQ  R10
-	JA    emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm512Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R11*1), R9
-	LEAQ  -32(CX)(R11*1), R12
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(DI*1), X2
+	MOVOU   -16(R8)(DI*1), X3
+	MOVQ    DI, R10
+	SHRQ    $0x05, R10
+	MOVQ    CX, R9
+	ANDL    $0x0000001f, R9
+	MOVQ    $0x00000040, R11
+	SUBQ    R9, R11
+	DECQ    R10
+	JA      emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm512Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R11*1), R9
+	LEAQ    -32(CX)(R11*1), R12
+	PCALIGN $0x10
 
 emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm512Klarge_big_loop_back:
 	MOVOU (R9), X4
@@ -17121,20 +17165,21 @@ memmove_long_match_emit_encodeBetterBlockAsm512K:
 	LEAQ (CX)(SI*1), R9
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(SI*1), X2
-	MOVOU -16(R8)(SI*1), X3
-	MOVQ  SI, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeBetterBlockAsm512Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(SI*1), X2
+	MOVOU   -16(R8)(SI*1), X3
+	MOVQ    SI, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeBetterBlockAsm512Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeBetterBlockAsm512Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -17437,20 +17482,21 @@ memmove_long_match_emit_repeat_encodeBetterBlockAsm512K:
 	LEAQ (CX)(DI*1), SI
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(DI*1), X2
-	MOVOU -16(R8)(DI*1), X3
-	MOVQ  DI, R10
-	SHRQ  $0x05, R10
-	MOVQ  CX, R9
-	ANDL  $0x0000001f, R9
-	MOVQ  $0x00000040, R12
-	SUBQ  R9, R12
-	DECQ  R10
-	JA    emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm512Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R12*1), R9
-	LEAQ  -32(CX)(R12*1), R13
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(DI*1), X2
+	MOVOU   -16(R8)(DI*1), X3
+	MOVQ    DI, R10
+	SHRQ    $0x05, R10
+	MOVQ    CX, R9
+	ANDL    $0x0000001f, R9
+	MOVQ    $0x00000040, R12
+	SUBQ    R9, R12
+	DECQ    R10
+	JA      emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm512Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R12*1), R9
+	LEAQ    -32(CX)(R12*1), R13
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm512Klarge_big_loop_back:
 	MOVOU (R9), X4
@@ -17733,20 +17779,21 @@ memmove_long_emit_remainder_encodeBetterBlockAsm512K:
 	MOVL SI, BX
 
 	// genMemMoveLong
-	MOVOU (AX), X0
-	MOVOU 16(AX), X1
-	MOVOU -32(AX)(BX*1), X2
-	MOVOU -16(AX)(BX*1), X3
-	MOVQ  BX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm512Klarge_forward_sse_loop_32
-	LEAQ  -32(AX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (AX), X0
+	MOVOU   16(AX), X1
+	MOVOU   -32(AX)(BX*1), X2
+	MOVOU   -16(AX)(BX*1), X3
+	MOVQ    BX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm512Klarge_forward_sse_loop_32
+	LEAQ    -32(AX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm512Klarge_big_loop_back:
 	MOVOU (SI), X4
@@ -18002,20 +18049,21 @@ memmove_long_repeat_emit_encodeBetterBlockAsm64K:
 	LEAQ (CX)(DI*1), SI
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(DI*1), X2
-	MOVOU -16(R8)(DI*1), X3
-	MOVQ  DI, R10
-	SHRQ  $0x05, R10
-	MOVQ  CX, R9
-	ANDL  $0x0000001f, R9
-	MOVQ  $0x00000040, R11
-	SUBQ  R9, R11
-	DECQ  R10
-	JA    emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm64Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R11*1), R9
-	LEAQ  -32(CX)(R11*1), R12
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(DI*1), X2
+	MOVOU   -16(R8)(DI*1), X3
+	MOVQ    DI, R10
+	SHRQ    $0x05, R10
+	MOVQ    CX, R9
+	ANDL    $0x0000001f, R9
+	MOVQ    $0x00000040, R11
+	SUBQ    R9, R11
+	DECQ    R10
+	JA      emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm64Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R11*1), R9
+	LEAQ    -32(CX)(R11*1), R12
+	PCALIGN $0x10
 
 emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm64Klarge_big_loop_back:
 	MOVOU (R9), X4
@@ -18488,20 +18536,21 @@ memmove_long_match_emit_encodeBetterBlockAsm64K:
 	LEAQ (CX)(SI*1), R9
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(SI*1), X2
-	MOVOU -16(R8)(SI*1), X3
-	MOVQ  SI, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeBetterBlockAsm64Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(SI*1), X2
+	MOVOU   -16(R8)(SI*1), X3
+	MOVQ    SI, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeBetterBlockAsm64Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeBetterBlockAsm64Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -18760,20 +18809,21 @@ memmove_long_match_emit_repeat_encodeBetterBlockAsm64K:
 	LEAQ (CX)(DI*1), SI
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(DI*1), X2
-	MOVOU -16(R8)(DI*1), X3
-	MOVQ  DI, R10
-	SHRQ  $0x05, R10
-	MOVQ  CX, R9
-	ANDL  $0x0000001f, R9
-	MOVQ  $0x00000040, R12
-	SUBQ  R9, R12
-	DECQ  R10
-	JA    emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm64Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R12*1), R9
-	LEAQ  -32(CX)(R12*1), R13
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(DI*1), X2
+	MOVOU   -16(R8)(DI*1), X3
+	MOVQ    DI, R10
+	SHRQ    $0x05, R10
+	MOVQ    CX, R9
+	ANDL    $0x0000001f, R9
+	MOVQ    $0x00000040, R12
+	SUBQ    R9, R12
+	DECQ    R10
+	JA      emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm64Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R12*1), R9
+	LEAQ    -32(CX)(R12*1), R13
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm64Klarge_big_loop_back:
 	MOVOU (R9), X4
@@ -19055,20 +19105,21 @@ memmove_long_emit_remainder_encodeBetterBlockAsm64K:
 	MOVL SI, BX
 
 	// genMemMoveLong
-	MOVOU (AX), X0
-	MOVOU 16(AX), X1
-	MOVOU -32(AX)(BX*1), X2
-	MOVOU -16(AX)(BX*1), X3
-	MOVQ  BX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm64Klarge_forward_sse_loop_32
-	LEAQ  -32(AX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (AX), X0
+	MOVOU   16(AX), X1
+	MOVOU   -32(AX)(BX*1), X2
+	MOVOU   -16(AX)(BX*1), X3
+	MOVQ    BX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm64Klarge_forward_sse_loop_32
+	LEAQ    -32(AX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm64Klarge_big_loop_back:
 	MOVOU (SI), X4
@@ -19316,20 +19367,21 @@ memmove_long_repeat_emit_encodeBetterBlockAsm16K:
 	LEAQ (CX)(DI*1), SI
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(DI*1), X2
-	MOVOU -16(R8)(DI*1), X3
-	MOVQ  DI, R10
-	SHRQ  $0x05, R10
-	MOVQ  CX, R9
-	ANDL  $0x0000001f, R9
-	MOVQ  $0x00000040, R11
-	SUBQ  R9, R11
-	DECQ  R10
-	JA    emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm16Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R11*1), R9
-	LEAQ  -32(CX)(R11*1), R12
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(DI*1), X2
+	MOVOU   -16(R8)(DI*1), X3
+	MOVQ    DI, R10
+	SHRQ    $0x05, R10
+	MOVQ    CX, R9
+	ANDL    $0x0000001f, R9
+	MOVQ    $0x00000040, R11
+	SUBQ    R9, R11
+	DECQ    R10
+	JA      emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm16Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R11*1), R9
+	LEAQ    -32(CX)(R11*1), R12
+	PCALIGN $0x10
 
 emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm16Klarge_big_loop_back:
 	MOVOU (R9), X4
@@ -19794,20 +19846,21 @@ memmove_long_match_emit_encodeBetterBlockAsm16K:
 	LEAQ (CX)(SI*1), R9
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(SI*1), X2
-	MOVOU -16(R8)(SI*1), X3
-	MOVQ  SI, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeBetterBlockAsm16Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(SI*1), X2
+	MOVOU   -16(R8)(SI*1), X3
+	MOVQ    SI, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeBetterBlockAsm16Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeBetterBlockAsm16Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -20058,20 +20111,21 @@ memmove_long_match_emit_repeat_encodeBetterBlockAsm16K:
 	LEAQ (CX)(DI*1), SI
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(DI*1), X2
-	MOVOU -16(R8)(DI*1), X3
-	MOVQ  DI, R10
-	SHRQ  $0x05, R10
-	MOVQ  CX, R9
-	ANDL  $0x0000001f, R9
-	MOVQ  $0x00000040, R12
-	SUBQ  R9, R12
-	DECQ  R10
-	JA    emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm16Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R12*1), R9
-	LEAQ  -32(CX)(R12*1), R13
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(DI*1), X2
+	MOVOU   -16(R8)(DI*1), X3
+	MOVQ    DI, R10
+	SHRQ    $0x05, R10
+	MOVQ    CX, R9
+	ANDL    $0x0000001f, R9
+	MOVQ    $0x00000040, R12
+	SUBQ    R9, R12
+	DECQ    R10
+	JA      emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm16Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R12*1), R9
+	LEAQ    -32(CX)(R12*1), R13
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm16Klarge_big_loop_back:
 	MOVOU (R9), X4
@@ -20345,20 +20399,21 @@ memmove_long_emit_remainder_encodeBetterBlockAsm16K:
 	MOVL SI, BX
 
 	// genMemMoveLong
-	MOVOU (AX), X0
-	MOVOU 16(AX), X1
-	MOVOU -32(AX)(BX*1), X2
-	MOVOU -16(AX)(BX*1), X3
-	MOVQ  BX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm16Klarge_forward_sse_loop_32
-	LEAQ  -32(AX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (AX), X0
+	MOVOU   16(AX), X1
+	MOVOU   -32(AX)(BX*1), X2
+	MOVOU   -16(AX)(BX*1), X3
+	MOVQ    BX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm16Klarge_forward_sse_loop_32
+	LEAQ    -32(AX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm16Klarge_big_loop_back:
 	MOVOU (SI), X4
@@ -20606,20 +20661,21 @@ memmove_long_repeat_emit_encodeBetterBlockAsm4K:
 	LEAQ (CX)(DI*1), SI
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(DI*1), X2
-	MOVOU -16(R8)(DI*1), X3
-	MOVQ  DI, R10
-	SHRQ  $0x05, R10
-	MOVQ  CX, R9
-	ANDL  $0x0000001f, R9
-	MOVQ  $0x00000040, R11
-	SUBQ  R9, R11
-	DECQ  R10
-	JA    emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm4Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R11*1), R9
-	LEAQ  -32(CX)(R11*1), R12
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(DI*1), X2
+	MOVOU   -16(R8)(DI*1), X3
+	MOVQ    DI, R10
+	SHRQ    $0x05, R10
+	MOVQ    CX, R9
+	ANDL    $0x0000001f, R9
+	MOVQ    $0x00000040, R11
+	SUBQ    R9, R11
+	DECQ    R10
+	JA      emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm4Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R11*1), R9
+	LEAQ    -32(CX)(R11*1), R12
+	PCALIGN $0x10
 
 emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm4Klarge_big_loop_back:
 	MOVOU (R9), X4
@@ -21084,20 +21140,21 @@ memmove_long_match_emit_encodeBetterBlockAsm4K:
 	LEAQ (CX)(SI*1), R9
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(SI*1), X2
-	MOVOU -16(R8)(SI*1), X3
-	MOVQ  SI, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeBetterBlockAsm4Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(SI*1), X2
+	MOVOU   -16(R8)(SI*1), X3
+	MOVQ    SI, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeBetterBlockAsm4Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeBetterBlockAsm4Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -21348,20 +21405,21 @@ memmove_long_match_emit_repeat_encodeBetterBlockAsm4K:
 	LEAQ (CX)(DI*1), SI
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(DI*1), X2
-	MOVOU -16(R8)(DI*1), X3
-	MOVQ  DI, R10
-	SHRQ  $0x05, R10
-	MOVQ  CX, R9
-	ANDL  $0x0000001f, R9
-	MOVQ  $0x00000040, R12
-	SUBQ  R9, R12
-	DECQ  R10
-	JA    emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm4Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R12*1), R9
-	LEAQ  -32(CX)(R12*1), R13
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(DI*1), X2
+	MOVOU   -16(R8)(DI*1), X3
+	MOVQ    DI, R10
+	SHRQ    $0x05, R10
+	MOVQ    CX, R9
+	ANDL    $0x0000001f, R9
+	MOVQ    $0x00000040, R12
+	SUBQ    R9, R12
+	DECQ    R10
+	JA      emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm4Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R12*1), R9
+	LEAQ    -32(CX)(R12*1), R13
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm4Klarge_big_loop_back:
 	MOVOU (R9), X4
@@ -21635,20 +21693,21 @@ memmove_long_emit_remainder_encodeBetterBlockAsm4K:
 	MOVL SI, BX
 
 	// genMemMoveLong
-	MOVOU (AX), X0
-	MOVOU 16(AX), X1
-	MOVOU -32(AX)(BX*1), X2
-	MOVOU -16(AX)(BX*1), X3
-	MOVQ  BX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm4Klarge_forward_sse_loop_32
-	LEAQ  -32(AX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (AX), X0
+	MOVOU   16(AX), X1
+	MOVOU   -32(AX)(BX*1), X2
+	MOVOU   -16(AX)(BX*1), X3
+	MOVQ    BX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm4Klarge_forward_sse_loop_32
+	LEAQ    -32(AX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm4Klarge_big_loop_back:
 	MOVOU (SI), X4
@@ -21896,20 +21955,21 @@ memmove_long_repeat_emit_encodeBetterBlockAsm1K:
 	LEAQ (CX)(DI*1), SI
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(DI*1), X2
-	MOVOU -16(R8)(DI*1), X3
-	MOVQ  DI, R10
-	SHRQ  $0x05, R10
-	MOVQ  CX, R9
-	ANDL  $0x0000001f, R9
-	MOVQ  $0x00000040, R11
-	SUBQ  R9, R11
-	DECQ  R10
-	JA    emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm1Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R11*1), R9
-	LEAQ  -32(CX)(R11*1), R12
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(DI*1), X2
+	MOVOU   -16(R8)(DI*1), X3
+	MOVQ    DI, R10
+	SHRQ    $0x05, R10
+	MOVQ    CX, R9
+	ANDL    $0x0000001f, R9
+	MOVQ    $0x00000040, R11
+	SUBQ    R9, R11
+	DECQ    R10
+	JA      emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm1Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R11*1), R9
+	LEAQ    -32(CX)(R11*1), R12
+	PCALIGN $0x10
 
 emit_lit_memmove_long_repeat_emit_encodeBetterBlockAsm1Klarge_big_loop_back:
 	MOVOU (R9), X4
@@ -22374,20 +22434,21 @@ memmove_long_match_emit_encodeBetterBlockAsm1K:
 	LEAQ (CX)(SI*1), R9
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(SI*1), X2
-	MOVOU -16(R8)(SI*1), X3
-	MOVQ  SI, R12
-	SHRQ  $0x05, R12
-	MOVQ  CX, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R12
-	JA    emit_lit_memmove_long_match_emit_encodeBetterBlockAsm1Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R13*1), R10
-	LEAQ  -32(CX)(R13*1), R14
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(SI*1), X2
+	MOVOU   -16(R8)(SI*1), X3
+	MOVQ    SI, R12
+	SHRQ    $0x05, R12
+	MOVQ    CX, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R12
+	JA      emit_lit_memmove_long_match_emit_encodeBetterBlockAsm1Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R13*1), R10
+	LEAQ    -32(CX)(R13*1), R14
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_encodeBetterBlockAsm1Klarge_big_loop_back:
 	MOVOU (R10), X4
@@ -22638,20 +22699,21 @@ memmove_long_match_emit_repeat_encodeBetterBlockAsm1K:
 	LEAQ (CX)(DI*1), SI
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(DI*1), X2
-	MOVOU -16(R8)(DI*1), X3
-	MOVQ  DI, R10
-	SHRQ  $0x05, R10
-	MOVQ  CX, R9
-	ANDL  $0x0000001f, R9
-	MOVQ  $0x00000040, R12
-	SUBQ  R9, R12
-	DECQ  R10
-	JA    emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm1Klarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R12*1), R9
-	LEAQ  -32(CX)(R12*1), R13
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(DI*1), X2
+	MOVOU   -16(R8)(DI*1), X3
+	MOVQ    DI, R10
+	SHRQ    $0x05, R10
+	MOVQ    CX, R9
+	ANDL    $0x0000001f, R9
+	MOVQ    $0x00000040, R12
+	SUBQ    R9, R12
+	DECQ    R10
+	JA      emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm1Klarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R12*1), R9
+	LEAQ    -32(CX)(R12*1), R13
+	PCALIGN $0x10
 
 emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm1Klarge_big_loop_back:
 	MOVOU (R9), X4
@@ -22925,20 +22987,21 @@ memmove_long_emit_remainder_encodeBetterBlockAsm1K:
 	MOVL SI, BX
 
 	// genMemMoveLong
-	MOVOU (AX), X0
-	MOVOU 16(AX), X1
-	MOVOU -32(AX)(BX*1), X2
-	MOVOU -16(AX)(BX*1), X3
-	MOVQ  BX, DI
-	SHRQ  $0x05, DI
-	MOVQ  CX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm1Klarge_forward_sse_loop_32
-	LEAQ  -32(AX)(R8*1), SI
-	LEAQ  -32(CX)(R8*1), R9
+	MOVOU   (AX), X0
+	MOVOU   16(AX), X1
+	MOVOU   -32(AX)(BX*1), X2
+	MOVOU   -16(AX)(BX*1), X3
+	MOVQ    BX, DI
+	SHRQ    $0x05, DI
+	MOVQ    CX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm1Klarge_forward_sse_loop_32
+	LEAQ    -32(AX)(R8*1), SI
+	LEAQ    -32(CX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_emit_remainder_encodeBetterBlockAsm1Klarge_big_loop_back:
 	MOVOU (SI), X4
@@ -23113,20 +23176,21 @@ emit_lit_memmove_mid_standalone_memmove_move_33through64:
 
 memmove_long_standalone:
 	// genMemMoveLong
-	MOVOU (CX), X0
-	MOVOU 16(CX), X1
-	MOVOU -32(CX)(DX*1), X2
-	MOVOU -16(CX)(DX*1), X3
-	MOVQ  DX, DI
-	SHRQ  $0x05, DI
-	MOVQ  AX, SI
-	ANDL  $0x0000001f, SI
-	MOVQ  $0x00000040, R8
-	SUBQ  SI, R8
-	DECQ  DI
-	JA    emit_lit_memmove_long_standalonelarge_forward_sse_loop_32
-	LEAQ  -32(CX)(R8*1), SI
-	LEAQ  -32(AX)(R8*1), R9
+	MOVOU   (CX), X0
+	MOVOU   16(CX), X1
+	MOVOU   -32(CX)(DX*1), X2
+	MOVOU   -16(CX)(DX*1), X3
+	MOVQ    DX, DI
+	SHRQ    $0x05, DI
+	MOVQ    AX, SI
+	ANDL    $0x0000001f, SI
+	MOVQ    $0x00000040, R8
+	SUBQ    SI, R8
+	DECQ    DI
+	JA      emit_lit_memmove_long_standalonelarge_forward_sse_loop_32
+	LEAQ    -32(CX)(R8*1), SI
+	LEAQ    -32(AX)(R8*1), R9
+	PCALIGN $0x10
 
 emit_lit_memmove_long_standalonelarge_big_loop_back:
 	MOVOU (SI), X4
@@ -23818,20 +23882,21 @@ memmove_long_lz4_mz:
 	MOVL R8, R12
 
 	// genMemMoveLong
-	MOVOU (DX), X0
-	MOVOU 16(DX), X1
-	MOVOU -32(DX)(R12*1), X2
-	MOVOU -16(DX)(R12*1), X3
-	MOVQ  R12, R14
-	SHRQ  $0x05, R14
-	MOVQ  AX, R13
-	ANDL  $0x0000001f, R13
-	MOVQ  $0x00000040, R15
-	SUBQ  R13, R15
-	DECQ  R14
-	JA    emit_lit_memmove_long_lz4_mzlarge_forward_sse_loop_32
-	LEAQ  -32(DX)(R15*1), R13
-	LEAQ  -32(AX)(R15*1), BP
+	MOVOU   (DX), X0
+	MOVOU   16(DX), X1
+	MOVOU   -32(DX)(R12*1), X2
+	MOVOU   -16(DX)(R12*1), X3
+	MOVQ    R12, R14
+	SHRQ    $0x05, R14
+	MOVQ    AX, R13
+	ANDL    $0x0000001f, R13
+	MOVQ    $0x00000040, R15
+	SUBQ    R13, R15
+	DECQ    R14
+	JA      emit_lit_memmove_long_lz4_mzlarge_forward_sse_loop_32
+	LEAQ    -32(DX)(R15*1), R13
+	LEAQ    -32(AX)(R15*1), BP
+	PCALIGN $0x10
 
 emit_lit_memmove_long_lz4_mzlarge_big_loop_back:
 	MOVOU (R13), X4
@@ -24130,20 +24195,21 @@ memmove_long_lz4_mz_emitcopy:
 	LEAQ (AX)(R10*1), R11
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(R10*1), X2
-	MOVOU -16(DI)(R10*1), X3
-	MOVQ  R10, R13
-	SHRQ  $0x05, R13
-	MOVQ  AX, R12
-	ANDL  $0x0000001f, R12
-	MOVQ  $0x00000040, R14
-	SUBQ  R12, R14
-	DECQ  R13
-	JA    emit_lit_memmove_long_lz4_mz_emitcopylarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R14*1), R12
-	LEAQ  -32(AX)(R14*1), R15
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(R10*1), X2
+	MOVOU   -16(DI)(R10*1), X3
+	MOVQ    R10, R13
+	SHRQ    $0x05, R13
+	MOVQ    AX, R12
+	ANDL    $0x0000001f, R12
+	MOVQ    $0x00000040, R14
+	SUBQ    R12, R14
+	DECQ    R13
+	JA      emit_lit_memmove_long_lz4_mz_emitcopylarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R14*1), R12
+	LEAQ    -32(AX)(R14*1), R15
+	PCALIGN $0x10
 
 emit_lit_memmove_long_lz4_mz_emitcopylarge_big_loop_back:
 	MOVOU (R12), X4
@@ -24517,20 +24583,21 @@ memmove_long_lz4_mz_emit_final:
 	MOVL R10, DX
 
 	// genMemMoveLong
-	MOVOU (DI), X0
-	MOVOU 16(DI), X1
-	MOVOU -32(DI)(DX*1), X2
-	MOVOU -16(DI)(DX*1), X3
-	MOVQ  DX, R8
-	SHRQ  $0x05, R8
-	MOVQ  AX, BX
-	ANDL  $0x0000001f, BX
-	MOVQ  $0x00000040, R9
-	SUBQ  BX, R9
-	DECQ  R8
-	JA    emit_lit_memmove_long_lz4_mz_emit_finallarge_forward_sse_loop_32
-	LEAQ  -32(DI)(R9*1), BX
-	LEAQ  -32(AX)(R9*1), R10
+	MOVOU   (DI), X0
+	MOVOU   16(DI), X1
+	MOVOU   -32(DI)(DX*1), X2
+	MOVOU   -16(DI)(DX*1), X3
+	MOVQ    DX, R8
+	SHRQ    $0x05, R8
+	MOVQ    AX, BX
+	ANDL    $0x0000001f, BX
+	MOVQ    $0x00000040, R9
+	SUBQ    BX, R9
+	DECQ    R8
+	JA      emit_lit_memmove_long_lz4_mz_emit_finallarge_forward_sse_loop_32
+	LEAQ    -32(DI)(R9*1), BX
+	LEAQ    -32(AX)(R9*1), R10
+	PCALIGN $0x10
 
 emit_lit_memmove_long_lz4_mz_emit_finallarge_big_loop_back:
 	MOVOU (BX), X4
@@ -24689,20 +24756,21 @@ decodeBlockAsm_fast_litcopy_long:
 	JBE  decodeBlockAsm_fast_litcopy_short_reduced
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(R12*1), X2
-	MOVOU -16(R8)(R12*1), X3
-	MOVQ  R12, R11
-	SHRQ  $0x05, R11
-	MOVQ  SI, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R13
-	SUBQ  R10, R13
-	DECQ  R11
-	JA    decodeBlockAsm_fast_litcopy_longlarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R13*1), R10
-	LEAQ  -32(SI)(R13*1), R14
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(R12*1), X2
+	MOVOU   -16(R8)(R12*1), X3
+	MOVQ    R12, R11
+	SHRQ    $0x05, R11
+	MOVQ    SI, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R13
+	SUBQ    R10, R13
+	DECQ    R11
+	JA      decodeBlockAsm_fast_litcopy_longlarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R13*1), R10
+	LEAQ    -32(SI)(R13*1), R14
+	PCALIGN $0x10
 
 decodeBlockAsm_fast_litcopy_longlarge_big_loop_back:
 	MOVOU (R10), X4
@@ -24934,27 +25002,37 @@ decodeBlockAsm_fast_copy_exec_long_long:
 	MOVBQZX (R8), R10
 
 	// genMemMoveLong
-	MOVQ R12, R13
-	SHRQ $0x05, R13
-	MOVQ SI, R14
-	MOVQ R12, R15
+	MOVQ    R12, R13
+	SHRQ    $0x06, R13
+	MOVQ    SI, R14
+	MOVQ    R12, R15
+	PCALIGN $0x10
 
 decodeBlockAsm_fast_copy_long_longlarge_big_loop_back:
 	MOVOU (R11), X0
 	MOVOU 16(R11), X1
+	MOVOU 32(R11), X2
+	MOVOU 48(R11), X3
 	MOVOU X0, (R14)
 	MOVOU X1, 16(R14)
-	ADDQ  $0x20, R14
-	ADDQ  $0x20, R11
-	SUBQ  $0x20, R15
+	MOVOU X2, 32(R14)
+	MOVOU X3, 48(R14)
+	ADDQ  $0x40, R14
+	ADDQ  $0x40, R11
+	SUBQ  $0x40, R15
+	JZ    decodeBlockAsm_fast_copy_done
 	DECQ  R13
 	JNZ   decodeBlockAsm_fast_copy_long_longlarge_big_loop_back
 	TESTQ R15, R15
 	JZ    decodeBlockAsm_fast_copy_done
-	MOVOU -32(R11)(R15*1), X0
-	MOVOU -16(R11)(R15*1), X1
-	MOVOU X0, -32(R14)(R15*1)
-	MOVOU X1, -16(R14)(R15*1)
+	MOVOU -64(R11)(R15*1), X0
+	MOVOU -48(R11)(R15*1), X1
+	MOVOU -32(R11)(R15*1), X2
+	MOVOU -16(R11)(R15*1), X3
+	MOVOU X0, -64(R14)(R15*1)
+	MOVOU X1, -48(R14)(R15*1)
+	MOVOU X2, -32(R14)(R15*1)
+	MOVOU X3, -16(R14)(R15*1)
 	JMP   decodeBlockAsm_fast_copy_done
 	PCALIGN $0x10
 
@@ -25017,7 +25095,7 @@ decodeBlockAsm_fast_copy_exec:
 	CMPL    R9, R12
 	JB      decodeBlockAsm_fast_copy_overlap
 	CMPL    R12, $0x40
-	JA      decodeBlockAsm_fast_copy_long
+	JAE     decodeBlockAsm_fast_copy_long
 
 decodeBlockAsm_fast_copy_short:
 	// genMemMoveShort
@@ -25054,20 +25132,21 @@ decodeBlockAsm_fast_copy_short_memmove_move_33through64:
 
 decodeBlockAsm_fast_copy_long:
 	// genMemMoveLong
-	MOVOU (R11), X0
-	MOVOU 16(R11), X1
-	MOVOU -32(R11)(R12*1), X2
-	MOVOU -16(R11)(R12*1), X3
-	MOVQ  R12, R14
-	SHRQ  $0x05, R14
-	MOVQ  SI, R13
-	ANDL  $0x0000001f, R13
-	MOVQ  $0x00000040, R15
-	SUBQ  R13, R15
-	DECQ  R14
-	JA    decodeBlockAsm_fast_copy_longlarge_forward_sse_loop_32
-	LEAQ  -32(R11)(R15*1), R13
-	LEAQ  -32(SI)(R15*1), BP
+	MOVOU   (R11), X0
+	MOVOU   16(R11), X1
+	MOVOU   -32(R11)(R12*1), X2
+	MOVOU   -16(R11)(R12*1), X3
+	MOVQ    R12, R14
+	SHRQ    $0x05, R14
+	MOVQ    SI, R13
+	ANDL    $0x0000001f, R13
+	MOVQ    $0x00000040, R15
+	SUBQ    R13, R15
+	DECQ    R14
+	JA      decodeBlockAsm_fast_copy_longlarge_forward_sse_loop_32
+	LEAQ    -32(R11)(R15*1), R13
+	LEAQ    -32(SI)(R15*1), BP
+	PCALIGN $0x10
 
 decodeBlockAsm_fast_copy_longlarge_big_loop_back:
 	MOVOU (R13), X4
@@ -25315,20 +25394,21 @@ decodeBlockAsm_remain_litcopy_long:
 	JBE  decodeBlockAsm_remain_litcopy_short_reduced
 
 	// genMemMoveLong
-	MOVOU (R8), X0
-	MOVOU 16(R8), X1
-	MOVOU -32(R8)(DX*1), X2
-	MOVOU -16(R8)(DX*1), X3
-	MOVQ  DX, R10
-	SHRQ  $0x05, R10
-	MOVQ  SI, BX
-	ANDL  $0x0000001f, BX
-	MOVQ  $0x00000040, R11
-	SUBQ  BX, R11
-	DECQ  R10
-	JA    decodeBlockAsm_remain_litcopy_longlarge_forward_sse_loop_32
-	LEAQ  -32(R8)(R11*1), BX
-	LEAQ  -32(SI)(R11*1), R12
+	MOVOU   (R8), X0
+	MOVOU   16(R8), X1
+	MOVOU   -32(R8)(DX*1), X2
+	MOVOU   -16(R8)(DX*1), X3
+	MOVQ    DX, R10
+	SHRQ    $0x05, R10
+	MOVQ    SI, BX
+	ANDL    $0x0000001f, BX
+	MOVQ    $0x00000040, R11
+	SUBQ    BX, R11
+	DECQ    R10
+	JA      decodeBlockAsm_remain_litcopy_longlarge_forward_sse_loop_32
+	LEAQ    -32(R8)(R11*1), BX
+	LEAQ    -32(SI)(R11*1), R12
+	PCALIGN $0x10
 
 decodeBlockAsm_remain_litcopy_longlarge_big_loop_back:
 	MOVOU (BX), X4
@@ -25655,27 +25735,37 @@ decodeBlockAsm_remain_copy_exec_long_long:
 	JA   corrupt
 
 	// genMemMoveLong
-	MOVQ DX, R10
-	SHRQ $0x05, R10
-	MOVQ SI, R11
-	MOVQ DX, R12
+	MOVQ    DX, R10
+	SHRQ    $0x06, R10
+	MOVQ    SI, R11
+	MOVQ    DX, R12
+	PCALIGN $0x10
 
 decodeBlockAsm_remain_copy_long_longlarge_big_loop_back:
 	MOVOU (BX), X0
 	MOVOU 16(BX), X1
+	MOVOU 32(BX), X2
+	MOVOU 48(BX), X3
 	MOVOU X0, (R11)
 	MOVOU X1, 16(R11)
-	ADDQ  $0x20, R11
-	ADDQ  $0x20, BX
-	SUBQ  $0x20, R12
+	MOVOU X2, 32(R11)
+	MOVOU X3, 48(R11)
+	ADDQ  $0x40, R11
+	ADDQ  $0x40, BX
+	SUBQ  $0x40, R12
+	JZ    decodeBlockAsm_remain_copy_done
 	DECQ  R10
 	JNZ   decodeBlockAsm_remain_copy_long_longlarge_big_loop_back
 	TESTQ R12, R12
 	JZ    decodeBlockAsm_remain_copy_done
-	MOVOU -32(BX)(R12*1), X0
-	MOVOU -16(BX)(R12*1), X1
-	MOVOU X0, -32(R11)(R12*1)
-	MOVOU X1, -16(R11)(R12*1)
+	MOVOU -64(BX)(R12*1), X0
+	MOVOU -48(BX)(R12*1), X1
+	MOVOU -32(BX)(R12*1), X2
+	MOVOU -16(BX)(R12*1), X3
+	MOVOU X0, -64(R11)(R12*1)
+	MOVOU X1, -48(R11)(R12*1)
+	MOVOU X2, -32(R11)(R12*1)
+	MOVOU X3, -16(R11)(R12*1)
 	JMP   decodeBlockAsm_remain_copy_done
 	PCALIGN $0x10
 
@@ -25743,7 +25833,7 @@ decodeBlockAsm_remain_copy_exec:
 	CMPL R9, DX
 	JB   decodeBlockAsm_remain_copy_overlap
 	CMPL DX, $0x40
-	JA   decodeBlockAsm_remain_copy_long
+	JAE  decodeBlockAsm_remain_copy_long
 
 decodeBlockAsm_remain_copy_short:
 	// genMemMoveShort
@@ -25808,20 +25898,21 @@ decodeBlockAsm_remain_copy_short_memmove_move_33through64:
 
 decodeBlockAsm_remain_copy_long:
 	// genMemMoveLong
-	MOVOU (BX), X0
-	MOVOU 16(BX), X1
-	MOVOU -32(BX)(DX*1), X2
-	MOVOU -16(BX)(DX*1), X3
-	MOVQ  DX, R11
-	SHRQ  $0x05, R11
-	MOVQ  SI, R10
-	ANDL  $0x0000001f, R10
-	MOVQ  $0x00000040, R12
-	SUBQ  R10, R12
-	DECQ  R11
-	JA    decodeBlockAsm_remain_copy_longlarge_forward_sse_loop_32
-	LEAQ  -32(BX)(R12*1), R10
-	LEAQ  -32(SI)(R12*1), R13
+	MOVOU   (BX), X0
+	MOVOU   16(BX), X1
+	MOVOU   -32(BX)(DX*1), X2
+	MOVOU   -16(BX)(DX*1), X3
+	MOVQ    DX, R11
+	SHRQ    $0x05, R11
+	MOVQ    SI, R10
+	ANDL    $0x0000001f, R10
+	MOVQ    $0x00000040, R12
+	SUBQ    R10, R12
+	DECQ    R11
+	JA      decodeBlockAsm_remain_copy_longlarge_forward_sse_loop_32
+	LEAQ    -32(BX)(R12*1), R10
+	LEAQ    -32(SI)(R12*1), R13
+	PCALIGN $0x10
 
 decodeBlockAsm_remain_copy_longlarge_big_loop_back:
 	MOVOU (R10), X4

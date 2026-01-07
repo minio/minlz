@@ -53,7 +53,7 @@ func main() {
 		inputMargin:  17,
 		skipOutput:   false}
 
-	// 16 bits has too big of a speed impact.
+	// 16 bit hash table has too big of a speed impact.
 	o.fastOpts = fastOpts{match8: false, fuselits: true, checkRepeats: false, checkBack: true, skipOne: false, incLoop: 4, minSizeLog: 5}
 	o.genEncodeBlockAsm("encodeBlockAsm", 15, 6, 6, 8<<20)
 	o.genEncodeBlockAsm("encodeBlockAsm2MB", 15, 6, 6, 2<<20)
@@ -2947,9 +2947,9 @@ func (o options) genMemMoveShort(name string, dst, src, length reg.GPVirtual, en
 // func genMemMoveLong(to, from unsafe.Pointer, n uintptr)
 // src and dst may not overlap.
 // length must be >= 64 bytes. Is preserved.
-// Non AVX uses 2 GP register, 16 SSE2 registers.
-// AVX uses 4 GP registers 16 AVX/SSE registers.
+// Uses 2 GP register, 16 SSE2 registers.
 // All passed registers are preserved.
+// Attempts to align dst writes.
 func (o options) genMemMoveLong(name string, dst, src, length reg.GPVirtual, end LabelRef) {
 	if o.skipOutput {
 		JMP(end)
@@ -2966,8 +2966,6 @@ func (o options) genMemMoveLong(name string, dst, src, length reg.GPVirtual, end
 	// Store start and end for sse_tail
 	Label(name + "forward_sse")
 	X0, X1, X2, X3, X4, X5 := XMM(), XMM(), XMM(), XMM(), XMM(), XMM()
-	// X6, X7 :=  XMM(), XMM()
-	//X8, X9, X10, X11 := XMM(), XMM(), XMM(), XMM()
 
 	MOVOU(Mem{Base: src}, X0)
 	MOVOU(Mem{Base: src, Disp: 16}, X1)
@@ -2996,6 +2994,7 @@ func (o options) genMemMoveLong(name string, dst, src, length reg.GPVirtual, end
 	dstPos := GP64()
 	LEAQ(Mem{Disp: -32, Base: dst, Scale: 1, Index: srcOff}, dstPos)
 
+	PCALIGN(16)
 	Label(name + "big_loop_back")
 
 	MOVOU(Mem{Disp: 0, Base: srcPos}, X4)
@@ -3031,8 +3030,6 @@ func (o options) genMemMoveLong(name string, dst, src, length reg.GPVirtual, end
 // genMemMoveLong64 copies regions of at least 64 bytes.
 // src and dst may not overlap by less than 64 bytes.
 // length must be >= 64 bytes. Is preserved.
-// Non AVX uses 2 GP register, 16 SSE2 registers.
-// AVX uses 4 GP registers 16 AVX/SSE registers.
 // All passed registers are preserved.
 func (o options) genMemMoveLong64(name string, dst, src, length reg.GPVirtual, end LabelRef) {
 	if o.skipOutput {
@@ -3050,37 +3047,47 @@ func (o options) genMemMoveLong64(name string, dst, src, length reg.GPVirtual, e
 	// We do purely unaligned copied.
 	// Modern processors doesn't seems to care,
 	// and one of the addresses will most often be unaligned anyway.
-	X0, X1 := XMM(), XMM()
+	X0, X1, X2, X3 := XMM(), XMM(), XMM(), XMM()
 
 	// forward (only)
 	bigLoops := GP64()
 	MOVQ(length, bigLoops)
-	SHRQ(U8(5), bigLoops) // bigLoops = length / 32
+	SHRQ(U8(6), bigLoops) // bigLoops = length / 64
 
 	srcPos, dstPos, remain := GP64(), GP64(), GP64()
 	MOVQ(src, srcPos)
 	MOVQ(dst, dstPos)
 	MOVQ(length, remain)
 
+	PCALIGN(16)
 	Label(name + "big_loop_back")
 	MOVOU(Mem{Disp: 0, Base: srcPos}, X0)
 	MOVOU(Mem{Disp: 16, Base: srcPos}, X1)
+	MOVOU(Mem{Disp: 32, Base: srcPos}, X2)
+	MOVOU(Mem{Disp: 48, Base: srcPos}, X3)
 	MOVOU(X0, Mem{Disp: 0, Base: dstPos})
 	MOVOU(X1, Mem{Disp: 16, Base: dstPos})
-	ADDQ(U8(32), dstPos)
-	ADDQ(U8(32), srcPos)
-	SUBQ(U8(32), remain)
+	MOVOU(X2, Mem{Disp: 32, Base: dstPos})
+	MOVOU(X3, Mem{Disp: 48, Base: dstPos})
+	ADDQ(U8(64), dstPos)
+	ADDQ(U8(64), srcPos)
+	SUBQ(U8(64), remain)
+	JZ(end)
 	DECQ(bigLoops)
 	JNZ(LabelRef(name + "big_loop_back"))
 
 	TESTQ(remain, remain)
 	JZ(end)
 
-	// We have 1 -> 31 remaining, but we can write in earlier part.
-	MOVOU(Mem{Base: srcPos, Disp: -32, Index: remain, Scale: 1}, X0)
-	MOVOU(Mem{Base: srcPos, Disp: -16, Index: remain, Scale: 1}, X1)
-	MOVOU(X0, Mem{Base: dstPos, Disp: -32, Index: remain, Scale: 1})
-	MOVOU(X1, Mem{Base: dstPos, Disp: -16, Index: remain, Scale: 1})
+	// We have 1 -> 63 remaining, but we can overwrite in the earlier part.
+	MOVOU(Mem{Base: srcPos, Disp: -64, Index: remain, Scale: 1}, X0)
+	MOVOU(Mem{Base: srcPos, Disp: -48, Index: remain, Scale: 1}, X1)
+	MOVOU(Mem{Base: srcPos, Disp: -32, Index: remain, Scale: 1}, X2)
+	MOVOU(Mem{Base: srcPos, Disp: -16, Index: remain, Scale: 1}, X3)
+	MOVOU(X0, Mem{Base: dstPos, Disp: -64, Index: remain, Scale: 1})
+	MOVOU(X1, Mem{Base: dstPos, Disp: -48, Index: remain, Scale: 1})
+	MOVOU(X2, Mem{Base: dstPos, Disp: -32, Index: remain, Scale: 1})
+	MOVOU(X3, Mem{Base: dstPos, Disp: -16, Index: remain, Scale: 1})
 
 	JMP(end)
 	return
@@ -4254,7 +4261,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 		CMPL(offset.As32(), length.As32())
 		JB(LabelRef(name + "_copy_overlap"))
 		CMPL(length.As32(), U8(64))
-		JA(LabelRef(name + "_copy_long"))
+		JAE(LabelRef(name + "_copy_long"))
 
 		Label(name + "_copy_short")
 		{

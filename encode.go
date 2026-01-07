@@ -26,7 +26,10 @@ const (
 	// LevelSuperFast is the fastest compression level.
 	// This will take significant shortcuts and usually provide much worse compression.
 	// Use only if LevelFastest is confirmed to be too slow.
-	LevelSuperFast = 0
+	LevelSuperFast = -1
+
+	// LevelUncompressed will bypass compression.
+	LevelUncompressed = 0
 
 	// LevelFastest is the fastest compression level.
 	LevelFastest = 1
@@ -88,6 +91,8 @@ func Encode(dst, src []byte, level int) ([]byte, error) {
 
 	var n int
 	switch level {
+	case LevelUncompressed:
+		return encodeUncompressed(dst[:0], src), nil
 	case LevelSuperFast:
 		n = encodeBlockFast(dst[d:], src)
 	case LevelFastest:
@@ -99,9 +104,17 @@ func Encode(dst, src []byte, level int) ([]byte, error) {
 	default:
 		return nil, ErrInvalidLevel
 	}
-
 	if n > 0 {
 		if debugValidateBlocks {
+			if n+d > len(dst) {
+				x := crc32.ChecksumIEEE(src)
+				name := fmt.Sprintf("errs/block-%08x", x)
+				os.WriteFile(name+"src.bin", src, 0644)
+				os.WriteFile(name+"dst.mzb", dst, 0644)
+
+				panic(fmt.Sprintf("level %d encoded block too large: %d > %d", level, n+d, len(dst)))
+			}
+
 			block := dst[d : d+n]
 			dst := make([]byte, len(src), len(src))
 			ret := minLZDecode(dst, block)
@@ -172,6 +185,8 @@ func TryEncode(dst, src []byte, level int) []byte {
 
 	var n int
 	switch level {
+	case LevelSuperFast:
+		n = encodeBlockFast(dst[d:], src)
 	case LevelFastest:
 		n = encodeBlock(dst[d:], src)
 	case LevelBalanced:

@@ -85,7 +85,7 @@ type Writer struct {
 	flushOnWrite      bool
 	appendIndex       bool
 	genIndex          bool
-	level             uint8
+	level             int8
 }
 
 type result struct {
@@ -927,10 +927,10 @@ func WriterAddIndex(b bool) WriterOption {
 // WriterLevel will set the compression level.
 func WriterLevel(n int) WriterOption {
 	return func(w *Writer) error {
-		if n < 0 || n > LevelSmallest {
+		if n < LevelSuperFast || n > LevelSmallest {
 			return ErrInvalidLevel
 		}
-		w.level = uint8(n)
+		w.level = int8(n)
 		return nil
 	}
 }
