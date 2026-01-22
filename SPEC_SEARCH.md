@@ -27,14 +27,14 @@ The payload of this chunk contains the following information:
 | 1      | Base Table Size in log2 |
 | 0/8/32 | Prefix values           |
 
-The Table Type must be 1 if no prefix is present and 2/3 if prefix values are present.
+The Table Type must be `1` if no prefix is present and `2/3` if prefix values are present.
 
 The hash table size is the number of entries in the hash table, which is 2^tableSize.
 
 * The smallest tables are 256 entries (size 8).
 * The largest tables are the same as the maximum block size of the stream - ie 8,388,608 entries (size 23).
 
-The search length must be at least 1 and at most 8.
+The search length must be at least `1` and at most `8`.
 
 See section "3.2 Prefix Values" for how to determine the prefix values.
 
@@ -80,7 +80,7 @@ Each entry will only contain a single bit to indicate if a pattern matching the 
 
 There are 3 table types. They all use the same hashing algorithm.
 
-The only difference is how many prefix values, if any was used for the table.
+The only difference is how many prefix values, if any, were used for the table.
 
 The decoder must ignore unknown table types.
 
@@ -154,21 +154,22 @@ func reduce(b []byte) []byte {
 	return lower
 }
 ```
-In that case the reduction would be '1'. The reduction is purely decided by the compressor.
+
+In that case the reduction would be `1`. The reduction is purely decided by the compressor.
 
 When searching, this means that for each reduction, the search pattern index should have 
 the highest active bit discarded to get the correct index.
 
 ### 3.3 Prefix Values
 
-Prefixes allows only selectively indexing values in a block.
+Prefixes allow only selectively indexing values in a block.
 If there is no prefix, all values will be indexed.
 
 When a prefix value is set, only entries following one of the prefix bytes will be added to the table,
 but the prefix value itself will not be added, unless it follows itself or another prefix value.
 
 For example, setting a prefix value to `=` means that only values following a `=` will be added to the table.
-This can significantly reduce the size/quality of the table.
+This can significantly reduce the size and improve the quality of the table.
 
 The table type will indicate how many prefix values are present.
 
@@ -182,7 +183,7 @@ The table type will indicate how many prefix values are present.
 
 With table type 2 up to 8 individual prefix values can be defined.
 
-If less than 8 values are needed the rest can be filled with duplicates of previous ones.
+If less than 8 values are needed, the rest can be filled with duplicates of previous ones.
 
 #### 3.3.2 Table Type 3
 
