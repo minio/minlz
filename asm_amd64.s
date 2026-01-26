@@ -24673,24 +24673,30 @@ decodeBlockAsm_fast_loop_nofetch:
 	PCALIGN $0x10
 
 decodeBlockAsm_fast_lits:
-	MOVL R11, R12
-	SHRL $0x01, R12
-	CMPL R12, $0x1d
-	JB   decodeBlockAsm_fast_lit_0
-	JEQ  decodeBlockAsm_fast_lit_1
-	CMPL R12, $0x1e
-	JEQ  decodeBlockAsm_fast_lit_2
-	JMP  decodeBlockAsm_fast_lit_3
+	MOVL    R11, R12
+	SHRL    $0x01, R12
+	CMPL    R11, $0x3a
+	JB      decodeBlockAsm_fast_lit_0
+	CMPL    R12, $0x1e
+	MOVBQZX 1(R8), R12
+	MOVWQZX 1(R8), R13
+	JA      decodeBlockAsm_fast_lit_3
+	MOVQ    $0x00000002, R14
+	MOVQ    $0x00000003, R10
+	CMOVQEQ R10, R14
+	CMOVLEQ R13, R12
+	ADDQ    R14, R8
+	JMP     decodeBlockAsm_fast_litcopy_long
 	PCALIGN $0x10
 
 decodeBlockAsm_fast_lit_0:
 	INCQ R8
 	INCL R12
+	BTL  $0x00, R11
+	JC   decodeBlockAsm_fast_copy_exec_short
 	LEAQ (SI)(R12*1), R10
 	CMPQ R10, AX
 	JA   corrupt
-	BTL  $0x00, R11
-	JC   decodeBlockAsm_fast_copy_exec_short
 	LEAQ (R8)(R12*1), R10
 	CMPQ R10, CX
 	JA   corrupt
@@ -24727,16 +24733,6 @@ decodeBlockAsm_fast_lit_0_copy_memmove_move_33through64:
 	MOVOU X3, -16(SI)(R12*1)
 	JMP   decodeBlockAsm_fast_litcopy_done
 
-decodeBlockAsm_fast_lit_1:
-	MOVBQZX 1(R8), R12
-	ADDQ    $0x02, R8
-	JMP     decodeBlockAsm_fast_litcopy_long
-
-decodeBlockAsm_fast_lit_2:
-	MOVWQZX 1(R8), R12
-	ADDQ    $0x03, R8
-	JMP     decodeBlockAsm_fast_litcopy_long
-
 decodeBlockAsm_fast_lit_3:
 	MOVL (R8), R12
 	ADDQ $0x04, R8
@@ -24744,11 +24740,11 @@ decodeBlockAsm_fast_lit_3:
 
 decodeBlockAsm_fast_litcopy_long:
 	LEAQ 30(R12), R12
+	BTL  $0x00, R11
+	JC   decodeBlockAsm_fast_copy_exec
 	LEAQ (SI)(R12*1), R10
 	CMPQ R10, AX
 	JA   corrupt
-	BTL  $0x00, R11
-	JC   decodeBlockAsm_fast_copy_exec
 	LEAQ (R8)(R12*1), R10
 	CMPQ R10, CX
 	JA   corrupt
@@ -25277,24 +25273,35 @@ decodeBlockAsm_remain_loop:
 	PCALIGN $0x10
 
 decodeBlockAsm_remain_lits:
-	MOVL BX, DX
-	SHRL $0x01, DX
-	CMPL DX, $0x1d
-	JB   decodeBlockAsm_remain_lit_0
-	JEQ  decodeBlockAsm_remain_lit_1
-	CMPL DX, $0x1e
-	JEQ  decodeBlockAsm_remain_lit_2
-	JMP  decodeBlockAsm_remain_lit_3
+	MOVL    BX, DX
+	SHRL    $0x01, DX
+	CMPL    BX, $0x3a
+	JB      decodeBlockAsm_remain_lit_0
+	CMPL    DX, $0x1e
+	JEQ     decodeBlockAsm_remain_lit_2
+	JA      decodeBlockAsm_remain_lit_3
+	ADDQ    $0x02, R8
+	CMPQ    R8, CX
+	JA      corrupt
+	MOVBQZX -1(R8), DX
+	JMP     decodeBlockAsm_remain_litcopy_long
+
+decodeBlockAsm_remain_lit_2:
+	ADDQ    $0x03, R8
+	CMPQ    R8, CX
+	JA      corrupt
+	MOVWQZX -2(R8), DX
+	JMP     decodeBlockAsm_remain_litcopy_long
 	PCALIGN $0x10
 
 decodeBlockAsm_remain_lit_0:
 	INCQ R8
 	INCL DX
-	LEAQ (SI)(DX*1), R10
-	CMPQ R10, AX
-	JA   corrupt
 	BTL  $0x00, BX
 	JC   decodeBlockAsm_remain_copy_exec_short
+	LEAQ (SI)(DX*1), BX
+	CMPQ BX, AX
+	JA   corrupt
 	LEAQ (R8)(DX*1), BX
 	CMPQ BX, CX
 	JA   corrupt
@@ -25359,20 +25366,6 @@ decodeBlockAsm_remain_lit_0_copy_memmove_move_33through64:
 	MOVOU X3, -16(SI)(DX*1)
 	JMP   decodeBlockAsm_remain_litcopy_done
 
-decodeBlockAsm_remain_lit_1:
-	ADDQ    $0x02, R8
-	CMPQ    R8, CX
-	JA      corrupt
-	MOVBQZX -1(R8), DX
-	JMP     decodeBlockAsm_remain_litcopy_long
-
-decodeBlockAsm_remain_lit_2:
-	ADDQ    $0x03, R8
-	CMPQ    R8, CX
-	JA      corrupt
-	MOVWQZX -2(R8), DX
-	JMP     decodeBlockAsm_remain_litcopy_long
-
 decodeBlockAsm_remain_lit_3:
 	ADDQ $0x04, R8
 	CMPQ R8, CX
@@ -25382,11 +25375,11 @@ decodeBlockAsm_remain_lit_3:
 
 decodeBlockAsm_remain_litcopy_long:
 	LEAQ 30(DX), DX
-	LEAQ (SI)(DX*1), R10
-	CMPQ R10, AX
-	JA   corrupt
 	BTL  $0x00, BX
 	JC   decodeBlockAsm_remain_copy_exec
+	LEAQ (SI)(DX*1), BX
+	CMPQ BX, AX
+	JA   corrupt
 	LEAQ (R8)(DX*1), BX
 	CMPQ BX, CX
 	JA   corrupt

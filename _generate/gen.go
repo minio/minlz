@@ -3717,57 +3717,71 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	{
 		MOVL(value.As32(), length.As32())
 		SHRL(U8(1), length.As32())
-		CMPL(length.As32(), U8(29))
-		JB(LabelRef(name + "_lit_0"))
-		JEQ(LabelRef(name + "_lit_1"))
+		CMPL(value.As32(), U8(29<<1)) // Check value due to latency.
+		JB(LabelRef(name + "_lit_0")) // 0 -> 28
 		CMPL(length.As32(), U8(30))
-		JEQ(LabelRef(name + "_lit_2"))
-		JMP(LabelRef(name + "_lit_3")) // Must be 31
+		if o.inputMargin >= 3 {
+			// CMOV between 1/2 bytes
+			tmp, twoLen, toAdd := GP64(), GP64(), GP64()
+			MOVBQZX(Mem{Base: src, Disp: 1}, length)
+			MOVWQZX(Mem{Base: src, Disp: 1}, twoLen)
+			JA(LabelRef(name + "_lit_3")) // unlikely - jump can be placed earlier.
+			MOVQ(U32(2), toAdd)
+			MOVQ(U32(3), tmp)
+			CMOVQEQ(tmp, toAdd)
+			CMOVLEQ(twoLen.As32(), length.As32())
+			ADDQ(toAdd, src)
+			JMP(LabelRef(name + "_litcopy_long"))
+		} else {
+			JEQ(LabelRef(name + "_lit_2")) // 30
+			JA(LabelRef(name + "_lit_3"))  //  31
 
+			// length must be 29.
+			// Label(name + "_lit_1")
+			{
+				// 30 + 1 byte literals
+				if o.inputMargin < 2 {
+					ADDQ(U8(2), src)
+					testSrc(nil)
+					MOVBQZX(Mem{Base: src, Disp: -1}, length)
+				} else {
+					MOVBQZX(Mem{Base: src, Disp: 1}, length)
+					ADDQ(U8(2), src)
+				}
+				JMP(LabelRef(name + "_litcopy_long"))
+			}
+			// Literal length 2
+			Label(name + "_lit_2")
+			{
+				// 30 + 2 bytes literals
+				if o.inputMargin < 3 {
+					ADDQ(U8(3), src)
+					testSrc(nil)
+					MOVWQZX(Mem{Base: src, Disp: -2}, length)
+				} else {
+					MOVWQZX(Mem{Base: src, Disp: 1}, length)
+					ADDQ(U8(3), src)
+				}
+				JMP(LabelRef(name + "_litcopy_long"))
+			}
+		}
 		// 1 - > 29 literals
 		PCALIGN(16)
 		Label(name + "_lit_0")
 		{
 			INCQ(src)
 			INCL(length.As32()) // length++
-			testDstRel(length)
 
 			// Check if repeat...
 			BTL(U8(0), value.As32())
 			JC(LabelRef(name + "_copy_exec_short"))
 
+			testDstRel(length)
 			testSrc(length)
 			// We have to tweak input margin, since we haven't checked it since reading the tag
 			o.inputMargin--
 			o.genMemMoveShort(name+"_lit_0_copy", dst, src, length, LabelRef(name+"_litcopy_done"), 1)
 			o.inputMargin++
-		}
-		Label(name + "_lit_1")
-		{
-			// 30 + 1 byte literals
-			if o.inputMargin < 2 {
-				ADDQ(U8(2), src)
-				testSrc(nil)
-				MOVBQZX(Mem{Base: src, Disp: -1}, length)
-			} else {
-				MOVBQZX(Mem{Base: src, Disp: 1}, length)
-				ADDQ(U8(2), src)
-			}
-			JMP(LabelRef(name + "_litcopy_long"))
-		}
-		// Literal length 2
-		Label(name + "_lit_2")
-		{
-			// 30 + 2 bytes literals
-			if o.inputMargin < 3 {
-				ADDQ(U8(3), src)
-				testSrc(nil)
-				MOVWQZX(Mem{Base: src, Disp: -2}, length)
-			} else {
-				MOVWQZX(Mem{Base: src, Disp: 1}, length)
-				ADDQ(U8(3), src)
-			}
-			JMP(LabelRef(name + "_litcopy_long"))
 		}
 		// Literal length 3
 		// 30 + 3 bytes literals
@@ -3788,15 +3802,16 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 			}
 			JMP(LabelRef(name + "_litcopy_long"))
 		}
+
 		Label(name + "_litcopy_long")
 		{
 			LEAQ(Mem{Base: length, Disp: 30}, length) // length += 30
-			testDstRel(length)
 			// Go to repeat
 			BTL(U8(0), value.As32())
 			JC(LabelRef(name + "_copy_exec"))
 
 			// Literals
+			testDstRel(length)
 			testSrc(length)
 			CMPL(length.As32(), U8(64))
 			JBE(LabelRef(name + "_litcopy_short_reduced"))
@@ -3921,7 +3936,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 		//  offset = int(uint32(src[s-2]) | uint32(src[s-1])<<8)
 
 		CMPL(value.As32(), U8(61))
-		JB(LabelRef(name + "_copy_2_0_extra"))
+		JB(LabelRef(name + "_copy_2_0_extra")) //likely
 		JEQ(LabelRef(name + "_copy_2_1_extra"))
 		CMPL(length.As32(), U8(63))
 		JB(LabelRef(name + "_copy_2_2_extra"))
@@ -4094,7 +4109,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 			}
 
 			CMPL(length.As32(), U8(61))
-			JB(LabelRef(name + "_copy_3_0_extra"))
+			JB(LabelRef(name + "_copy_3_0_extra")) // likely
 			JEQ(LabelRef(name + "_copy_3_1_extra"))
 			CMPL(length.As32(), U8(62))
 			JEQ(LabelRef(name + "_copy_3_2_extra"))
