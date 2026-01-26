@@ -37,7 +37,7 @@ archives:
     name_template: "minlz-{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
     format_overrides:
       - goos: windows
-        format: zip
+        formats: zip
     files:
       - README.md
       - LICENSE
