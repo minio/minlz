@@ -113,6 +113,11 @@
             gap: 4px;
         }
 
+        .filter-wrap {
+            position: relative;
+            display: inline-block;
+        }
+
         .filter-btn {
             padding: 3px 8px;
             font-size: 0.75rem;
@@ -124,6 +129,17 @@
         .filter-btn.c1 { background: #3a5a3a; }
         .filter-btn.c2 { background: #5a5a3a; }
         .filter-btn.c3 { background: #5a3a3a; }
+
+        .filter-wrap .legend-stats {
+            top: 100%;
+            bottom: auto;
+            left: auto;
+            right: 0;
+            margin-top: 8px;
+            margin-bottom: 0;
+        }
+
+        .filter-wrap:hover .legend-stats { display: block; }
 
         .table-container {
             flex: 1;
@@ -322,6 +338,8 @@
             display: flex;
             align-items: center;
             gap: 6px;
+            cursor: pointer;
+            position: relative;
         }
 
         .legend-color {
@@ -329,6 +347,31 @@
             height: 14px;
             border-radius: 2px;
         }
+
+        .legend-stats {
+            display: none;
+            position: absolute;
+            bottom: 100%;
+            left: 0;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            padding: 10px 14px;
+            border-radius: 6px;
+            z-index: 100;
+            min-width: 240px;
+            font-size: 0.75rem;
+            line-height: 1.7;
+            white-space: nowrap;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+            margin-bottom: 8px;
+        }
+
+        .legend-item:hover .legend-stats { display: block; }
+
+        .legend-stats table { width: 100%; }
+        .legend-stats td { padding: 1px 0; border: none; }
+        .legend-stats td:first-child { color: var(--text-dim); }
+        .legend-stats td:last-child { text-align: right; color: var(--text); font-family: monospace; }
 
         .color-literal { background: #808080; }
         .color-repeat { background: #6464b4; }
@@ -412,11 +455,11 @@
             <div class="panel-header">
                 Operations
                 <div class="filter">
-                    <button class="filter-btn lit active" data-type="literal" title="Literals">L</button>
-                    <button class="filter-btn rep active" data-type="repeat" title="Repeat">R</button>
-                    <button class="filter-btn c1 active" data-type="copy1" title="Copy1">1</button>
-                    <button class="filter-btn c2 active" data-type="copy2" title="Copy2">2</button>
-                    <button class="filter-btn c3 active" data-type="copy3" title="Copy3">3</button>
+                    <span class="filter-wrap"><button class="filter-btn lit active" data-type="literal" title="Literals">L</button><span class="legend-stats" id="stats-top-literal"></span></span>
+                    <span class="filter-wrap"><button class="filter-btn rep active" data-type="repeat" title="Repeat">R</button><span class="legend-stats" id="stats-top-repeat"></span></span>
+                    <span class="filter-wrap"><button class="filter-btn c1 active" data-type="copy1" title="Copy1">1</button><span class="legend-stats" id="stats-top-copy1"></span></span>
+                    <span class="filter-wrap"><button class="filter-btn c2 active" data-type="copy2" title="Copy2">2</button><span class="legend-stats" id="stats-top-copy2"></span></span>
+                    <span class="filter-wrap"><button class="filter-btn c3 active" data-type="copy3" title="Copy3">3</button><span class="legend-stats" id="stats-top-copy3"></span></span>
                 </div>
             </div>
             <div class="table-container" id="table-container">
@@ -469,11 +512,11 @@
             </div>
 
             <div class="legend" id="legend" style="display: none;">
-                <div class="legend-item"><div class="legend-color color-literal"></div> Literal</div>
-                <div class="legend-item"><div class="legend-color color-repeat"></div> Repeat</div>
-                <div class="legend-item"><div class="legend-color color-copy1"></div> Copy1</div>
-                <div class="legend-item"><div class="legend-color color-copy2"></div> Copy2</div>
-                <div class="legend-item"><div class="legend-color color-copy3"></div> Copy3</div>
+                <div class="legend-item" data-type="literal"><div class="legend-color color-literal"></div> Literal<div class="legend-stats" id="stats-literal"></div></div>
+                <div class="legend-item" data-type="repeat"><div class="legend-color color-repeat"></div> Repeat<div class="legend-stats" id="stats-repeat"></div></div>
+                <div class="legend-item" data-type="copy1"><div class="legend-color color-copy1"></div> Copy1<div class="legend-stats" id="stats-copy1"></div></div>
+                <div class="legend-item" data-type="copy2"><div class="legend-color color-copy2"></div> Copy2<div class="legend-stats" id="stats-copy2"></div></div>
+                <div class="legend-item" data-type="copy3"><div class="legend-color color-copy3"></div> Copy3<div class="legend-stats" id="stats-copy3"></div></div>
                 <div class="highlight-info">
                     <div class="highlight-item"><div class="highlight-box highlight-dest"></div> Destination</div>
                     <div class="highlight-item"><div class="highlight-box highlight-src"></div> Source</div>

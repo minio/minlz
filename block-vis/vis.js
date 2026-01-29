@@ -338,6 +338,7 @@ let state = {
     operations: [],
     selectedOp: null,
     opByteMap: null, // Maps each output byte to its operation index
+    typeStats: null, // Statistics per operation type
 
     // Canvas state
     zoom: 1,
@@ -549,6 +550,71 @@ function buildOpByteMap() {
         for (let j = start; j < end; j++) {
             state.opByteMap[j] = i;
         }
+    }
+}
+
+function computeTypeStats() {
+    const types = ['literal', 'repeat', 'copy1', 'copy2', 'copy3'];
+    const stats = {};
+    for (const t of types) {
+        stats[t] = { count: 0, outputBytes: 0, encodingBytes: 0, literalBytes: 0, bytesSaved: 0 };
+    }
+
+    for (const op of state.operations) {
+        const s = stats[op.type];
+        s.count++;
+        s.outputBytes += op.length;
+
+        const litCount = op.literals ? op.literals.length : (op.fusedLiterals ? op.fusedLiterals.length : 0);
+        const encBytes = op.encodedBytes.length - litCount;
+        s.encodingBytes += encBytes;
+        s.literalBytes += litCount;
+
+        if (op.type !== 'literal') {
+            const copyLen = op.copyLength || (op.length - litCount);
+            s.bytesSaved += copyLen - encBytes;
+        }
+    }
+
+    state.typeStats = stats;
+}
+
+function renderLegendStats() {
+    if (!state.typeStats || !state.output) return;
+
+    const totalOps = state.operations.length || 1;
+    const totalOut = state.output.length || 1;
+
+    for (const [type, s] of Object.entries(state.typeStats)) {
+        const pctOps = (s.count / totalOps * 100).toFixed(1);
+        const pctOut = (s.outputBytes / totalOut * 100).toFixed(1);
+        const avgOut = s.count ? (s.outputBytes / s.count).toFixed(2) : '0';
+        const avgEnc = s.count ? (s.encodingBytes / s.count).toFixed(2) : '0';
+        const avgSaved = s.count ? (s.bytesSaved / s.count).toFixed(2) : '0';
+
+        let html = `<table>
+            <tr><td>Count:</td><td>${s.count.toLocaleString()} (${pctOps}%)</td></tr>
+            <tr><td>Output:</td><td>${s.outputBytes.toLocaleString()} B (${pctOut}%)</td></tr>
+            <tr><td>Avg output:</td><td>${avgOut} B</td></tr>
+            <tr><td>Encoding:</td><td>${s.encodingBytes.toLocaleString()} B</td></tr>
+            <tr><td>Avg encoding:</td><td>${avgEnc} B</td></tr>`;
+
+        if (type === 'literal' || s.literalBytes > 0) {
+            html += `<tr><td>Literals:</td><td>${s.literalBytes.toLocaleString()} B</td></tr>`;
+        }
+
+        if (type !== 'literal') {
+            html += `<tr><td>Saved:</td><td>${s.bytesSaved.toLocaleString()} B (avg ${avgSaved})</td></tr>`;
+        }
+
+        html += '</table>';
+
+        // Update both bottom legend and top filter button stats
+        const bottomEl = document.getElementById(`stats-${type}`);
+        if (bottomEl) bottomEl.innerHTML = html;
+
+        const topEl = document.getElementById(`stats-top-${type}`);
+        if (topEl) topEl.innerHTML = html;
     }
 }
 
@@ -773,10 +839,12 @@ function loadBlock(data) {
             setTimeout(() => {
                 try {
                     buildOpByteMap();
+                    computeTypeStats();
                     calculateCanvasDimensions();
 
                     updateStats();
                     renderTable();
+                    renderLegendStats();
 
                     // Show canvas UI
                     elements.emptyState.style.display = 'none';
