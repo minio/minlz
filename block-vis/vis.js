@@ -527,12 +527,6 @@ function renderTable() {
         tdDst.textContent = op.dstOffset.toLocaleString();
         tr.appendChild(tdDst);
 
-        // Length
-        const tdLen = document.createElement('td');
-        tdLen.className = 'length-val';
-        tdLen.textContent = op.length.toLocaleString();
-        tr.appendChild(tdLen);
-
         tr.addEventListener('click', () => selectOperation(idx));
         tbody.appendChild(tr);
     });
