@@ -551,7 +551,7 @@ function computeTypeStats() {
     const types = ['literal', 'repeat', 'copy1', 'copy2', 'copy3'];
     const stats = {};
     for (const t of types) {
-        stats[t] = { count: 0, outputBytes: 0, encodingBytes: 0, literalBytes: 0, bytesSaved: 0 };
+        stats[t] = { count: 0, outputBytes: 0, encodingBytes: 0, literalBytes: 0, bytesSaved: 0, withLiterals: 0 };
     }
 
     for (const op of state.operations) {
@@ -563,6 +563,10 @@ function computeTypeStats() {
         const encBytes = op.encodedBytes.length - litCount;
         s.encodingBytes += encBytes;
         s.literalBytes += litCount;
+
+        if (op.fusedLiterals && op.fusedLiterals.length > 0) {
+            s.withLiterals++;
+        }
 
         if (op.type !== 'literal') {
             const copyLen = op.copyLength || (op.length - litCount);
@@ -578,6 +582,7 @@ function renderLegendStats() {
 
     const totalOps = state.operations.length || 1;
     const totalOut = state.output.length || 1;
+    const totalComp = state.compressed.length || 1;
 
     for (const [type, s] of Object.entries(state.typeStats)) {
         const pctOps = (s.count / totalOps * 100).toFixed(1);
@@ -587,13 +592,23 @@ function renderLegendStats() {
         const avgSaved = s.count ? (s.bytesSaved / s.count).toFixed(2) : '0';
 
         let html = `<table>
-            <tr><td>Count:</td><td>${s.count.toLocaleString()} (${pctOps}%)</td></tr>
-            <tr><td>Output:</td><td>${s.outputBytes.toLocaleString()} B (${pctOut}%)</td></tr>
+            <tr><td>Count:</td><td>${s.count.toLocaleString()} (${pctOps}%)</td></tr>`;
+
+        if ((type === 'copy2' || type === 'copy3') && s.count > 0) {
+            const pctWithLits = (s.withLiterals / s.count * 100).toFixed(1);
+            html += `<tr><td>With literals:</td><td>${s.withLiterals.toLocaleString()} (${pctWithLits}%)</td></tr>`;
+            if (s.literalBytes > 0) {
+                html += `<tr><td>Literals:</td><td>${s.literalBytes.toLocaleString()} B</td></tr>`;
+            }
+        }
+
+        const pctEnc = (s.encodingBytes / totalComp * 100).toFixed(1);
+        html += `<tr><td>Output:</td><td>${s.outputBytes.toLocaleString()} B (${pctOut}%)</td></tr>
             <tr><td>Avg output:</td><td>${avgOut} B</td></tr>
-            <tr><td>Encoding:</td><td>${s.encodingBytes.toLocaleString()} B</td></tr>
+            <tr><td>Encoding:</td><td>${s.encodingBytes.toLocaleString()} B (${pctEnc}%)</td></tr>
             <tr><td>Avg encoding:</td><td>${avgEnc} B</td></tr>`;
 
-        if (type === 'literal' || s.literalBytes > 0) {
+        if (type === 'literal') {
             html += `<tr><td>Literals:</td><td>${s.literalBytes.toLocaleString()} B</td></tr>`;
         }
 
