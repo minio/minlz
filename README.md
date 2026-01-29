@@ -1,14 +1,19 @@
 # MinLZ
 
-MinLZ is a LZ77-type compressor with a fixed byte-aligned encoding, in the similar class to Snappy and LZ4.
+MinLZ is a LZ77-type compressor with a fixed byte-aligned encoding, 
+in the similar class to Snappy and LZ4.
 
-The goal of MinLZ is to provide a fast, low memory compression algorithm that can be used for fast compression of data, 
-where encoding and/or decoding speed is the primary concern. 
+The goal of MinLZ is to provide a fast, low memory compression algorithm 
+that can be used for fast compression of data, where encoding
+and/or decoding speed is the primary concern. 
 
-MinLZ is designed to operate *faster than IO* for both compression and decompression and be a viable "always on"
-option even if some content already is compressed.
-If slow compression is acceptable, MinLZ can be configured to produce high compression ratio, 
-but retain high decompression speed.
+MinLZ is designed to operate *faster than IO* for both 
+compression and decompression.
+
+It is a viable "always on" option, even if some content already is compressed.
+
+If slow compression is acceptable, MinLZ can be configured to produce a high
+compression ratio and still retain a high decompression speed.
 
 * Best in class compression
 * Block or Streaming interfaces
@@ -17,8 +22,8 @@ but retain high decompression speed.
 * Adjustable Compression (3 levels)
 * Concurrent stream Compression
 * Concurrent stream Decompression
-* Skip forward in compressed stream via independent blocks
-* Random seeking with optional indexes
+* Skip forward in compressed streams via independent blocks
+* Random seeking with optional index
 * Stream EOF validation
 * Automatic stream size padding
 * Custom encoders for small blocks
@@ -331,12 +336,12 @@ but for completeness also test with `-tags=purego`.
 ## BLOCKS
 
 Individual block benchmarks should be considered carefully - and can be hard to generalize, 
-since they tend to over-emphasize specific characteristics of the content.
+since they tend to overemphasize specific characteristics of the content.
 
 Therefore, it will be easy to find counter-examples to the benchmarks, where specific patterns suit a 
 specific compressor better than others. 
 We present a few examples from the [Snappy benchmark set](https://github.com/google/snappy/tree/main/testdata).
-As a benchmark this set has an over-emphasis on text files.
+As a benchmark, this set has an over-emphasis on text files.
 
 Blocks are compressed/decompress using 16 concurrent threads on an AMD Ryzen 9 3950X 16-Core Processor.
 Click below to see some sample benchmarks compared to Snappy and LZ4:
@@ -455,16 +460,20 @@ We encourage you to do your own testing with realistic blocks.
 
 You can use `λ mz c -block -bench=10 -verify -cpu=16 -1 file.ext` with our commandline tool to test speed of block encoding/decoding.
 
+### Visualizer
+
+You can visualize individual blocks using our [block visualizer](https://minlz.klauspost.com/).
+
 ## STREAMS
 
 For fair stream comparisons, we run each encoder at its maximum block size
-or max 4MB,  while maintaining independent blocks where it is an option.
+or max 4MB, while maintaining independent blocks where it is an option.
 We use the concurrency offered by the package.
 
 This means there may be further speed/size tradeoffs possible for each, 
-so experiment with fine tuning for your needs.
+so experiment with fine-tuning for your needs.
 
-Blocks are compressed/decompress using 16 core AMD Ryzen 9 3950X 16-Core Processor.
+Blocks are compressed/decompressed using 16 core AMD Ryzen 9 3950X 16-Core Processor.
 
 ### JSON Stream
 
@@ -595,10 +604,10 @@ Source file: https://mattmahoney.net/dc/10gb.html
 
 Our conclusion is that the new compression algorithm provides a good compression increase,
 while retaining the ability to saturate pretty much any IO either with compression or
-decompression given a moderate amount of CPU cores.
+decompression given a moderate number of CPU cores.
 
 
-## Why is concurrent block and stream speed so different?
+## Why are concurrent block and stream speeds so different?
 
 In most cases, MinLZ will be limited by memory bandwidth.
 
