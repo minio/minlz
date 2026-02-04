@@ -53,6 +53,55 @@ func encodeBlockAsm4K(dst []byte, src []byte, tmp *[2048]byte) int
 //go:noescape
 func encodeBlockAsm1K(dst []byte, src []byte, tmp *[1024]byte) int
 
+// encodeFastBlockAsm encodes a non-empty src to a guaranteed-large-enough dst.
+// Maximum input 8388608 bytes.
+// It assumes that the varint-encoded length of the decompressed bytes has already been written.
+//
+//go:noescape
+func encodeFastBlockAsm(dst []byte, src []byte, tmp *[65536]byte) int
+
+// encodeFastBlockAsm2MB encodes a non-empty src to a guaranteed-large-enough dst.
+// Maximum input 2097152 bytes.
+// It assumes that the varint-encoded length of the decompressed bytes has already been written.
+//
+//go:noescape
+func encodeFastBlockAsm2MB(dst []byte, src []byte, tmp *[32768]byte) int
+
+// encodeFastBlockAsm512K encodes a non-empty src to a guaranteed-large-enough dst.
+// Maximum input 524288 bytes.
+// It assumes that the varint-encoded length of the decompressed bytes has already been written.
+//
+//go:noescape
+func encodeFastBlockAsm512K(dst []byte, src []byte, tmp *[32768]byte) int
+
+// encodeFastBlockAsm64K encodes a non-empty src to a guaranteed-large-enough dst.
+// Maximum input 65536 bytes.
+// It assumes that the varint-encoded length of the decompressed bytes has already been written.
+//
+//go:noescape
+func encodeFastBlockAsm64K(dst []byte, src []byte, tmp *[8192]byte) int
+
+// encodeFastBlockAsm16K encodes a non-empty src to a guaranteed-large-enough dst.
+// Maximum input 16384 bytes.
+// It assumes that the varint-encoded length of the decompressed bytes has already been written.
+//
+//go:noescape
+func encodeFastBlockAsm16K(dst []byte, src []byte, tmp *[4096]byte) int
+
+// encodeFastBlockAsm4K encodes a non-empty src to a guaranteed-large-enough dst.
+// Maximum input 4096 bytes.
+// It assumes that the varint-encoded length of the decompressed bytes has already been written.
+//
+//go:noescape
+func encodeFastBlockAsm4K(dst []byte, src []byte, tmp *[2048]byte) int
+
+// encodeFastBlockAsm1K encodes a non-empty src to a guaranteed-large-enough dst.
+// Maximum input 1024 bytes.
+// It assumes that the varint-encoded length of the decompressed bytes has already been written.
+//
+//go:noescape
+func encodeFastBlockAsm1K(dst []byte, src []byte, tmp *[1024]byte) int
+
 // encodeBetterBlockAsm encodes a non-empty src to a guaranteed-large-enough dst.
 // Maximum input 8388608 bytes.
 // It assumes that the varint-encoded length of the decompressed bytes has already been written.
