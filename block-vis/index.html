@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MinLZ Block Visualizer</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { height: 100%; overflow: hidden; }
+
+        :root {
+            --bg-dark: #1a1a2e;
+            --bg-panel: #16213e;
+            --bg-input: #0f3460;
+            --accent: #e94560;
+            --accent-blue: #4a9eff;
+            --accent-green: #4ade80;
+            --accent-yellow: #facc15;
+            --accent-red: #f87171;
+            --text: #e8e8e8;
+            --text-dim: #a0a0a0;
+            --border: #2a2a4a;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header {
+            background: var(--bg-panel);
+            padding: 12px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        header h1 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            font-size: 0.85rem;
+        }
+
+        .stat { color: var(--text-dim); }
+        .stat span { color: var(--text); font-weight: 500; }
+
+        .controls {
+            display: flex;
+            gap: 8px;
+            margin-left: auto;
+        }
+
+        button {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 6px 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.15s;
+        }
+
+        button:hover { background: var(--accent); border-color: var(--accent); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        button.active { background: var(--accent); border-color: var(--accent); }
+
+        main {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .panel {
+            background: var(--bg-panel);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            width: 672px;
+            min-width: 480px;
+            max-width: 900px;
+            min-height: 0;
+            resize: horizontal;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            font-weight: 500;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .panel-header .filter {
+            margin-left: auto;
+            display: flex;
+            gap: 4px;
+        }
+
+        .filter-wrap {
+            position: relative;
+            display: inline-block;
+        }
+
+        .filter-btn {
+            padding: 3px 8px;
+            font-size: 0.75rem;
+            border-radius: 3px;
+        }
+
+        .filter-btn.lit { background: #4a4a5a; }
+        .filter-btn.rep { background: #3a3a6a; }
+        .filter-btn.c1 { background: #3a5a3a; }
+        .filter-btn.c2 { background: #5a5a3a; }
+        .filter-btn.c3 { background: #5a3a3a; }
+
+        .filter-wrap .legend-stats {
+            top: 100%;
+            bottom: auto;
+            left: auto;
+            right: 0;
+            margin-top: 8px;
+            margin-bottom: 0;
+        }
+
+        .filter-wrap:hover .legend-stats { display: block; }
+
+        .table-container {
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: var(--bg-input);
+            padding: 8px 10px;
+            text-align: left;
+            font-weight: 500;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 5px 10px;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+
+        /* Column widths */
+        th:nth-child(1), td:nth-child(1) { width: 40px; }
+        th:nth-child(2), td:nth-child(2) { width: 60px; }
+        th:nth-child(3), td:nth-child(3) { width: 100px; }
+        th:nth-child(4), td:nth-child(4) { min-width: 270px; white-space: normal; word-break: break-word; }
+        th:nth-child(5), td:nth-child(5) { width: 90px; }
+
+        tr:hover { background: rgba(255,255,255,0.03); }
+        tr.selected { background: rgba(74, 158, 255, 0.15); }
+        tr.selected:hover { background: rgba(74, 158, 255, 0.2); }
+
+        .type-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .type-literal { background: #4a4a5a; color: #c8c8c8; }
+        .type-repeat { background: #3a3a7a; color: #9090ff; }
+        .type-copy1 { background: #3a6a3a; color: #80d080; }
+        .type-copy2 { background: #6a6a3a; color: #d0d080; }
+        .type-copy3 { background: #6a3a3a; color: #d08080; }
+
+        .hex { color: var(--text-dim); }
+        .offset-val { color: var(--accent-blue); }
+        .length-val { color: var(--accent-green); }
+
+        .canvas-container {
+            flex: 1;
+            min-height: 0;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .canvas-toolbar {
+            padding: 8px 16px;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.85rem;
+        }
+
+        .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .zoom-level {
+            min-width: 50px;
+            text-align: center;
+            color: var(--text-dim);
+        }
+
+        .canvas-info {
+            margin-left: auto;
+            color: var(--text-dim);
+            font-family: monospace;
+        }
+
+        .canvas-wrapper {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            cursor: grab;
+        }
+
+        .canvas-wrapper:active { cursor: grabbing; }
+
+        #canvas {
+            position: absolute;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        .tooltip {
+            position: fixed;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-family: monospace;
+            pointer-events: none;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            display: none;
+        }
+
+        .tooltip.visible { display: block; }
+
+        .tooltip-row { display: flex; gap: 12px; }
+        .tooltip-label { color: var(--text-dim); }
+        .tooltip-value { color: var(--text); }
+
+        .drop-zone {
+            position: fixed;
+            inset: 0;
+            background: rgba(26, 26, 46, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+        }
+
+        .drop-zone.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .drop-zone-inner {
+            border: 3px dashed var(--accent);
+            border-radius: 16px;
+            padding: 60px 100px;
+            text-align: center;
+        }
+
+        .drop-zone h2 {
+            font-size: 1.5rem;
+            margin-bottom: 8px;
+        }
+
+        .drop-zone p { color: var(--text-dim); }
+
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-dim);
+            text-align: center;
+            padding: 40px;
+        }
+
+        .empty-state h2 {
+            font-size: 1.3rem;
+            margin-bottom: 12px;
+            color: var(--text);
+        }
+
+        .empty-state p { margin-bottom: 20px; }
+
+        .legend {
+            display: flex;
+            gap: 16px;
+            padding: 8px 16px;
+            background: var(--bg-panel);
+            border-top: 1px solid var(--border);
+            font-size: 0.75rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .legend-color {
+            width: 14px;
+            height: 14px;
+            border-radius: 2px;
+        }
+
+        .legend-stats {
+            display: none;
+            position: absolute;
+            bottom: 100%;
+            left: 0;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            padding: 10px 14px;
+            border-radius: 6px;
+            z-index: 100;
+            min-width: 240px;
+            font-size: 0.75rem;
+            line-height: 1.7;
+            white-space: nowrap;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+            margin-bottom: 8px;
+        }
+
+        .legend-item:hover .legend-stats { display: block; }
+
+        .legend-stats table { width: 100%; }
+        .legend-stats td { padding: 1px 0; border: none; }
+        .legend-stats td:first-child { color: var(--text-dim); }
+        .legend-stats td:last-child { text-align: right; color: var(--text); font-family: monospace; }
+
+        .color-literal { background: #808080; }
+        .color-repeat { background: #6464b4; }
+        .color-copy1 { background: #64a064; }
+        .color-copy2 { background: #a0a064; }
+        .color-copy3 { background: #a06464; }
+
+        .highlight-info {
+            margin-left: auto;
+            display: flex;
+            gap: 16px;
+        }
+
+        .highlight-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .highlight-box {
+            width: 14px;
+            height: 14px;
+            border: 2px solid;
+            border-radius: 2px;
+        }
+
+        .highlight-dest { border-color: #ffffff; }
+        .highlight-src { border-color: #ff0000; }
+
+        .loading-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(26, 26, 46, 0.9);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+
+        .loading-overlay.active { display: flex; }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            margin-top: 16px;
+            color: var(--text-dim);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>MinLZ Block Visualizer</h1>
+        <div class="stats" id="stats">
+            <div class="stat">Compressed: <span id="stat-compressed">-</span></div>
+            <div class="stat">Decompressed: <span id="stat-decompressed">-</span></div>
+            <div class="stat">Ratio: <span id="stat-ratio">-</span></div>
+            <div class="stat">Operations: <span id="stat-ops">-</span></div>
+        </div>
+        <div class="controls">
+            <button id="btn-load">Load File</button>
+            <button id="btn-sample">Load Sample</button>
+            <button id="btn-download" disabled>Download Decoded</button>
+        </div>
+    </header>
+
+    <main>
+        <div class="panel" id="panel">
+            <div class="panel-header">
+                Operations
+                <div class="filter">
+                    <span class="filter-wrap"><button class="filter-btn lit active" data-type="literal" title="Literals">L</button><span class="legend-stats" id="stats-top-literal"></span></span>
+                    <span class="filter-wrap"><button class="filter-btn rep active" data-type="repeat" title="Repeat">R</button><span class="legend-stats" id="stats-top-repeat"></span></span>
+                    <span class="filter-wrap"><button class="filter-btn c1 active" data-type="copy1" title="Copy1">1</button><span class="legend-stats" id="stats-top-copy1"></span></span>
+                    <span class="filter-wrap"><button class="filter-btn c2 active" data-type="copy2" title="Copy2">2</button><span class="legend-stats" id="stats-top-copy2"></span></span>
+                    <span class="filter-wrap"><button class="filter-btn c3 active" data-type="copy3" title="Copy3">3</button><span class="legend-stats" id="stats-top-copy3"></span></span>
+                </div>
+            </div>
+            <div class="table-container" id="table-container">
+                <table id="op-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Type</th>
+                            <th>Hex</th>
+                            <th>Details</th>
+                            <th>Dst</th>
+                        </tr>
+                    </thead>
+                    <tbody id="op-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="canvas-container" id="canvas-container">
+            <div class="empty-state" id="empty-state">
+                <h2>Drop a .mzb file here</h2>
+                <p>Or click "Load File" to browse, or "Load Sample" to see an example</p>
+                <p style="font-size: 0.8rem; margin-top: 20px;">
+                    Raw MinLZ block files (.mzb) only - not .mz streams
+                </p>
+            </div>
+
+            <div class="loading-overlay" id="loading-overlay">
+                <div class="spinner"></div>
+                <div class="loading-text">Decoding...</div>
+            </div>
+
+            <div class="canvas-toolbar" id="canvas-toolbar" style="display: none;">
+                <div class="zoom-controls">
+                    <button id="zoom-out">-</button>
+                    <span class="zoom-level" id="zoom-level">1x</span>
+                    <button id="zoom-in">+</button>
+                    <button id="zoom-fit">Fit</button>
+                </div>
+                <span style="color: var(--text-dim)">|</span>
+                <span style="color: var(--text-dim); font-size: 0.8rem;">
+                    Scroll to zoom, drag to pan, click canvas or table row to select
+                </span>
+                <div class="canvas-info" id="canvas-info"></div>
+            </div>
+
+            <div class="canvas-wrapper" id="canvas-wrapper" style="display: none;">
+                <canvas id="canvas"></canvas>
+            </div>
+
+            <div class="legend" id="legend" style="display: none;">
+                <div class="legend-item" data-type="literal"><div class="legend-color color-literal"></div> Literal<div class="legend-stats" id="stats-literal"></div></div>
+                <div class="legend-item" data-type="repeat"><div class="legend-color color-repeat"></div> Repeat<div class="legend-stats" id="stats-repeat"></div></div>
+                <div class="legend-item" data-type="copy1"><div class="legend-color color-copy1"></div> Copy1<div class="legend-stats" id="stats-copy1"></div></div>
+                <div class="legend-item" data-type="copy2"><div class="legend-color color-copy2"></div> Copy2<div class="legend-stats" id="stats-copy2"></div></div>
+                <div class="legend-item" data-type="copy3"><div class="legend-color color-copy3"></div> Copy3<div class="legend-stats" id="stats-copy3"></div></div>
+                <div class="highlight-info">
+                    <div class="highlight-item"><div class="highlight-box highlight-dest"></div> Destination</div>
+                    <div class="highlight-item"><div class="highlight-box highlight-src"></div> Source</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="drop-zone" id="drop-zone">
+        <div class="drop-zone-inner">
+            <h2>Drop .mzb file</h2>
+            <p>Release to decode and visualize</p>
+        </div>
+    </div>
+
+    <div class="tooltip" id="tooltip">
+        <div class="tooltip-row"><span class="tooltip-label">Op:</span> <span class="tooltip-value" id="tip-pos">-</span></div>
+        <div class="tooltip-row"><span class="tooltip-label">Details:</span> <span class="tooltip-value" id="tip-val">-</span></div>
+        <div class="tooltip-row"><span class="tooltip-label">Output:</span> <span class="tooltip-value" id="tip-op">-</span></div>
+    </div>
+
+    <input type="file" id="file-input" accept=".mzb,.bin" style="display: none;">
+
+<script src="vis.js"></script>
+</body>
+</html>
