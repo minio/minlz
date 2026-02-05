@@ -91,10 +91,24 @@ func encodeGo(dst, src []byte, level int) []byte {
 
 	var n int
 	switch level {
+	case LevelSuperFast:
+		if len(src) <= 64<<10 {
+			n = encodeFastBlockGo64K(dst[d:], src)
+		} else {
+			n = encodeFastBlockGo(dst[d:], src)
+		}
 	case LevelFastest:
-		n = encodeBlockGo(dst[d:], src)
+		if len(src) <= 64<<10 {
+			n = encodeBlockGo64K(dst[d:], src)
+		} else {
+			n = encodeBlockGo(dst[d:], src)
+		}
 	case LevelBalanced:
-		n = encodeBlockBetterGo(dst[d:], src)
+		if len(src) <= 64<<10 {
+			n = encodeBlockBetterGo64K(dst[d:], src)
+		} else {
+			n = encodeBlockBetterGo(dst[d:], src)
+		}
 	case LevelSmallest:
 		n = encodeBlockBest(dst[d:], src, nil)
 	default:
