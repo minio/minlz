@@ -16,7 +16,7 @@ With this information, blocks can be skipped if searching for specific patterns.
 ### 2.0 Search Table Information (chunk type 0x44, skippable)
 
 This chunk is purely informational and should follow the stream identifier
-and be before the first block of the stream or its block search table (see below).
+and be before the first data block of the stream and before any block search table (type 0x45, see below).
 
 The payload of this chunk contains the following information:
 
@@ -29,7 +29,7 @@ The payload of this chunk contains the following information:
 
 The Table Type must be `1` if no prefix is present and `2/3` if prefix values are present.
 
-The hash table size is the number of entries in the hash table, which is 2^tableSize.
+The hash table size is the number of entries in the hash table, which is 2^tableSize bits.
 
 * The smallest tables are 256 entries (size 8).
 * The largest tables are the same as the maximum block size of the stream - ie 8,388,608 entries (size 23).
