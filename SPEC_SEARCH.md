@@ -27,12 +27,12 @@ The payload of this chunk contains the following information:
 | 1      | Base Table Size in log2 |
 | 0/8/32 | Prefix values           |
 
-The Table Type must be `1` if no prefix is present and `2/3` if prefix values are present.
+The Table Type must be `1` if no prefix is present and `2/3/4` if prefix values are present.
 
 The hash table size is the number of entries in the hash table, which is 2^tableSize bits.
 
-* The smallest tables are 256 entries (size 8).
-* The largest tables are the same as the maximum block size of the stream - ie 8,388,608 entries (size 23).
+* The smallest table is 256 entries (size 8, 32 bytes).
+* The largest table is the same as the maximum block size of the stream - ie 8,388,608 entries (size 23, 1MiB).
 
 The search length must be at least `1` and at most `8`.
 
@@ -103,7 +103,7 @@ const (
 	prime8bytes = 0xcf1bbcdcb7a56463
 )
 
-// HashValue returns a table index of the lowest matchLen bytes,
+// HashValue returns a table index of the lowest matchLen bytes, 
 // with tableSize output bits.
 // matchLen must be >= 1 and <= 8.
 // tableSize should always be 8 - 23.
@@ -178,6 +178,7 @@ The table type will indicate how many prefix values are present.
 | 1          | 0            | 0             | No prefix values           |
 | 2          | 8            | 1-8           | 1-8 prefix values          |
 | 3          | 32           | 0-256         | Bit mask for prefix values |
+| 4          | 1+n          | 1 (256 B max) | Long Prefix                |
 
 #### 3.3.1 Table Type 2
 
@@ -188,3 +189,11 @@ If less than 8 values are needed, the rest can be filled with duplicates of prev
 #### 3.3.2 Table Type 3
 
 Each bit indicates if a byte value at that position is a prefix of the search pattern.
+
+#### 3.3.2 Table Type 4
+
+The first byte defines the prefix length. One must be added to the length after being read.
+
+The prefix (1 to 256 bytes) is stored after the length indication.
+
+A type 4 table with prefix `"id":` will therefore only contain entries following that prefix.
