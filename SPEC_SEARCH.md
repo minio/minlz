@@ -197,3 +197,100 @@ The first byte defines the prefix length. One must be added to the length after 
 The prefix (1 to 256 bytes) is stored after the length indication.
 
 A type 4 table with prefix `"id":` will therefore only contain entries following that prefix.
+
+## Appendix A - Using Search Tables
+
+This appendix describes how a searcher can apply the different table types
+to determine if a block may contain a given byte pattern.
+
+This is a guideline for implementers to get the most of search tables, not a specification.
+
+### A.1 General Lookup
+
+Given a search table with `baseTableSize` and `reductions`, the effective lookup is:
+
+```
+mask = (1 << (baseTableSize - reductions)) - 1
+h = HashValue(window, baseTableSize, matchLen) & mask
+present = table[h >> 3] & (1 << (h & 7)) != 0
+```
+
+If `present` is false for any checked window, the block definitely does not contain the
+pattern and can be skipped. If all checked windows are present, the block may contain
+the pattern and must be decoded to verify.
+
+### A.2 Type 1 - No Prefix
+
+Every `matchLen`-byte window of the search pattern is checked.
+All must be present for a possible match.
+
+For pattern `P` of length `L` with matchLen  `M`:
+
+```
+for i = 0 to L - M:
+    if not present(P[i : i+M]):
+        skip block
+```
+
+This is the most powerful mode for arbitrary searches. Longer patterns produce
+more window checks, giving exponentially better filtering.
+
+### A.3 Types 2 and 3 - Byte Prefix / Mask Prefix
+
+The table only contains entries for positions in the data that immediately follow
+a prefix byte. When searching, the pattern is scanned for any position where a
+prefix byte appears. The `matchLen` bytes following that position are checked.
+
+For pattern `P` of length `L`, prefix set `S`, and matchLen `M`:
+
+```
+checked = 0
+for i = 1 to L - M:
+    if P[i-1] is in S:
+        if not present(P[i : i+M]):
+            skip block
+        checked++
+if checked == 0:
+    cannot use table (fall back to full decode)
+```
+
+This means the pattern does **not** need to start with a prefix byte.
+Any prefix byte found inside the pattern produces a checkable window.
+
+For example, with prefix bytes `"` and `:`, searching for `stamp":"1679909263`
+finds `"` at position 5 and `:` at position 6. The windows `:"1679`,  `"16799`
+as well as `167990` are all checked. If either is absent, the block is skipped.
+
+If the pattern contains no prefix bytes at all (e.g. `stamp`), the table cannot
+help and the searcher must fall back to decoding the block.
+
+### A.4 Type 4 - Long Prefix
+
+The table contains entries for positions following a multi-byte prefix sequence.
+The searcher scans the pattern for any occurrence of the prefix substring and
+checks the `matchLen` bytes that follow it.
+
+For pattern `P` of length `L`, prefix `pfx` of length `K`, and matchLen = `M`:
+
+```
+checked = 0
+for i = 0 to L - K - M:
+    if P[i : i+K] == pfx:
+        if not present(P[i+K : i+K+M]):
+            skip block
+        checked++
+if checked == 0:
+    cannot use table (fall back to full decode)
+```
+
+For example, with prefix `":"` and matchLen 4, searching for `stamp":"1679909263`
+finds `":"` at position 5. The window `1679` is checked.
+
+### A.5 Fallback Behavior
+
+When the search table cannot be applied to a given pattern (pattern too short,
+no prefix bytes found inside), a searcher has two options:
+
+1. **Fall back**: Decode the block and search it directly. This is the safe default.
+2. **Bail**: Return an error indicating search tables are unusable for this query.
+   This is useful when the caller only wants table-accelerated searches.

@@ -336,7 +336,157 @@ func ExampleWriterAddUserChunk() {
 }
 ```
 
-The maximum single chunk size is 16MB, but as many chunks as needed can be added. 
+The maximum single chunk size is 16MB, but as many chunks as needed can be added.
+
+## Block Search Tables
+
+MinLZ streams can include optional per-block search tables that act as bloom filters,
+enabling fast pattern searching without decompressing every block.
+
+For format specification see [SPEC_SEARCH.md](SPEC_SEARCH.md).
+
+### Adding Search Tables During Compression
+
+To add search tables, pass a `SearchTableConfig` to the writer via `WriterSearchTable`:
+
+```go
+cfg := minlz.NewSearchTableConfig() // matchLen defaults to 6
+w := minlz.NewWriter(output, minlz.WriterSearchTable(cfg))
+```
+
+The match length (1-8) controls how many bytes are hashed per position.
+Longer match lengths provide better discrimination (fewer false positives)
+at the cost of not being usable for short search patterns.
+
+A good length is typically between 4 and 6 bytes.
+
+**Prefix filtering** reduces table size by only indexing positions after specific bytes:
+
+```go
+// Only index positions after '=' or ':' characters.
+cfg := minlz.NewSearchTableConfig().WithMatchLen(4).WithBytePrefix('=', ':')
+
+// For more than 8 prefix bytes, a bitmask is used automatically.
+cfg := minlz.NewSearchTableConfig().WithMatchLen(4).WithBytePrefix([]byte("=:;,.!?\"'")...)
+
+// Long prefix: only index after a specific multi-byte sequence.
+cfg := minlz.NewSearchTableConfig().WithMatchLen(4).WithLongPrefix([]byte("\"id\":"))
+```
+
+The base table size is automatically derived from the block size.
+Tables are only added for compressible blocks. Population and conflict thresholds
+control whether a table is emitted and how much it is reduced:
+
+```go
+cfg := minlz.NewSearchTableConfig().
+    WithMaxPopulation(70).  // Skip table if >70% bits set (default)
+    WithMaxConflicts(25)    // Stop reducing at >25% conflicts (default)
+```
+
+Search tables are generated in the compression goroutines, so they run concurrently
+with compression and add minimal overhead to the encoding pipeline.
+
+### Searching Compressed Streams
+
+Use `BlockSearcher` to search a compressed stream. It uses search tables to skip
+blocks that definitely don't contain the pattern, falling back to full decompression
+when tables are absent or incompatible:
+
+```go
+searcher := minlz.NewBlockSearcher(input)
+
+err := searcher.Search([]byte("search pattern"), func(data []byte, blockStart int64) bool {
+    // data is the decoded block content
+    // blockStart is the uncompressed byte offset of the block
+    // Return false to stop searching
+    if bytes.Contains(data, target) {
+        fmt.Printf("Found at offset %d\n", blockStart)
+    }
+    return true // continue
+})
+```
+
+After `Search` returns, statistics are available via `searcher.Stats()`:
+
+```go
+stats := searcher.Stats()
+stats.Fprint(os.Stderr) // prints human-readable summary
+fmt.Println("Blocks skipped:", stats.BlocksSkipped, "of", stats.BlocksTotal)
+fmt.Println("Uncompressed size:", stats.UncompressedSize)
+```
+
+Options control error behavior when tables are missing:
+
+```go
+// Return ErrSearchTablesUnusable instead of falling back to full decode.
+searcher := minlz.NewBlockSearcher(input, minlz.BlockSearchBailOnMissing())
+```
+
+For prefix-filtered tables, the search pattern should include the prefix context.
+For example, with prefix `=`, searching for `"=value"` uses the table;
+searching for just `"value"` falls back to full decode since the table
+only indexes positions after `=`.
+
+### How It Works
+
+Each block's search table is a bit array where each position in the uncompressed data
+is hashed and the corresponding bit is set. When searching, the pattern's byte windows
+are hashed and checked against the table:
+
+- If **any** window hash is not set: the block **definitely** doesn't contain the pattern (skip it).
+- If **all** window hashes are set: the block **might** contain the pattern (decode and search).
+
+Tables can be reduced (halved) by OR-folding the upper and lower halves,
+trading accuracy for size. Reductions are applied per-block based on population density.
+
+Longer search patterns produce more window checks, giving exponentially better
+filtering. For example, a 19-byte pattern with matchLen=8 produces 12 window
+checks — all 12 must match for a false positive, which is extremely unlikely
+with typical table populations of 10-30%.
+
+### Using Prefixes
+
+The primary benefit of prefix filtering is **smaller tables**. Without prefixes, every
+byte position in a block is hashed into the table, requiring roughly 1 bit per
+uncompressed byte. With prefixes, only positions following specific bytes are indexed,
+so the table population is much lower and reductions can shrink it further.
+
+For a 8MB block of JSON log data where `"` and `:` appear at ~5% of positions,
+a prefix table needs ~20x fewer entries than a full table. This allows aggressive
+reduction (13+ reductions vs 2-3) producing tables of just 2KB instead of 160KB —
+a 80x reduction in overhead with similar filtering power for prefix-aware searches.
+
+**Choosing good prefix bytes:**
+
+- Pick bytes that immediately precede the values you'll search for.
+- For JSON data: `"` and `:` are natural prefixes — values always follow `":` or `:[`.
+- For CSV data: `,` or `\t` is the field separator.
+- For key=value formats: `=` precedes values.
+- For log lines with fields: consider space, tab, `=`, or `:`.
+
+```go
+// JSON logs — index values after " and :
+cfg := minlz.NewSearchTableConfig().WithMatchLen(8).WithBytePrefix('"', ':')
+
+// CSV — index after field separators
+cfg := minlz.NewSearchTableConfig().WithBytePrefix(',', '\n')
+
+// Structured key=value pairs
+cfg := minlz.NewSearchTableConfig().WithMatchLen(8).WithBytePrefix('=')
+```
+
+**Trade-offs:**
+
+- Fewer prefix bytes → smaller tables, but searches for patterns without those prefixes
+  fall back to full decode.
+- The searcher scans the search pattern for prefix bytes **anywhere inside it**, not just
+  at the start. So `stamp":"1679909263` works with prefix `"` because `"` appears at
+  position 5 within the pattern.
+- If a search pattern contains no prefix bytes at all, the table cannot help.
+  Choose prefixes that are likely to appear in the values you search for.
+- With `matchLen=6` and a good prefix, a single 8-byte window check after a prefix byte
+  is often sufficient to eliminate a block.
+- Indexing is typically done at a speed of around 1GB/s per thread.
 
 ## Build Tags
 
@@ -806,6 +956,38 @@ search for the next newline, start outputting data.
 After 1KB, it will stop at the next newline.
 
 Partial files - decoded with tail, offset or limit will have `.part` extension.
+
+## Searching
+
+The `search` (or `find` or `s`) command searches for a literal pattern in compressed streams,
+using search tables to skip non-matching blocks:
+
+```
+mz search [options] <pattern> <file...>
+```
+
+Options:
+- `-l` Print matching lines (default: show match offsets)
+- `-c` Print match count only
+- `-n` Include line numbers (with `-l`)
+- `-q` Quiet mode, exit code only (0=found, 1=not found)
+- `-bail` Error if search tables are not available
+
+Example:
+
+```
+$ mz search -l "error_pattern" server.log.mz
+10506612227:{"message":"error_pattern found in processing"}
+```
+
+Files must be compressed with `-search` to include search tables:
+
+```
+$ mz c -search=6 server.log
+$ mz c -search=4 -search.prefixes="," data.csv
+```
+
+Without search tables, the search command falls back to decompressing every block.
 
 # Snappy/S2 Compatibility
 

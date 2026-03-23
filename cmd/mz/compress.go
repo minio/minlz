@@ -39,15 +39,18 @@ func mainCompress(args []string) {
 	var (
 		fs = flag.NewFlagSet("compress", flag.ExitOnError)
 
-		nocomp    = fs.Bool("0", false, "Perform no compression")
-		superFast = fs.Bool("xfast", false, "Compress fastest, with a major compression loss")
-		faster    = fs.Bool("1", false, "Compress faster, but with a minor compression loss")
-		_         = fs.Bool("2", true, "Default compression speed")
-		slower    = fs.Bool("3", false, "Compress more, but a lot slower")
-		recomp    = fs.Bool("recomp", false, "Recompress MinLZ, Snappy or S2 input")
-		blockSize = fs.String("bs", "8M", "Max block size. Examples: 64K, 256K, 1M, 8M. Must be power of two and <= 8MB")
-		index     = fs.Bool("index", true, "Add seek index")
-		padding   = fs.String("pad", "1", "Pad size to a multiple of this value, Examples: 500, 64K, 256K, 1M, 4M, etc")
+		nocomp          = fs.Bool("0", false, "Perform no compression")
+		superFast       = fs.Bool("xfast", false, "Compress fastest, with a major compression loss")
+		faster          = fs.Bool("1", false, "Compress faster, but with a minor compression loss")
+		_               = fs.Bool("2", true, "Default compression speed")
+		slower          = fs.Bool("3", false, "Compress more, but a lot slower")
+		recomp          = fs.Bool("recomp", false, "Recompress MinLZ, Snappy or S2 input")
+		blockSize       = fs.String("bs", "8M", "Max block size. Examples: 64K, 256K, 1M, 8M. Must be power of two and <= 8MB")
+		index           = fs.Bool("index", true, "Add seek index")
+		padding         = fs.String("pad", "1", "Pad size to a multiple of this value, Examples: 500, 64K, 256K, 1M, 4M, etc")
+		searchLen       = fs.Int("search", 0, "Add search tables with given match length (1-8). 0=disabled")
+		searchPfx       = fs.String("search.prefixes", "", "Search table prefix bytes (e.g. '=', '=:')")
+		searchPfxString = fs.String("search.prefix", "", "Single value longer prefix, eg 'id:\\\"'")
 
 		// Shared
 		block  = fs.Bool("block", false, "Use as a single block. Will load content into memory. Max 8MB.")
@@ -107,6 +110,20 @@ Options:`)
 		level = minlz.LevelUncompressed
 	}
 	opts := []minlz.WriterOption{minlz.WriterBlockSize(int(sz)), minlz.WriterConcurrency(*cpu), minlz.WriterPadding(int(pad)), minlz.WriterLevel(level), minlz.WriterAddIndex(*index)}
+	if *searchLen > 0 {
+		if len(*searchPfxString) > 0 && len(*searchPfx) > 0 {
+			exitErr(fmt.Errorf("cannot use both -search.prefix and -search.prefixes"))
+		}
+		cfg := minlz.NewSearchTableConfig().WithMatchLen(*searchLen)
+		if len(*searchPfxString) == 1 {
+			cfg = cfg.WithBytePrefix((*searchPfxString)[0])
+		} else if len(*searchPfxString) > 1 {
+			cfg = cfg.WithLongPrefix([]byte(*searchPfxString))
+		} else if len(*searchPfx) > 0 {
+			cfg = cfg.WithBytePrefix([]byte(*searchPfx)...)
+		}
+		opts = append(opts, minlz.WriterSearchTable(cfg))
+	}
 	wr := minlz.NewWriter(nil, opts...)
 
 	// No args, use stdin/stdout
