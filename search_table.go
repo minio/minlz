@@ -34,14 +34,14 @@ const (
 // SearchTableConfig configures search table generation for a Writer.
 // Use NewSearchTableConfig to create, then chain With* methods to customize.
 type SearchTableConfig struct {
-	matchLen      uint8
-	tableType     uint8
-	baseTableSize uint8 // log2, computed at writer init from block size
-	prefixBytes   [8]byte
-	prefixMask         [32]byte
-	longPrefix         []byte
-	maxPopPct          int
-	maxConflictPct     int
+	matchLen       uint8
+	tableType      uint8
+	baseTableSize  uint8 // log2, computed at writer init from block size
+	prefixBytes    [8]byte
+	prefixMask     [32]byte
+	longPrefix     []byte
+	maxPopPct      int
+	maxConflictPct int
 }
 
 // NewSearchTableConfig creates a search table config.
@@ -97,7 +97,6 @@ func (c SearchTableConfig) WithLongPrefix(prefix []byte) SearchTableConfig {
 	c.longPrefix = slices.Clone(prefix)
 	return c
 }
-
 
 // WithMaxPopulation sets the max population percentage (0-100).
 // Tables with more bits set are skipped entirely.
