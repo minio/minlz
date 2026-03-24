@@ -121,71 +121,41 @@ func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats
 	searcher := minlz.NewBlockSearcher(r, bsOpts...)
 
 	matchCount := 0
-	lineOffset := int64(1) // for line number tracking across blocks
-	prevBlockEnd := int64(0)
+	lineOffset := int64(1)
 
-	err = searcher.Search(pattern, func(r minlz.SearchResult) bool {
-		if opts.lineNums && r.BlockStart > prevBlockEnd {
-			// Line count for skipped blocks is unknown.
+	err = searcher.Search(pattern, func(r minlz.SearchResult) error {
+		matchCount++
+		found = true
+		if opts.quiet {
+			return fmt.Errorf("done")
 		}
-		prevBlockEnd = r.BlockStart + int64(len(r.Data))
+		if opts.count {
+			return nil
+		}
+
+		prefix := ""
+		if opts.multiFile {
+			prefix = file + ":"
+		}
 
 		if opts.lines {
-			// Check for matches spanning the block boundary using the previous block.
-			if prev := r.PrevBlock(); prev != nil && len(pattern) > 1 {
-				searchBoundaryLine(prev, r.Data, pattern, r.BlockStart-int64(len(prev)), file, &matchCount, opts)
+			line := extractLine(r, pattern)
+			if opts.lineNums {
+				fmt.Printf("%s%d:%d:%s\n", prefix, lineOffset, r.StreamOffset, line)
+			} else {
+				fmt.Printf("%s%d:%s\n", prefix, r.StreamOffset, line)
 			}
-			if searchLines(r.Data, pattern, r.BlockStart, file, &lineOffset, &matchCount, opts) {
-				if matchCount > 0 {
-					found = true
-				}
-				return true
-			}
-			found = matchCount > 0
-			return false
+			// Line offset tracking is approximate when blocks are skipped.
+			lineOffset++
+		} else {
+			fmt.Printf("%s%d:\n", prefix, r.StreamOffset)
 		}
-		// Check boundary between previous and current block.
-		if prev := r.PrevBlock(); prev != nil && len(pattern) > 1 {
-			boundary := append(prev[max(0, len(prev)-len(pattern)+1):], r.Data[:min(len(r.Data), len(pattern)-1)]...)
-			if idx := bytes.Index(boundary, pattern); idx >= 0 {
-				matchCount++
-				found = true
-				if opts.quiet {
-					return false
-				}
-				if !opts.count {
-					prefix := ""
-					if opts.multiFile {
-						prefix = file + ": "
-					}
-					bStart := r.BlockStart - int64(len(pattern)-1-idx)
-					fmt.Printf("%s%d: (boundary match)\n", prefix, bStart)
-				}
-			}
-		}
-		// Whole-block mode: report each occurrence with uncompressed offset.
-		off := 0
-		for {
-			idx := bytes.Index(r.Data[off:], pattern)
-			if idx < 0 {
-				break
-			}
-			matchCount++
-			found = true
-			if opts.quiet {
-				return false
-			}
-			if !opts.count {
-				prefix := ""
-				if opts.multiFile {
-					prefix = file + ": "
-				}
-				fmt.Printf("%s%d: (block +%d, %d bytes)\n", prefix, r.BlockStart+int64(off+idx), off+idx, len(r.Data))
-			}
-			off += idx + len(pattern)
-		}
-		return true
+		return nil
 	})
+	if err != nil && err.Error() == "done" {
+		err = nil
+	}
+
 	stats = searcher.Stats()
 	if err != nil {
 		return found, stats, err
@@ -200,69 +170,31 @@ func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats
 	return found, stats, nil
 }
 
-// searchBoundaryLine checks the region where the previous block ends and the current
-// block begins for a line containing the pattern that spans the boundary.
-func searchBoundaryLine(prev, cur, pattern []byte, prevStart int64, file string, matchCount *int, opts searchOpts) {
-	// Build the boundary region: last partial line of prev + first partial line of cur.
-	// Find last newline in prev.
-	tailStart := bytes.LastIndexByte(prev, '\n')
-	if tailStart < 0 {
-		tailStart = 0
+// extractLine extracts the full line containing the match from the block context.
+func extractLine(r minlz.SearchResult, pattern []byte) string {
+	// Build the relevant data window.
+	var data []byte
+	var matchPos int
+	if r.Blocks[0] != nil {
+		data = append(r.Blocks[0], r.Blocks[1]...)
+		matchPos = r.Offset
 	} else {
-		tailStart++ // skip the newline itself
+		data = r.Blocks[1]
+		matchPos = r.Offset
 	}
-	tail := prev[tailStart:]
 
-	// Find first newline in cur.
-	headEnd := bytes.IndexByte(cur, '\n')
-	if headEnd < 0 {
-		headEnd = len(cur)
+	// Find line boundaries around the match.
+	lineStart := bytes.LastIndexByte(data[:matchPos], '\n')
+	if lineStart < 0 {
+		lineStart = 0
+	} else {
+		lineStart++
 	}
-	head := cur[:headEnd]
-
-	// The boundary line is tail + head.
-	boundaryLine := append(tail, head...)
-	if !bytes.Contains(boundaryLine, pattern) {
-		return
+	lineEnd := bytes.IndexByte(data[matchPos+len(pattern):], '\n')
+	if lineEnd < 0 {
+		lineEnd = len(data)
+	} else {
+		lineEnd += matchPos + len(pattern)
 	}
-	*matchCount++
-	if opts.quiet || opts.count {
-		return
-	}
-	prefix := ""
-	if opts.multiFile {
-		prefix = file + ":"
-	}
-	streamOff := prevStart + int64(tailStart)
-	fmt.Printf("%s%d:%s\n", prefix, streamOff, string(boundaryLine))
-}
-
-func searchLines(data, pattern []byte, blockStart int64, file string, lineOffset *int64, matchCount *int, opts searchOpts) bool {
-	byteOff := int64(0) // byte offset within block
-	lines := bytes.Split(data, []byte("\n"))
-	for i, line := range lines {
-		if bytes.Contains(line, pattern) {
-			*matchCount++
-			if opts.quiet {
-				return false
-			}
-			if opts.count {
-				*lineOffset += int64(i) + 1
-				continue
-			}
-			prefix := ""
-			if opts.multiFile {
-				prefix = file + ":"
-			}
-			streamOff := blockStart + byteOff
-			if opts.lineNums {
-				fmt.Printf("%s%d:%d:%s\n", prefix, *lineOffset+int64(i), streamOff, string(line))
-			} else {
-				fmt.Printf("%s%d:%s\n", prefix, streamOff, string(line))
-			}
-		}
-		byteOff += int64(len(line)) + 1 // +1 for the \n
-	}
-	*lineOffset += int64(len(lines))
-	return true
+	return string(data[lineStart:lineEnd])
 }

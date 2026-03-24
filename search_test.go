@@ -341,12 +341,12 @@ func TestBlockSearcherE2E(t *testing.T) {
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 	found := false
 	blocksDecoded := 0
-	err = searcher.Search(needle, func(r SearchResult) bool {
+	err = searcher.Search(needle, func(r SearchResult) error {
 		blocksDecoded++
-		if bytes.Contains(r.Data, needle) {
+		if bytes.Contains(r.Blocks[1], needle) {
 			found = true
 		}
-		return true
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -385,12 +385,12 @@ func TestBlockSearcherSkipsBlocks(t *testing.T) {
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 	blocksDecoded := 0
 	found := false
-	err = searcher.Search(needle, func(r SearchResult) bool {
+	err = searcher.Search(needle, func(r SearchResult) error {
 		blocksDecoded++
-		if bytes.Contains(r.Data, needle) {
+		if bytes.Contains(r.Blocks[1], needle) {
 			found = true
 		}
-		return true
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -421,8 +421,8 @@ func TestBlockSearcherFallback(t *testing.T) {
 
 	// Search with pattern shorter than matchLen - tables can't help, fallback decodes all.
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
-	err = searcher.Search([]byte("ab"), func(r SearchResult) bool {
-		return true
+	err = searcher.Search([]byte("ab"), func(r SearchResult) error {
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -452,8 +452,8 @@ func TestBlockSearcherBail(t *testing.T) {
 
 	// Bail mode with short pattern should return error.
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchBailOnMissing())
-	err = searcher.Search([]byte("ab"), func(r SearchResult) bool {
-		return true
+	err = searcher.Search([]byte("ab"), func(r SearchResult) error {
+		return nil
 	})
 	if err != ErrSearchTablesUnusable {
 		t.Fatalf("expected ErrSearchTablesUnusable, got %v", err)
@@ -502,11 +502,11 @@ func TestBlockSearcherPrefixTypes(t *testing.T) {
 			// Search.
 			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 			found := false
-			err = searcher.Search(tt.pattern, func(r SearchResult) bool {
-				if bytes.Contains(r.Data, []byte("=FINDTHIS")) {
+			err = searcher.Search(tt.pattern, func(r SearchResult) error {
+				if bytes.Contains(r.Blocks[1], []byte("=FINDTHIS")) {
 					found = true
 				}
-				return true
+				return nil
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -592,12 +592,12 @@ func TestPrefixInternalMatch(t *testing.T) {
 			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 			found := false
 			blocksSearched := 0
-			err = searcher.Search(tt.pattern, func(r SearchResult) bool {
+			err = searcher.Search(tt.pattern, func(r SearchResult) error {
 				blocksSearched++
-				if bytes.Contains(r.Data, tt.pattern) {
+				if bytes.Contains(r.Blocks[1], tt.pattern) {
 					found = true
 				}
-				return true
+				return nil
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -662,11 +662,11 @@ func TestPrefixInternalNoFalseNegative(t *testing.T) {
 			}
 			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 			found := false
-			err = searcher.Search(pat, func(r SearchResult) bool {
-				if bytes.Contains(r.Data, pat) {
+			err = searcher.Search(pat, func(r SearchResult) error {
+				if bytes.Contains(r.Blocks[1], pat) {
 					found = true
 				}
-				return true
+				return nil
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -922,11 +922,11 @@ func TestSearchAllLevels(t *testing.T) {
 			// Search.
 			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 			found := false
-			err = searcher.Search(needle, func(r SearchResult) bool {
-				if bytes.Contains(r.Data, needle) {
+			err = searcher.Search(needle, func(r SearchResult) error {
+				if bytes.Contains(r.Blocks[1], needle) {
 					found = true
 				}
-				return true
+				return nil
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -970,11 +970,11 @@ func TestSearchConcurrency(t *testing.T) {
 			// Search.
 			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 			found := false
-			err = searcher.Search(needle, func(r SearchResult) bool {
-				if bytes.Contains(r.Data, needle) {
+			err = searcher.Search(needle, func(r SearchResult) error {
+				if bytes.Contains(r.Blocks[1], needle) {
 					found = true
 				}
-				return true
+				return nil
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -1011,11 +1011,11 @@ func TestSearchMultipleNeedles(t *testing.T) {
 
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 	foundBlocks := 0
-	err = searcher.Search(needle, func(r SearchResult) bool {
-		if bytes.Contains(r.Data, needle) {
+	err = searcher.Search(needle, func(r SearchResult) error {
+		if bytes.Contains(r.Blocks[1], needle) {
 			foundBlocks++
 		}
-		return true
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1035,9 +1035,9 @@ func TestSearchEmptyStream(t *testing.T) {
 
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 	called := false
-	err := searcher.Search([]byte("test"), func(r SearchResult) bool {
+	err := searcher.Search([]byte("test"), func(r SearchResult) error {
 		called = true
-		return true
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1073,9 +1073,9 @@ func TestSearchBlockBoundary(t *testing.T) {
 	// first part of the needle starts should be decoded.
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 	blocksDecoded := 0
-	err = searcher.Search(needle[:4], func(r SearchResult) bool {
+	err = searcher.Search(needle[:4], func(r SearchResult) error {
 		blocksDecoded++
-		return true
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1128,11 +1128,11 @@ func TestSearchOverlapMultiBlock(t *testing.T) {
 			// Block (i-1) should have it indexed via overlap.
 			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 			foundBlocks := 0
-			err = searcher.Search(boundary, func(r SearchResult) bool {
-				if bytes.Contains(r.Data, boundary) {
+			err = searcher.Search(boundary, func(r SearchResult) error {
+				if bytes.Contains(r.Blocks[1], boundary) {
 					foundBlocks++
 				}
-				return true
+				return nil
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -1202,11 +1202,11 @@ func TestSearchOverlapLongStream(t *testing.T) {
 
 			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 			found := 0
-			err = searcher.Search(needle, func(r SearchResult) bool {
-				if bytes.Contains(r.Data, needle) {
+			err = searcher.Search(needle, func(r SearchResult) error {
+				if bytes.Contains(r.Blocks[1], needle) {
 					found++
 				}
-				return true
+				return nil
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -1242,9 +1242,9 @@ func TestSearchNoTables(t *testing.T) {
 	// Search should still work (fallback to full decode).
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 	found := false
-	err = searcher.Search(needle, func(r SearchResult) bool {
+	err = searcher.Search(needle, func(r SearchResult) error {
 		found = true
-		return true
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1276,8 +1276,8 @@ func TestSearchNoTables_Bail(t *testing.T) {
 	}
 
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchBailOnMissing())
-	err = searcher.Search([]byte("test"), func(r SearchResult) bool {
-		return true
+	err = searcher.Search([]byte("test"), func(r SearchResult) error {
+		return nil
 	})
 	if err != ErrSearchTablesUnusable {
 		t.Fatalf("expected ErrSearchTablesUnusable, got %v", err)
@@ -1323,12 +1323,12 @@ func TestSearchLargeData(t *testing.T) {
 	found := false
 	blocksDecoded := 0
 	totalBlocks := dataSize / blockSize
-	err = searcher.Search(needle, func(r SearchResult) bool {
+	err = searcher.Search(needle, func(r SearchResult) error {
 		blocksDecoded++
-		if bytes.Contains(r.Data, needle) {
+		if bytes.Contains(r.Blocks[1], needle) {
 			found = true
 		}
-		return true
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1375,11 +1375,11 @@ func TestSearchMaskPrefix(t *testing.T) {
 	// Search with prefix context.
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 	found := false
-	err = searcher.Search([]byte("=MASK"), func(r SearchResult) bool {
-		if bytes.Contains(r.Data, []byte("=MASK_PATTERN")) {
+	err = searcher.Search([]byte("=MASK"), func(r SearchResult) error {
+		if bytes.Contains(r.Blocks[1], []byte("=MASK_PATTERN")) {
 			found = true
 		}
-		return true
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1413,11 +1413,11 @@ func TestSearchWriterReset(t *testing.T) {
 
 		searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 		found := false
-		err = searcher.Search(needle, func(r SearchResult) bool {
-			if bytes.Contains(r.Data, needle) {
+		err = searcher.Search(needle, func(r SearchResult) error {
+			if bytes.Contains(r.Blocks[1], needle) {
 				found = true
 			}
-			return true
+			return nil
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -1452,16 +1452,130 @@ func TestSearchStopEarly(t *testing.T) {
 	}
 
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
-	blocksDecoded := 0
-	err = searcher.Search(needle, func(r SearchResult) bool {
-		blocksDecoded++
-		return blocksDecoded < 2 // stop after 2 blocks
+	matchCount := 0
+	errStop := fmt.Errorf("stop")
+	err = searcher.Search(needle, func(r SearchResult) error {
+		matchCount++
+		if matchCount >= 2 {
+			return errStop
+		}
+		return nil
+	})
+	if err != nil && err != errStop {
+		t.Fatal(err)
+	}
+	if matchCount != 2 {
+		t.Fatalf("expected 2 matches before stop, got %d", matchCount)
+	}
+}
+
+// TestSearchForward exercises ErrSearchForward for requesting forward context.
+func TestSearchForward(t *testing.T) {
+	blockSize := minBlockSize
+	data := make([]byte, blockSize*3)
+	// Compressible filler.
+	for i := range data {
+		data[i] = byte(i % 251)
+	}
+	// Place needle near the end of block 0.
+	needle := []byte("FORWARD_CONTEXT!")
+	copy(data[blockSize-20:], needle)
+	// Place the needle in block 1 too so it isn't skipped.
+	copy(data[blockSize+100:], needle)
+
+	var buf bytes.Buffer
+	cfg := NewSearchTableConfig().WithMatchLen(4)
+	w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(blockSize), WriterConcurrency(1))
+	_, err := w.Write(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+
+	// Search and request forward context on the first match.
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+	calls := 0
+	err = searcher.Search(needle, func(r SearchResult) error {
+		calls++
+		if calls == 1 {
+			// First call: should have Blocks[1] as the block containing the match.
+			if r.Blocks[1] == nil {
+				t.Fatal("first call: Blocks[1] should not be nil")
+			}
+			if r.StreamOffset != int64(blockSize-20) {
+				t.Fatalf("first call: StreamOffset=%d, want %d", r.StreamOffset, blockSize-20)
+			}
+			return ErrSearchForward
+		}
+		if calls == 2 {
+			// Second call (re-dispatch): Blocks[0] should be the block that had the match,
+			// Blocks[1] should be the next block (forward context).
+			if r.Blocks[0] == nil {
+				t.Fatal("forward call: Blocks[0] should not be nil")
+			}
+			if r.Blocks[1] == nil {
+				t.Fatal("forward call: Blocks[1] should be the next block")
+			}
+			// StreamOffset should be unchanged.
+			if r.StreamOffset != int64(blockSize-20) {
+				t.Fatalf("forward call: StreamOffset=%d, want %d", r.StreamOffset, blockSize-20)
+			}
+			// Offset should point into the block data.
+			if r.Offset < 0 {
+				t.Fatalf("forward call: Offset=%d, should be >= 0", r.Offset)
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if blocksDecoded != 2 {
-		t.Fatalf("expected 2 blocks decoded before stop, got %d", blocksDecoded)
+	if calls < 2 {
+		t.Fatalf("expected at least 2 calls (original + forward), got %d", calls)
+	}
+}
+
+// TestSearchForwardEOF exercises ErrSearchForward when the match is in the last block.
+func TestSearchForwardEOF(t *testing.T) {
+	blockSize := minBlockSize
+	data := make([]byte, blockSize*2)
+	for i := range data {
+		data[i] = byte(i % 251)
+	}
+	// Place needle near the end of the last block.
+	needle := []byte("EOF_FORWARD_TEST")
+	copy(data[len(data)-20:], needle)
+
+	var buf bytes.Buffer
+	cfg := NewSearchTableConfig().WithMatchLen(4)
+	w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(blockSize), WriterConcurrency(1))
+	_, err := w.Write(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+	calls := 0
+	err = searcher.Search(needle, func(r SearchResult) error {
+		calls++
+		if calls == 1 {
+			return ErrSearchForward
+		}
+		// Second call: Blocks[1] should be nil since there's no next block.
+		if r.Blocks[1] != nil {
+			t.Fatal("forward at EOF: Blocks[1] should be nil")
+		}
+		if r.Blocks[0] == nil {
+			t.Fatal("forward at EOF: Blocks[0] should not be nil")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("expected 2 calls, got %d", calls)
 	}
 }
 
@@ -1489,11 +1603,11 @@ func TestSearchBlockOffsets(t *testing.T) {
 
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 	var offsets []int64
-	err = searcher.Search(needle, func(r SearchResult) bool {
-		if bytes.Contains(r.Data, needle) {
+	err = searcher.Search(needle, func(r SearchResult) error {
+		if bytes.Contains(r.Blocks[1], needle) {
 			offsets = append(offsets, r.BlockStart)
 		}
-		return true
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1654,11 +1768,11 @@ func TestSearchWriteReadInterleaved(t *testing.T) {
 	// Search.
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 	found := false
-	err := searcher.Search(needle, func(r SearchResult) bool {
-		if bytes.Contains(r.Data, needle) {
+	err := searcher.Search(needle, func(r SearchResult) error {
+		if bytes.Contains(r.Blocks[1], needle) {
 			found = true
 		}
-		return true
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1702,101 +1816,66 @@ func FuzzSearchRoundtrip(f *testing.F) {
 			t.Fatal("decoded data mismatch")
 		}
 
-		// Check that pattern is found when it exists in the data.
-		// For prefix tables, only assert when the prefix context is satisfied
-		// (the prefix byte immediately precedes the pattern in the data).
-		mustFind := false
-		if bytes.Contains(data, pattern) {
-			if !usePrefix {
-				mustFind = true
-			} else {
-				// Check if pattern appears preceded by the prefix byte
-				// AND fully within a single block (not straddling boundary).
-				pfx := pattern[0]
-				needle := append([]byte{pfx}, pattern...)
-				idx := 0
-				for {
-					pos := bytes.Index(data[idx:], needle)
-					if pos < 0 {
-						break
-					}
-					pos += idx
-					// Check the occurrence fits within one block.
-					blockStart := (pos / minBlockSize) * minBlockSize
-					if pos+len(needle) <= blockStart+minBlockSize {
-						mustFind = true
-						break
-					}
-					idx = pos + 1
+		// Collect all expected match offsets from the original data.
+		var expected []int64
+		if usePrefix {
+			// For prefix tables, only count occurrences preceded by the prefix byte.
+			pfx := pattern[0]
+			needle := append([]byte{pfx}, pattern...)
+			off := 0
+			for {
+				idx := bytes.Index(data[off:], needle)
+				if idx < 0 {
+					break
 				}
+				// The match of the pattern (not including prefix) starts 1 byte later.
+				expected = append(expected, int64(off+idx+1))
+				off += idx + 1
+			}
+		} else {
+			off := 0
+			for {
+				idx := bytes.Index(data[off:], pattern)
+				if idx < 0 {
+					break
+				}
+				expected = append(expected, int64(off+idx))
+				off += idx + 1
 			}
 		}
-		if mustFind {
-			// Find the expected block offset for the first in-block occurrence.
-			expectedBlockStart := int64(-1)
-			if usePrefix {
-				pfx := pattern[0]
-				needle := append([]byte{pfx}, pattern...)
-				idx := 0
-				for {
-					pos := bytes.Index(data[idx:], needle)
-					if pos < 0 {
-						break
-					}
-					pos += idx
-					blockStart := (pos / minBlockSize) * minBlockSize
-					if pos+len(needle) <= blockStart+minBlockSize {
-						expectedBlockStart = int64(blockStart)
-						break
-					}
-					idx = pos + 1
-				}
-			} else {
-				idx := bytes.Index(data, pattern)
-				if idx >= 0 {
-					expectedBlockStart = int64((idx / minBlockSize) * minBlockSize)
-				}
-			}
 
+		if len(expected) > 0 {
 			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
-			foundAt := int64(-1)
-			err = searcher.Search(pattern, func(r SearchResult) bool {
-				if bytes.Contains(r.Data, pattern) && foundAt < 0 {
-					foundAt = r.BlockStart
-				}
-				if prev := r.PrevBlock(); prev != nil && len(pattern) > 1 && foundAt < 0 {
-					tail := prev[max(0, len(prev)-len(pattern)+1):]
-					head := r.Data[:min(len(r.Data), len(pattern)-1)]
-					if bytes.Contains(append(tail, head...), pattern) {
-						foundAt = r.BlockStart - int64(len(prev))
-					}
-				}
-				return true
+			var found []int64
+			err = searcher.Search(pattern, func(r SearchResult) error {
+				found = append(found, r.StreamOffset)
+				return nil
 			})
 			if err != nil {
 				t.Fatalf("search failed: %v", err)
 			}
-			if foundAt < 0 {
-				// Boundary-straddling: pattern may start near block end,
-				// if the previous block was skipped the boundary check can't fire.
-				idx := bytes.Index(data, pattern)
-				blockEnd := ((idx / minBlockSize) + 1) * minBlockSize
-				if idx+len(pattern) > blockEnd {
-					return // boundary straddling with skipped prev block — can't find
-				}
-				stats := searcher.Stats()
-				t.Fatalf("pattern at offset %d not found (prefix=%v). "+
-					"blocks: total=%d skipped=%d searched=%d missing=%d unusable=%d",
-					idx, usePrefix,
-					stats.BlocksTotal, stats.BlocksSkipped, stats.BlocksSearched,
-					stats.TablesMissing, stats.TablesUnusable)
+
+			// Every expected offset must appear in found.
+			foundSet := make(map[int64]bool, len(found))
+			for _, f := range found {
+				foundSet[f] = true
 			}
-			if !usePrefix && expectedBlockStart >= 0 && foundAt != expectedBlockStart {
-				// The match might be found via boundary check in the next block.
-				nextBlock := expectedBlockStart + int64(minBlockSize)
-				if foundAt != nextBlock {
-					t.Fatalf("pattern found in block at offset %d, expected block at %d or %d",
-						foundAt, expectedBlockStart, nextBlock)
+			for _, e := range expected {
+				if !foundSet[e] {
+					stats := searcher.Stats()
+					t.Fatalf("expected match at offset %d not found (prefix=%v, expected=%d found=%d). "+
+						"blocks: total=%d skipped=%d searched=%d missing=%d unusable=%d",
+						e, usePrefix, len(expected), len(found),
+						stats.BlocksTotal, stats.BlocksSkipped, stats.BlocksSearched,
+						stats.TablesMissing, stats.TablesUnusable)
+				}
+			}
+
+			// Verify found offsets are sorted (matches should be in stream order).
+			for i := 1; i < len(found); i++ {
+				if found[i] <= found[i-1] {
+					t.Fatalf("found offsets not in order: [%d]=%d <= [%d]=%d",
+						i, found[i], i-1, found[i-1])
 				}
 			}
 		}

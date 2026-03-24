@@ -55,23 +55,36 @@ func (st SearchStats) Fprint(w io.Writer) {
 	}
 }
 
-// SearchResult is passed to the search callback for each candidate block.
+// ErrSearchForward can be returned from the search callback to request
+// forward context. The searcher will decode the next block, shift Blocks
+// forward, and re-call the callback with the same match but more context.
+var ErrSearchForward = errors.New("minlz: forward to next block")
+
+// SearchResult is passed to the search callback for each pattern match.
 type SearchResult struct {
-	// Data is the decoded block content.
-	Data []byte
-	// BlockStart is the uncompressed byte offset of this block in the stream.
+	// Blocks contains the block data surrounding the match.
+	// Blocks[0] is the previous block (nil if first or previous was skipped).
+	// Blocks[1] is the current block. The match may start in Blocks[0] (boundary match).
+	// Both slices are invalid after the callback returns.
+	Blocks [2][]byte
+
+	// Offset is the position of the match within the Blocks.
+	// Relative to Blocks[0] if non-nil, otherwise relative to Blocks[1].
+	Offset int
+
+	// StreamOffset is the absolute uncompressed stream offset of the match.
+	StreamOffset int64
+
+	// BlockStart is the stream offset of Blocks[0] (or Blocks[1] if Blocks[0]==nil).
+	// Invariant: Offset == int(StreamOffset - BlockStart)
 	BlockStart int64
-	// Match is the absolute uncompressed stream offset of this pattern match.
-	Match int64
-	// prevBlock holds the previous block's decoded data, or nil if the
-	// previous block was skipped or this is the first block.
-	prevBlock []byte
 }
 
-// PrevBlock returns the previous block's decoded data.
-// Returns nil if this is the first block or the previous block was skipped.
-func (r *SearchResult) PrevBlock() []byte {
-	return r.prevBlock
+type deferredMatch struct {
+	streamOff int64  // absolute stream offset of the match
+	blockOff  int64  // block start of the block containing the match
+	matchOff  int    // offset within that block
+	blk       []byte // the block containing the match; becomes Blocks[0] in re-call
 }
 
 // BlockSearcher reads a MinLZ stream and searches for patterns using
@@ -91,6 +104,7 @@ type BlockSearcher struct {
 	decoded    [2][]byte // alternating decode buffers
 	decIdx     int      // which buffer was last used (0 or 1)
 	prevBlock  []byte   // points into decoded[(decIdx+1)&1], nil if skipped
+	deferred   *deferredMatch // pending ErrSearchForward re-dispatch
 	maxBlock   int
 	readHeader bool
 	ignoreCRC  bool
@@ -150,27 +164,29 @@ func (s *BlockSearcher) Stats() SearchStats {
 	return s.stats
 }
 
-// Search iterates blocks in the stream. For each block that might contain
-// pattern, it decodes the block and calls fn with a SearchResult.
-// fn returns false to stop the search.
+// Search iterates blocks in the stream, calling fn for each pattern match.
 //
-// SearchResult.PrevBlock() returns the previous decoded block (nil if skipped or first block),
-// which is useful for matching patterns that span block boundaries.
-//
-// For type 1 (no prefix) tables, all matchLen-sized windows of pattern
-// are checked. For prefix tables, the pattern must begin with the prefix
-// for tables to be used.
-func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) bool) error {
+// The callback receives a SearchResult with the match offset and surrounding
+// block data. Return nil to continue, ErrSearchForward to request the next
+// block for forward context (re-calls fn with shifted Blocks), or any other
+// error to abort.
+func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) error {
 	if s.err != nil {
 		return s.err
 	}
 	s.stats = SearchStats{}
+	s.deferred = nil
 
 	defer func() { s.stats.UncompressedSize = s.blockStart }()
 
 	for {
 		if !s.readFull(s.tmp[:4]) {
 			if s.err == io.EOF {
+				if s.deferred != nil {
+					if err := s.flushDeferred(nil, fn); err != nil {
+						return err
+					}
+				}
 				return nil
 			}
 			return s.err
@@ -257,7 +273,9 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) bool) err
 			if s.blockTable != nil {
 				canUse, match := patternCanMatch(&s.blockInfo, s.blockTable, s.blockReductions, pattern)
 				s.blockTable = nil
-				if canUse && !match {
+				// Don't skip if the previous block was decoded — the boundary
+				// region between prev and this block might contain the pattern.
+				if canUse && !match && s.prevBlock == nil {
 					s.stats.BlocksSkipped++
 					s.stats.CompBytesSkipped += int64(chunkLen)
 					// Read checksum + varint to get exact decompressed size before skipping.
@@ -276,6 +294,11 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) bool) err
 					}
 					if !s.skip(remain - peek) {
 						return s.err
+					}
+					if s.deferred != nil {
+						if err := s.flushDeferred(nil, fn); err != nil {
+							return err
+						}
 					}
 					s.prevBlock = nil
 					continue
@@ -329,20 +352,16 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) bool) err
 			blockOff := s.blockStart
 			s.blockStart += int64(n)
 			blk := s.decoded[di][:n]
-			s.prevBlock = blk
 			s.decIdx = di
-			off := 0
-			for {
-				idx := bytes.Index(blk[off:], pattern)
-				if idx < 0 {
-					break
+			if s.deferred != nil {
+				if err := s.flushDeferred(blk, fn); err != nil {
+					return err
 				}
-				result := SearchResult{Data: blk, BlockStart: blockOff, Match: blockOff + int64(off+idx), prevBlock: s.prevBlock}
-				if !fn(result) {
-					return nil
-				}
-				off += idx + len(pattern)
 			}
+			if err := s.dispatchMatches(blk, blockOff, pattern, fn); err != nil {
+				return err
+			}
+			s.prevBlock = blk
 			continue
 
 		case chunkTypeUncompressedData:
@@ -353,13 +372,18 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) bool) err
 			if s.blockTable != nil {
 				canUse, match := patternCanMatch(&s.blockInfo, s.blockTable, s.blockReductions, pattern)
 				s.blockTable = nil
-				if canUse && !match {
+				if canUse && !match && s.prevBlock == nil {
 					s.stats.BlocksSkipped++
 					s.stats.CompBytesSkipped += int64(chunkLen)
 					if !s.skip(chunkLen) {
 						return s.err
 					}
 					s.blockStart += int64(chunkLen - checksumSize)
+					if s.deferred != nil {
+						if err := s.flushDeferred(nil, fn); err != nil {
+							return err
+						}
+					}
 					s.prevBlock = nil
 					continue
 				}
@@ -400,20 +424,16 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) bool) err
 			blockOff := s.blockStart
 			s.blockStart += int64(n)
 			blk := s.decoded[di][:n]
-			s.prevBlock = blk
 			s.decIdx = di
-			off := 0
-			for {
-				idx := bytes.Index(blk[off:], pattern)
-				if idx < 0 {
-					break
+			if s.deferred != nil {
+				if err := s.flushDeferred(blk, fn); err != nil {
+					return err
 				}
-				result := SearchResult{Data: blk, BlockStart: blockOff, Match: blockOff + int64(off+idx), prevBlock: s.prevBlock}
-				if !fn(result) {
-					return nil
-				}
-				off += idx + len(pattern)
 			}
+			if err := s.dispatchMatches(blk, blockOff, pattern, fn); err != nil {
+				return err
+			}
+			s.prevBlock = blk
 			continue
 
 		case chunkTypeEOF:
@@ -437,6 +457,134 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) bool) err
 			return s.err
 		}
 	}
+}
+
+// dispatchMatches finds all pattern occurrences in blk and calls fn for each.
+// If fn returns ErrSearchForward, the match is saved as s.deferred for the main
+// loop to re-dispatch after loading the next block. Remaining matches in this
+// block are still dispatched.
+func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []byte, fn func(SearchResult) error) error {
+	prevBlockStart := blockOff - int64(len(s.prevBlock))
+	if s.prevBlock == nil {
+		prevBlockStart = blockOff
+	}
+
+	// Check for matches spanning the boundary between prevBlock and blk.
+	if s.prevBlock != nil && len(pattern) > 1 {
+		tail := s.prevBlock[max(0, len(s.prevBlock)-len(pattern)+1):]
+		head := blk[:min(len(blk), len(pattern)-1)]
+		boundary := append(tail, head...)
+		bOff := 0
+		for {
+			idx := bytes.Index(boundary[bOff:], pattern)
+			if idx < 0 {
+				break
+			}
+			// Only report matches that actually straddle the boundary
+			// (start in prevBlock, end in blk).
+			absIdx := bOff + idx
+			matchInPrev := len(tail) - absIdx
+			if matchInPrev <= 0 || matchInPrev >= len(pattern) {
+				bOff = absIdx + 1
+				continue
+			}
+			streamOff := blockOff - int64(matchInPrev)
+			result := SearchResult{
+				Blocks:       [2][]byte{s.prevBlock, blk},
+				Offset:       len(s.prevBlock) - matchInPrev,
+				StreamOffset: streamOff,
+				BlockStart:   prevBlockStart,
+			}
+			err := fn(result)
+			if err != nil {
+				if errors.Is(err, ErrSearchForward) {
+					s.deferred = &deferredMatch{
+						streamOff: streamOff,
+						blockOff:  blockOff - int64(len(s.prevBlock)),
+						matchOff:  len(s.prevBlock) - matchInPrev,
+						blk:       s.prevBlock,
+					}
+				} else {
+					return err
+				}
+			}
+			bOff = absIdx + 1
+		}
+	}
+
+	off := 0
+	for {
+		idx := bytes.Index(blk[off:], pattern)
+		if idx < 0 {
+			return nil
+		}
+		matchOff := off + idx
+		streamOff := blockOff + int64(matchOff)
+
+		var result SearchResult
+		if s.prevBlock != nil {
+			result = SearchResult{
+				Blocks:       [2][]byte{s.prevBlock, blk},
+				Offset:       len(s.prevBlock) + matchOff,
+				StreamOffset: streamOff,
+				BlockStart:   prevBlockStart,
+			}
+		} else {
+			result = SearchResult{
+				Blocks:       [2][]byte{nil, blk},
+				Offset:       matchOff,
+				StreamOffset: streamOff,
+				BlockStart:   blockOff,
+			}
+		}
+
+		err := fn(result)
+		if err == nil {
+			off = matchOff + 1
+			continue
+		}
+		if !errors.Is(err, ErrSearchForward) {
+			return err
+		}
+		// Save deferred match for the main loop to re-dispatch with the next block.
+		s.deferred = &deferredMatch{
+			streamOff: streamOff,
+			blockOff:  blockOff,
+			matchOff:  matchOff,
+			blk:       blk,
+		}
+		off = matchOff + 1
+	}
+}
+
+// flushDeferred re-dispatches a deferred match with nextBlk as forward context.
+// nextBlk may be nil (EOF or skipped block).
+func (s *BlockSearcher) flushDeferred(nextBlk []byte, fn func(SearchResult) error) error {
+	d := s.deferred
+	s.deferred = nil
+	result := SearchResult{
+		Blocks:       [2][]byte{d.blk, nextBlk},
+		Offset:       d.matchOff,
+		StreamOffset: d.streamOff,
+		BlockStart:   d.blockOff,
+	}
+	err := fn(result)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, ErrSearchForward) {
+		return err
+	}
+	// Caller wants another forward block. Save again with shifted context.
+	if nextBlk != nil {
+		s.deferred = &deferredMatch{
+			streamOff: d.streamOff,
+			blockOff:  d.blockOff,
+			matchOff:  d.matchOff,
+			blk:       nextBlk,
+		}
+	}
+	return nil
 }
 
 func (s *BlockSearcher) readFull(buf []byte) bool {
@@ -493,7 +641,7 @@ func patternCanMatch(cfg *SearchTableConfig, table []byte, reductions uint8, pat
 	switch cfg.tableType {
 	case searchTableTypeNoPrefix:
 		if len(pattern) < int(cfg.matchLen) {
-			return false, true
+				return false, true
 		}
 		// Check matchLen-windows. If any window is absent, the pattern cannot
 		// start at a position where all windows fit within this block.
@@ -612,5 +760,14 @@ func patternCanMatchWithPrefixMask(cfg *SearchTableConfig, table []byte, mask ui
 	if present > 0 {
 		return true, true // some present, some absent — could be boundary
 	}
-	return true, false // all checked windows absent
+	// All prefix-context windows absent. The pattern could still start at a
+	// block boundary where the prefix byte is in the block data (indexed by
+	// the overlap tail). Check the first matchLen bytes of the pattern as a
+	// raw lookup — this matches what the overlap tail hashes.
+	v := readLE64Pad(pattern[:ml])
+	h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
+	if table[h>>3]&(1<<(h&7)) != 0 {
+		return true, true
+	}
+	return true, false
 }

@@ -37,7 +37,6 @@ func ExampleWriterSearchTable_withPrefix() {
 	// Place a unique value only in block 1.
 	copy(data[blockSize+100:], []byte(`{"name":"FindMe","id":"unique-9876"}`))
 
-	// Compress with prefix-aware search tables.
 	var buf bytes.Buffer
 	cfg := minlz.NewSearchTableConfig().WithBytePrefix('"', ':')
 	w := minlz.NewWriter(&buf,
@@ -52,15 +51,15 @@ func ExampleWriterSearchTable_withPrefix() {
 	// The searcher finds '"' at position 2 and ':' at position 3 inside the pattern,
 	// and uses those to check the table — no need to start with a prefix byte.
 	searcher := minlz.NewBlockSearcher(bytes.NewReader(buf.Bytes()))
-	searcher.Search([]byte(`me":"unique-9876`), func(r minlz.SearchResult) bool {
-		fmt.Println("found at stream offset", r.Match)
-		return true
+	searcher.Search([]byte(`"unique-9876"`), func(r minlz.SearchResult) error {
+		fmt.Println("found at stream offset", r.StreamOffset)
+		return nil
 	})
 	stats := searcher.Stats()
 	fmt.Printf("blocks: %d total, %d skipped\n", stats.BlocksTotal, stats.BlocksSkipped)
 	// Output:
-	// found at stream offset 4196
-	// blocks: 3 total, 2 skipped
+	// found at stream offset 4218
+	// blocks: 3 total, 1 skipped
 }
 
 func ExampleBlockSearcher() {
@@ -70,7 +69,6 @@ func ExampleBlockSearcher() {
 	copy(data[4096:], bytes.Repeat([]byte("bbbb"), 1024))
 	copy(data[4096+100:], []byte("NEEDLE_PATTERN"))
 
-	// Compress with search tables.
 	var buf bytes.Buffer
 	cfg := minlz.NewSearchTableConfig().WithMatchLen(4)
 	w := minlz.NewWriter(&buf,
@@ -83,9 +81,9 @@ func ExampleBlockSearcher() {
 
 	// Search for the needle.
 	searcher := minlz.NewBlockSearcher(bytes.NewReader(buf.Bytes()))
-	err := searcher.Search([]byte("NEEDLE_PATTERN"), func(r minlz.SearchResult) bool {
-		fmt.Printf("found at stream offset %d\n", r.Match)
-		return true
+	err := searcher.Search([]byte("NEEDLE_PATTERN"), func(r minlz.SearchResult) error {
+		fmt.Printf("found at stream offset %d\n", r.StreamOffset)
+		return nil
 	})
 	if err != nil {
 		fmt.Println("error:", err)
@@ -105,13 +103,12 @@ func ExampleBlockSearcher_bail() {
 	w.Write(bytes.Repeat([]byte("test data "), 1000))
 	w.Close()
 
-	// Search with bail mode — returns error if tables are missing.
 	searcher := minlz.NewBlockSearcher(
 		bytes.NewReader(buf.Bytes()),
 		minlz.BlockSearchBailOnMissing(),
 	)
-	err := searcher.Search([]byte("pattern"), func(r minlz.SearchResult) bool {
-		return true
+	err := searcher.Search([]byte("pattern"), func(r minlz.SearchResult) error {
+		return nil
 	})
 	fmt.Println(err)
 	// Output:
@@ -136,9 +133,8 @@ func ExampleSearchStats_Fprint() {
 	w.Close()
 
 	searcher := minlz.NewBlockSearcher(bytes.NewReader(buf.Bytes()))
-	searcher.Search([]byte("FINDME"), func(r minlz.SearchResult) bool { return true })
+	searcher.Search([]byte("FINDME"), func(r minlz.SearchResult) error { return nil })
 
-	// Print stats, replacing only the compression-dependent BytesSkipped value.
 	var out strings.Builder
 	searcher.Stats().Fprint(&out)
 	s := strings.Replace(out.String(), fmt.Sprintf("skipped: %d compressed", searcher.Stats().CompBytesSkipped), "skipped: <N> compressed", 1)

@@ -36,20 +36,20 @@ The hash table size is the number of entries in the hash table, which is 2^table
 
 The search length must be at least `1` and at most `8`.
 
-See section "3.2 Prefix Values" for how to determine the prefix values.
+See section "3.3 Prefix Values" for how to determine the prefix values.
 
 ### 2.1 Block Search Table (chunk type 0x45, skippable)
 
 The Block Search Table is an optional chunk that will come before a block that represents the contents.
 
-| Length | Description                   |
-|--------|-------------------------------|
-| 1      | Table Type                    |
-| 1      | Search pattern length         |
-| 1      | Base Table Size in log2       |
-| 0/8/32 | Prefix values                 |
-| 1      | Reductions from Base Table    |
-| n      | Table entries. n = 2^(BT-R-3) |
+| Length     | Description                   |
+|------------|-------------------------------|
+| 1          | Table Type                    |
+| 1          | Search pattern length         |
+| 1          | Base Table Size in log2       |
+| 0/8/32/1+n | Prefix values                 |
+| 1          | Reductions from Base Table    |
+| n          | Table entries. n = 2^(BT-R-3) |
 
 Search pattern length, base table size and prefix values *should* match the values given in chunk type 0x44.
 If no chunk type 0x44 has been seen or the values are different, the decoder *may* choose not to use the table.
@@ -78,7 +78,7 @@ Each entry will only contain a single bit to indicate if a pattern matching the 
 
 ### 3.0 Table Types
 
-There are 3 table types. They all use the same hashing algorithm.
+There are 4 table types. They all use the same hashing algorithm.
 
 The only difference is how many prefix values, if any, were used for the table.
 
@@ -86,7 +86,7 @@ The decoder must ignore unknown table types.
 
 ### 3.1 Table Hashing
 
-The tables are generated using unsigned 32/64-bit multiplications. 
+The tables are generated using unsigned 64-bit multiplications, using the upper bits of the result. 
 
 Input values are all values read as little-endian 4 or 8-byte integers.
 
@@ -146,8 +146,8 @@ The tables are combined like this:
 
 ```go
 func reduce(b []byte) []byte {
-	lower := b[:len(b)/2]
-	upper := b[len(b)/2:]
+	lower := b[:len(b)/2] // lower half
+	upper := b[len(b)/2:] // upper half
 	for i := range lower {
 		lower[i] |= upper[i]
 	}
@@ -159,6 +159,8 @@ In that case the reduction would be `1`. The reduction is purely decided by the 
 
 When searching, this means that for each reduction, the search pattern index should have 
 the highest active bit discarded to get the correct index.
+
+The effective index is `HashValue(...) & ((1 << (baseTableSize - reductions)) - 1)`.
 
 ### 3.3 Prefix Values
 
@@ -190,7 +192,7 @@ data is a valid prefix value. This means:
 - A prefix byte at the end of block N followed by a value starting in block N+1
   WILL be indexed in block N's table (the prefix is in block N's data).
 - A value at the start of block N where the prefix byte is the last byte of block N-1
-  will NOT be indexed in block N's table.
+  will NOT be indexed in block N's table, but only in block N-1's table.
 
 An empty prefix table (all zero bits) indicates that no prefix bytes exist
 in the block, allowing the searcher to skip it entirely.
@@ -251,6 +253,8 @@ for i = 0 to L - M:
 This is the most powerful mode for arbitrary searches. Longer patterns produce
 more window checks, giving exponentially better filtering.
 
+See Appendix B.2.1 for boundary handling when a later window is absent but the first window is present.
+
 ### A.3 Types 2 and 3 - Byte Prefix / Mask Prefix
 
 The table only contains entries for positions in the data that immediately follow
@@ -273,9 +277,11 @@ if checked == 0:
 This means the pattern does **not** need to start with a prefix byte.
 Any prefix byte found inside the pattern produces a checkable window.
 
-For example, with prefix bytes `"` and `:`, searching for `stamp":"1679909263`
-finds `"` at position 5 and `:` at position 6. The windows `:"1679`,  `"16799`
-as well as `167990` are all checked. If either is absent, the block is skipped.
+See Appendix B.2.2 for boundary handling when prefix windows are absent but the raw first window is present.
+
+For example, with prefix bytes `"` and `:` and matchLen 6, searching for `stamp":"1679909263`
+finds `"` at positions 5 and 7, and `:` at position 6. The windows `:"1679`, `"16799`,
+and `167990` are all checked. If any is absent, the block is skipped.
 
 If the pattern contains no prefix bytes at all (e.g. `stamp`), the table cannot
 help and the searcher must fall back to decoding the block.
@@ -372,19 +378,31 @@ fit entirely within a block, all windows are still checked.
 #### B.2.2 Prefix Tables (Types 2, 3, 4)
 
 For prefix-filtered tables, the searcher scans the pattern for internal prefix bytes
-and checks the windows that follow them (see Appendix A). All checked windows must
-be present for a possible match. If any is absent, the block is skipped.
+and checks the windows that follow them (see Appendix A).
 
-Unlike type 1, there is no "first window" boundary fallback for prefix tables.
-The overlap tail in the encoder respects prefix context, so boundary positions are
-only indexed when the preceding byte in the block data is a valid prefix byte. This
-means the table accurately reflects what the block contains after prefix bytes.
+If all checked prefix windows are present, the block might contain the pattern.
+If some are present and some absent, the block might contain a boundary match.
+If ALL checked prefix windows are absent, the block can still contain the pattern
+at a boundary position where the prefix byte is in the block data but not in the
+search pattern's context. To handle this, the searcher should also check the first
+`matchLen` bytes of the pattern as a raw (non-prefix) lookup:
 
-Consequence: with prefix tables, the searcher only guarantees finding patterns at
-data positions where the prefix context is satisfied. A pattern that straddles a block
-boundary where the prefix byte is NOT in the pattern itself may not be found via the
-table. In such cases, the searcher falls back to full decode (when `canUse=false`
-because no prefix bytes were found in the pattern).
+```
+// After prefix-context scan finds all windows absent:
+firstWindow = hash(pattern[0 : matchLen])
+if present(firstWindow):
+    decode block  -- pattern could start at overlap boundary
+else:
+    skip block
+```
+
+This works because the overlap tail in the encoder indexes boundary positions
+where the preceding byte in the block data is a valid prefix byte. The hash of
+the first `matchLen` bytes of the pattern matches exactly what the overlap tail
+hashed for that boundary position.
+
+If no prefix bytes appear in the pattern at all (`canUse=false`), the searcher
+falls back to full decode — all blocks are decoded and searched.
 
 ### B.3 Searcher: Previous Block Access
 
@@ -397,8 +415,10 @@ For each decoded block, the boundary check examines:
 - The first `len(pattern)-1` bytes of the current block
 
 If the concatenation of these regions contains the pattern, it is a boundary match.
-This requires the previous block to have been decoded (not skipped). For type 1 tables,
-the overlap indexing in B.1 ensures that if a pattern starts in block N, block N's table
-has the first window set, so block N is decoded and available as PrevBlock for block N+1.
-For prefix tables, boundary detection depends on the prefix context being present in both
-the block data and the search pattern.
+This requires the previous block to have been decoded (not skipped). The overlap
+indexing in B.1 ensures that if a pattern starts in block N, block N's table has
+the first window set (for type 1) or the raw first window set (for prefix types,
+via the overlap tail), so block N is decoded and available as PrevBlock for block N+1.
+
+A searcher should not skip a block if the previous block was decoded, since the
+boundary region between the two blocks may contain a match.
