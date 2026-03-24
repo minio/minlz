@@ -420,5 +420,13 @@ indexing in B.1 ensures that if a pattern starts in block N, block N's table has
 the first window set (for type 1) or the raw first window set (for prefix types,
 via the overlap tail), so block N is decoded and available as PrevBlock for block N+1.
 
-A searcher should not skip a block if the previous block was decoded, since the
-boundary region between the two blocks may contain a match.
+A searcher should not skip a block if the previous block was decoded and a
+boundary match is possible. A boundary match is possible only when some suffix
+of the previous block's tail (`last len(pattern)-1 bytes`) is a prefix of the
+search pattern. If no such overlap exists, the block can safely be skipped and
+the previous block reference cleared.
+
+When a block is decoded solely for a boundary check (the table indicates no
+match within the block), the previous block reference should be cleared
+afterward. This prevents a cascade where every decoded block forces the next
+to decode as well.

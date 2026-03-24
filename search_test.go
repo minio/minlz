@@ -1898,6 +1898,229 @@ func BenchmarkBuildTablePrefix(b *testing.B) {
 	}
 }
 
+// repetitiveData builds nBlocks * blockSize bytes of repetitive text.
+// Each block is filled with repeated lines, giving sparse search tables.
+func repetitiveData(blockSize, nBlocks int) []byte {
+	line := []byte("the quick brown fox jumps over the lazy dog.\n")
+	filler := bytes.Repeat(line, blockSize/len(line)+1)
+	data := make([]byte, blockSize*nBlocks)
+	for i := range nBlocks {
+		copy(data[i*blockSize:], filler[:blockSize])
+	}
+	return data
+}
+
+// TestSearchTableEfficiency verifies that search tables are generated, usable,
+// and produce meaningful skip rates across all table types.
+func TestSearchTableEfficiency(t *testing.T) {
+	blockSize := 64 << 10
+	nBlocks := 16
+	data := repetitiveData(blockSize, nBlocks)
+
+	// Place a unique needle only in one block.
+	targetBlock := nBlocks / 2
+	needle := []byte("XYZZY!UNIQUE!NEEDLE!PLUGH!")
+	copy(data[targetBlock*blockSize+500:], needle)
+
+	tests := []struct {
+		name      string
+		cfg       SearchTableConfig
+		pattern   []byte
+		wantSkips bool // prefix types always skip; no_prefix may not due to hash collisions
+	}{
+		{
+			name:    "no_prefix",
+			cfg:     NewSearchTableConfig().WithMatchLen(4),
+			pattern: needle,
+		},
+		{
+			name:      "byte_prefix",
+			cfg:       NewSearchTableConfig().WithMatchLen(4).WithBytePrefix('!'),
+			pattern:   []byte("!UNIQUE!NEEDLE"),
+			wantSkips: true,
+		},
+		{
+			name: "mask_prefix",
+			cfg: func() SearchTableConfig {
+				var m [32]byte
+				m['!'>>3] |= 1 << ('!' & 7)
+				return NewSearchTableConfig().WithMatchLen(4).WithMaskPrefix(m)
+			}(),
+			pattern:   []byte("!UNIQUE!NEEDLE"),
+			wantSkips: true,
+		},
+		{
+			name:      "long_prefix",
+			cfg:       NewSearchTableConfig().WithMatchLen(4).WithLongPrefix([]byte("XYZZY!")),
+			pattern:   []byte("XYZZY!UNIQUE!NEEDLE"),
+			wantSkips: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := NewWriter(&buf, WriterSearchTable(tt.cfg), WriterBlockSize(blockSize), WriterConcurrency(1))
+			if err := w.EncodeBuffer(data); err != nil {
+				t.Fatal(err)
+			}
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+			found := 0
+			err := searcher.Search(tt.pattern, func(r SearchResult) error {
+				found++
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if found == 0 {
+				t.Fatal("pattern not found")
+			}
+
+			stats := searcher.Stats()
+			t.Logf("blocks: %d total, %d skipped, %d searched, pop avg %.1f%%",
+				stats.BlocksTotal, stats.BlocksSkipped, stats.BlocksSearched,
+				stats.TablePopSum/float64(stats.TablesPresent))
+
+			if stats.BlocksSkipped+stats.BlocksSearched != stats.BlocksTotal {
+				t.Fatalf("skipped(%d) + searched(%d) != total(%d)",
+					stats.BlocksSkipped, stats.BlocksSearched, stats.BlocksTotal)
+			}
+			if stats.TablesPresent != stats.BlocksTotal {
+				t.Fatalf("expected %d tables, got %d", stats.BlocksTotal, stats.TablesPresent)
+			}
+			if stats.TablesUnusable > 0 {
+				t.Fatalf("expected 0 unusable tables, got %d", stats.TablesUnusable)
+			}
+			if tt.wantSkips && stats.BlocksSkipped < nBlocks/2 {
+				t.Errorf("poor skip rate: %d/%d skipped (expected >50%%)", stats.BlocksSkipped, stats.BlocksTotal)
+			}
+		})
+	}
+}
+
+// TestSearchNoCascade verifies that decoding one block does not force all
+// subsequent blocks to decode (the cascade-breaking fix).
+// Uses a prefix type to guarantee blocks are skippable by the table.
+func TestSearchNoCascade(t *testing.T) {
+	blockSize := 64 << 10
+	nBlocks := 16
+	data := repetitiveData(blockSize, nBlocks)
+
+	// Place needle in block 0 only.
+	needle := []byte("=CASCADE_TEST_NEEDLE!")
+	copy(data[100:], needle)
+
+	var buf bytes.Buffer
+	cfg := NewSearchTableConfig().WithMatchLen(4).WithBytePrefix('=')
+	w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(blockSize), WriterConcurrency(1))
+	if err := w.EncodeBuffer(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+	found := 0
+	err := searcher.Search(needle, func(r SearchResult) error {
+		found++
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found != 1 {
+		t.Fatalf("expected 1 match, got %d", found)
+	}
+
+	stats := searcher.Stats()
+	t.Logf("blocks: %d total, %d skipped, %d searched", stats.BlocksTotal, stats.BlocksSkipped, stats.BlocksSearched)
+
+	// Without cascade fix, block 0 decoded → block 1 forced → ... → all decoded.
+	// With fix, only block 0 (+ possible hash collisions) should be searched.
+	if stats.BlocksSearched > nBlocks/2 {
+		t.Errorf("cascade detected: %d/%d blocks searched, expected fewer than half", stats.BlocksSearched, stats.BlocksTotal)
+	}
+}
+
+// TestSearchBoundarySkipOptimization verifies that the canBoundaryMatch
+// optimization allows skipping blocks after a decoded block when the
+// previous block's tail does not contain a prefix of the search pattern.
+func TestSearchBoundarySkipOptimization(t *testing.T) {
+	blockSize := 64 << 10
+	nBlocks := 8
+	data := repetitiveData(blockSize, nBlocks)
+
+	// Place needle in middle of block 3. The repetitive filler won't end
+	// with a prefix of the needle, so the block after it should be skippable.
+	needle := []byte("=BOUNDARY_OPT_NEEDLE_TEST")
+	copy(data[3*blockSize+blockSize/2:], needle)
+
+	var buf bytes.Buffer
+	cfg := NewSearchTableConfig().WithMatchLen(4).WithBytePrefix('=')
+	w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(blockSize), WriterConcurrency(1))
+	if err := w.EncodeBuffer(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+	found := 0
+	err := searcher.Search(needle, func(r SearchResult) error {
+		found++
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found == 0 {
+		t.Fatal("pattern not found")
+	}
+
+	stats := searcher.Stats()
+	t.Logf("blocks: %d total, %d skipped, %d searched", stats.BlocksTotal, stats.BlocksSkipped, stats.BlocksSearched)
+
+	if stats.BlocksSkipped == 0 {
+		t.Error("expected some blocks to be skipped")
+	}
+	if stats.BlocksSkipped+stats.BlocksSearched != stats.BlocksTotal {
+		t.Fatalf("skipped(%d) + searched(%d) != total(%d)",
+			stats.BlocksSkipped, stats.BlocksSearched, stats.BlocksTotal)
+	}
+}
+
+func TestCanBoundaryMatch(t *testing.T) {
+	tests := []struct {
+		prev    string
+		pattern string
+		want    bool
+	}{
+		{"hello world", "world!", true},    // "world" suffix is prefix of "world!"
+		{"hello world", "xyzzy", false},    // no suffix of prev starts pattern
+		{"abcdef", "efgh", true},           // "ef" suffix matches "ef" prefix
+		{"abcdef", "f_extra", true},        // "f" suffix matches "f" prefix
+		{"abcdef", "ghij", false},          // no match
+		{"", "anything", false},            // empty prev
+		{"data", "d", false},               // single-byte pattern can't straddle
+		{"aaaa", "aaaa_end", true},         // full prev is prefix
+		{"xxABC", "ABCdef", true},          // 3-byte suffix
+		{"random bytes", "NEEDLE", false},  // no overlap
+	}
+	for _, tt := range tests {
+		got := canBoundaryMatch([]byte(tt.prev), []byte(tt.pattern))
+		if got != tt.want {
+			t.Errorf("canBoundaryMatch(%q, %q) = %v, want %v", tt.prev, tt.pattern, got, tt.want)
+		}
+	}
+}
+
 func BenchmarkPatternCanMatch(b *testing.B) {
 	rng := rand.New(rand.NewSource(42))
 	data := make([]byte, 1<<20)

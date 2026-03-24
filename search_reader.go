@@ -270,38 +270,41 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				return ErrCorrupt
 			}
 			s.stats.BlocksTotal++
+			tableNoMatch := false
 			if s.blockTable != nil {
 				canUse, match := patternCanMatch(&s.blockInfo, s.blockTable, s.blockReductions, pattern)
 				s.blockTable = nil
-				// Don't skip if the previous block was decoded — the boundary
-				// region between prev and this block might contain the pattern.
-				if canUse && !match && s.prevBlock == nil {
-					s.stats.BlocksSkipped++
-					s.stats.CompBytesSkipped += int64(chunkLen)
-					// Read checksum + varint to get exact decompressed size before skipping.
-					if !s.readFull(s.tmp[:checksumSize]) {
-						return s.err
-					}
-					remain := chunkLen - checksumSize
-					// Read enough for the varint (max 10 bytes).
-					peek := min(remain, 10)
-					if !s.readFull(s.tmp[checksumSize : checksumSize+peek]) {
-						return s.err
-					}
-					n, _, _ := decodedLen(s.tmp[checksumSize : checksumSize+peek])
-					if n > 0 {
-						s.blockStart += int64(n)
-					}
-					if !s.skip(remain - peek) {
-						return s.err
-					}
-					if s.deferred != nil {
-						if err := s.flushDeferred(nil, fn); err != nil {
-							return err
+				if canUse && !match {
+					if s.prevBlock == nil || !canBoundaryMatch(s.prevBlock, pattern) {
+						s.stats.BlocksSkipped++
+						s.stats.CompBytesSkipped += int64(chunkLen)
+						// Read checksum + varint to get exact decompressed size before skipping.
+						if !s.readFull(s.tmp[:checksumSize]) {
+							return s.err
 						}
+						remain := chunkLen - checksumSize
+						// Read enough for the varint (max 10 bytes).
+						peek := min(remain, 10)
+						if !s.readFull(s.tmp[checksumSize : checksumSize+peek]) {
+							return s.err
+						}
+						n, _, _ := decodedLen(s.tmp[checksumSize : checksumSize+peek])
+						if n > 0 {
+							s.blockStart += int64(n)
+						}
+						if !s.skip(remain - peek) {
+							return s.err
+						}
+						if s.deferred != nil {
+							if err := s.flushDeferred(nil, fn); err != nil {
+								return err
+							}
+						}
+						s.prevBlock = nil
+						continue
 					}
-					s.prevBlock = nil
-					continue
+					// Table says no match, but prevBlock tail has a pattern prefix — must decode.
+					tableNoMatch = true
 				}
 				if !canUse {
 					s.stats.TablesUnusable++
@@ -361,7 +364,13 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if err := s.dispatchMatches(blk, blockOff, pattern, fn); err != nil {
 				return err
 			}
-			s.prevBlock = blk
+			if tableNoMatch {
+				// Table confirmed pattern can't start in this block,
+				// so no future block needs a boundary check against it.
+				s.prevBlock = nil
+			} else {
+				s.prevBlock = blk
+			}
 			continue
 
 		case chunkTypeUncompressedData:
@@ -369,23 +378,27 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				return ErrCorrupt
 			}
 			s.stats.BlocksTotal++
+			tableNoMatch := false
 			if s.blockTable != nil {
 				canUse, match := patternCanMatch(&s.blockInfo, s.blockTable, s.blockReductions, pattern)
 				s.blockTable = nil
-				if canUse && !match && s.prevBlock == nil {
-					s.stats.BlocksSkipped++
-					s.stats.CompBytesSkipped += int64(chunkLen)
-					if !s.skip(chunkLen) {
-						return s.err
-					}
-					s.blockStart += int64(chunkLen - checksumSize)
-					if s.deferred != nil {
-						if err := s.flushDeferred(nil, fn); err != nil {
-							return err
+				if canUse && !match {
+					if s.prevBlock == nil || !canBoundaryMatch(s.prevBlock, pattern) {
+						s.stats.BlocksSkipped++
+						s.stats.CompBytesSkipped += int64(chunkLen)
+						if !s.skip(chunkLen) {
+							return s.err
 						}
+						s.blockStart += int64(chunkLen - checksumSize)
+						if s.deferred != nil {
+							if err := s.flushDeferred(nil, fn); err != nil {
+								return err
+							}
+						}
+						s.prevBlock = nil
+						continue
 					}
-					s.prevBlock = nil
-					continue
+					tableNoMatch = true
 				}
 				if !canUse {
 					s.stats.TablesUnusable++
@@ -433,7 +446,11 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if err := s.dispatchMatches(blk, blockOff, pattern, fn); err != nil {
 				return err
 			}
-			s.prevBlock = blk
+			if tableNoMatch {
+				s.prevBlock = nil
+			} else {
+				s.prevBlock = blk
+			}
 			continue
 
 		case chunkTypeEOF:
@@ -626,6 +643,21 @@ func (s *BlockSearcher) ensureBuf(n int) {
 		s.buf = make([]byte, 0, n+n/4)
 	}
 	s.buf = s.buf[:n]
+}
+
+// canBoundaryMatch reports whether pattern could start in the tail of prev
+// and extend past its end (straddling into the next block).
+func canBoundaryMatch(prev, pattern []byte) bool {
+	if len(prev) == 0 || len(pattern) <= 1 {
+		return false
+	}
+	tail := prev[max(0, len(prev)-len(pattern)+1):]
+	for i := range tail {
+		if bytes.HasPrefix(pattern, tail[i:]) {
+			return true
+		}
+	}
+	return false
 }
 
 // patternCanMatch checks if pattern could be in a block based on its search table.
