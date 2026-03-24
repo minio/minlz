@@ -180,23 +180,39 @@ The table type will indicate how many prefix values are present.
 | 3          | 32           | 0-256         | Bit mask for prefix values |
 | 4          | 1+n          | 1 (256 B max) | Long Prefix                |
 
-#### 3.3.1 Table Type 2
+
+#### 3.3.1 Prefix Indexing
+
+When indexing overlap positions near block boundaries, the prefix context must still
+be satisfied. An overlap position is only indexed if its preceding byte in the block
+data is a valid prefix value. This means:
+
+- A prefix byte at the end of block N followed by a value starting in block N+1
+  WILL be indexed in block N's table (the prefix is in block N's data).
+- A value at the start of block N where the prefix byte is the last byte of block N-1
+  will NOT be indexed in block N's table.
+
+An empty prefix table (all zero bits) indicates that no prefix bytes exist
+in the block, allowing the searcher to skip it entirely.
+
+#### 3.3.2 Table Type 2
 
 With table type 2 up to 8 individual prefix values can be defined.
 
 If less than 8 values are needed, the rest can be filled with duplicates of previous ones.
 
-#### 3.3.2 Table Type 3
+#### 3.3.3 Table Type 3
 
 Each bit indicates if a byte value at that position is a prefix of the search pattern.
 
-#### 3.3.2 Table Type 4
+#### 3.3.4 Table Type 4
 
 The first byte defines the prefix length. One must be added to the length after being read.
 
 The prefix (1 to 256 bytes) is stored after the length indication.
 
 A type 4 table with prefix `"id":` will therefore only contain entries following that prefix.
+
 
 ## Appendix A - Using Search Tables
 
@@ -294,3 +310,95 @@ no prefix bytes found inside), a searcher has two options:
 1. **Fall back**: Decode the block and search it directly. This is the safe default.
 2. **Bail**: Return an error indicating search tables are unusable for this query.
    This is useful when the caller only wants table-accelerated searches.
+
+## Appendix B - Handling Block Overlaps
+
+### B.1 Encoder: Overlap Indexing
+
+When generating a block's search table, the encoder must hash positions near the end
+of the block where the `matchLen`-byte window extends into the next block. The spec
+requires this (section 3: "The block table must include patterns that start in the
+upcoming block and continue into the next block").
+
+For block N of size S with matchLen M, the positions that need overlap are
+`S-M+1` through `S-1`. Each of these positions reads bytes from both block N
+and block N+1. The encoder should provide the first `M-1` bytes of block N+1
+as overlap when building block N's table.
+
+For contiguous buffers (`EncodeBuffer`), the overlap is directly available.
+For streaming writes, the overlap comes from the remaining data in the write buffer.
+The last block in a stream has no overlap — its tail positions cannot be indexed.
+
+**Prefix tables and overlap:** For prefix-filtered tables (types 2, 3, 4), the overlap
+tail positions must still respect the prefix context. An overlap position is only indexed
+if its preceding byte in the block data is a valid prefix byte. This ensures that prefix
+tables remain accurate — an empty prefix table correctly indicates "no prefix bytes exist
+in this block" and the block can be skipped for any prefix-aware search.
+
+Implementation note: the overlap positions are few (at most `M-1 = 7` for matchLen 8)
+and can be handled with a small stack buffer rather than concatenating the full block
+with the overlap bytes.
+
+### B.2 Searcher: Boundary Pattern Matching
+
+#### B.2.1 Type 1 (No Prefix)
+
+When a search pattern is longer than `matchLen`, the pattern produces multiple
+hash windows. For a pattern that straddles a block boundary, some windows fall
+in block N and others in block N+1. A naive check that requires ALL windows to
+be present in a single block's table will incorrectly skip blocks that contain
+the start of a boundary-straddling pattern.
+
+The correct approach: a block can be skipped only if the **first** matchLen-window
+of the pattern is absent from the table. If the first window IS present, the pattern
+could start near the end of the block with later windows extending into the next block.
+
+```
+firstWindow = hash(pattern[0 : matchLen])
+if not present(firstWindow):
+    skip block  -- pattern cannot start in this block
+else:
+    decode block  -- pattern might start here
+```
+
+When all windows are checked and all are present, the block definitely might contain
+the full pattern. When a later window is absent but the first is present, the block
+might contain a boundary-straddling occurrence.
+
+This means longer patterns provide less filtering power for boundary matches
+(only the first window is checked rather than all windows). For patterns that
+fit entirely within a block, all windows are still checked.
+
+#### B.2.2 Prefix Tables (Types 2, 3, 4)
+
+For prefix-filtered tables, the searcher scans the pattern for internal prefix bytes
+and checks the windows that follow them (see Appendix A). All checked windows must
+be present for a possible match. If any is absent, the block is skipped.
+
+Unlike type 1, there is no "first window" boundary fallback for prefix tables.
+The overlap tail in the encoder respects prefix context, so boundary positions are
+only indexed when the preceding byte in the block data is a valid prefix byte. This
+means the table accurately reflects what the block contains after prefix bytes.
+
+Consequence: with prefix tables, the searcher only guarantees finding patterns at
+data positions where the prefix context is satisfied. A pattern that straddles a block
+boundary where the prefix byte is NOT in the pattern itself may not be found via the
+table. In such cases, the searcher falls back to full decode (when `canUse=false`
+because no prefix bytes were found in the pattern).
+
+### B.3 Searcher: Previous Block Access
+
+When a block is decoded, the searcher should retain its data so the next decoded
+block can check the boundary region. If a block is skipped, the previous block
+reference should be cleared.
+
+For each decoded block, the boundary check examines:
+- The last `len(pattern)-1` bytes of the previous block
+- The first `len(pattern)-1` bytes of the current block
+
+If the concatenation of these regions contains the pattern, it is a boundary match.
+This requires the previous block to have been decoded (not skipped). For type 1 tables,
+the overlap indexing in B.1 ensures that if a pattern starts in block N, block N's table
+has the first window set, so block N is decoded and available as PrevBlock for block N+1.
+For prefix tables, boundary detection depends on the prefix context being present in both
+the block data and the search pattern.

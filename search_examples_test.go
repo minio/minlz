@@ -53,15 +53,13 @@ func ExampleWriterSearchTable_withPrefix() {
 	// and uses those to check the table — no need to start with a prefix byte.
 	searcher := minlz.NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 	searcher.Search([]byte(`me":"unique-9876`), func(r minlz.SearchResult) bool {
-		if bytes.Contains(r.Data, []byte("unique-9876")) {
-			fmt.Println("found in block at offset", r.BlockStart)
-		}
+		fmt.Println("found at stream offset", r.Match)
 		return true
 	})
 	stats := searcher.Stats()
 	fmt.Printf("blocks: %d total, %d skipped\n", stats.BlocksTotal, stats.BlocksSkipped)
 	// Output:
-	// found in block at offset 4096
+	// found at stream offset 4196
 	// blocks: 3 total, 2 skipped
 }
 
@@ -86,9 +84,7 @@ func ExampleBlockSearcher() {
 	// Search for the needle.
 	searcher := minlz.NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 	err := searcher.Search([]byte("NEEDLE_PATTERN"), func(r minlz.SearchResult) bool {
-		if idx := bytes.Index(r.Data, []byte("NEEDLE_PATTERN")); idx >= 0 {
-			fmt.Printf("found at stream offset %d\n", r.BlockStart+int64(idx))
-		}
+		fmt.Printf("found at stream offset %d\n", r.Match)
 		return true
 	})
 	if err != nil {
@@ -154,5 +150,5 @@ func ExampleSearchStats_Fprint() {
 	// Tables: 2 present, 0 missing, 0 unusable
 	// Table bits/byte: 0.0391, log2: 8.0, avg reductions: 5.0
 	// Table total: 80 bytes, avg 40 bytes/table, 0.49% of 16384 uncompressed
-	// Table population: avg 2.1%, min 0.4%, max 3.9%
+	// Table population: avg 2.7%, min 1.6%, max 3.9%
 }

@@ -61,6 +61,8 @@ type SearchResult struct {
 	Data []byte
 	// BlockStart is the uncompressed byte offset of this block in the stream.
 	BlockStart int64
+	// Match is the absolute uncompressed stream offset of this pattern match.
+	Match int64
 	// prevBlock holds the previous block's decoded data, or nil if the
 	// previous block was skipped or this is the first block.
 	prevBlock []byte
@@ -86,8 +88,9 @@ type BlockSearcher struct {
 	blockReductions uint8
 	blockInfo       SearchTableConfig
 
-	decoded    []byte
-	prevBlock  []byte // previous block's decoded data (nil if skipped)
+	decoded    [2][]byte // alternating decode buffers
+	decIdx     int      // which buffer was last used (0 or 1)
+	prevBlock  []byte   // points into decoded[(decIdx+1)&1], nil if skipped
 	maxBlock   int
 	readHeader bool
 	ignoreCRC  bool
@@ -305,14 +308,15 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) bool) err
 			if n > s.maxBlock {
 				return ErrTooLarge
 			}
-			if n > len(s.decoded) {
-				s.decoded = make([]byte, n)
+			di := s.decIdx ^ 1 // alternate buffer
+			if n > len(s.decoded[di]) {
+				s.decoded[di] = make([]byte, n)
 			}
 			buf = buf[hdrLen:]
-			if ret := minLZDecode(s.decoded[:n], buf); ret != 0 {
+			if ret := minLZDecode(s.decoded[di][:n], buf); ret != 0 {
 				return ErrCorrupt
 			}
-			toCRC := s.decoded[:n]
+			toCRC := s.decoded[di][:n]
 			if chunkType == chunkTypeMinLZCompressedDataCompCRC {
 				toCRC = buf
 			}
@@ -324,10 +328,20 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) bool) err
 			s.stats.UncompBytesSearched += int64(n)
 			blockOff := s.blockStart
 			s.blockStart += int64(n)
-			result := SearchResult{Data: s.decoded[:n], BlockStart: blockOff, prevBlock: s.prevBlock}
-			s.prevBlock = append(s.prevBlock[:0], s.decoded[:n]...)
-			if !fn(result) {
-				return nil
+			blk := s.decoded[di][:n]
+			s.prevBlock = blk
+			s.decIdx = di
+			off := 0
+			for {
+				idx := bytes.Index(blk[off:], pattern)
+				if idx < 0 {
+					break
+				}
+				result := SearchResult{Data: blk, BlockStart: blockOff, Match: blockOff + int64(off+idx), prevBlock: s.prevBlock}
+				if !fn(result) {
+					return nil
+				}
+				off += idx + len(pattern)
 			}
 			continue
 
@@ -370,13 +384,14 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) bool) err
 			if n > s.maxBlock {
 				return ErrTooLarge
 			}
-			if n > len(s.decoded) {
-				s.decoded = make([]byte, n)
+			di := s.decIdx ^ 1
+			if n > len(s.decoded[di]) {
+				s.decoded[di] = make([]byte, n)
 			}
-			if !s.readFull(s.decoded[:n]) {
+			if !s.readFull(s.decoded[di][:n]) {
 				return s.err
 			}
-			if !s.ignoreCRC && crc(s.decoded[:n]) != checksum {
+			if !s.ignoreCRC && crc(s.decoded[di][:n]) != checksum {
 				return ErrCRC
 			}
 
@@ -384,10 +399,20 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) bool) err
 			s.stats.UncompBytesSearched += int64(n)
 			blockOff := s.blockStart
 			s.blockStart += int64(n)
-			result := SearchResult{Data: s.decoded[:n], BlockStart: blockOff, prevBlock: s.prevBlock}
-			s.prevBlock = append(s.prevBlock[:0], s.decoded[:n]...)
-			if !fn(result) {
-				return nil
+			blk := s.decoded[di][:n]
+			s.prevBlock = blk
+			s.decIdx = di
+			off := 0
+			for {
+				idx := bytes.Index(blk[off:], pattern)
+				if idx < 0 {
+					break
+				}
+				result := SearchResult{Data: blk, BlockStart: blockOff, Match: blockOff + int64(off+idx), prevBlock: s.prevBlock}
+				if !fn(result) {
+					return nil
+				}
+				off += idx + len(pattern)
 			}
 			continue
 
@@ -467,18 +492,43 @@ func patternCanMatch(cfg *SearchTableConfig, table []byte, reductions uint8, pat
 
 	switch cfg.tableType {
 	case searchTableTypeNoPrefix:
-		// Check ALL matchLen-windows. All must be present.
 		if len(pattern) < int(cfg.matchLen) {
 			return false, true
 		}
-		for i := 0; i <= len(pattern)-int(cfg.matchLen); i++ {
+		// Check matchLen-windows. If any window is absent, the pattern cannot
+		// start at a position where all windows fit within this block.
+		// However, the pattern could start near the end of the block with
+		// later windows extending into the next block. We check all possible
+		// starting positions: the pattern can start at position P in the block
+		// if windows 0..K are in the table (where K windows fit in the block).
+		// Skip only if NO starting position has its first window present.
+		ml := int(cfg.matchLen)
+		nWindows := len(pattern) - ml + 1
+		// Check if all windows are present (pattern fits entirely in block).
+		allPresent := true
+		for i := range nWindows {
 			v := readLE64Pad(pattern[i:])
 			h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
 			if table[h>>3]&(1<<(h&7)) == 0 {
-				return true, false
+				allPresent = false
+				// The pattern can't fit entirely starting at a position where
+				// window i falls within the block. But it could start later,
+				// with fewer windows in this block. Check if the LAST window
+				// (first window of a boundary-straddling match) is present.
+				break
 			}
 		}
-		return true, true
+		if allPresent {
+			return true, true
+		}
+		// Check if the pattern could start near the block end (boundary match).
+		// The last matchLen bytes of the pattern's first window must be present.
+		v := readLE64Pad(pattern[:ml])
+		h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
+		if table[h>>3]&(1<<(h&7)) != 0 {
+			return true, true // first window present — could be a boundary match
+		}
+		return true, false
 
 	case searchTableTypeBytePrefix:
 		// Build mask from the 8 prefix bytes for fast lookup.
@@ -496,15 +546,22 @@ func patternCanMatch(cfg *SearchTableConfig, table []byte, reductions uint8, pat
 		if len(pattern) < int(cfg.matchLen) {
 			return false, true
 		}
-		// Scan pattern for any occurrence of the long prefix, check the window after it.
 		checked := 0
+		firstCheckedPresent := false
 		for i := 0; i <= len(pattern)-pl-int(cfg.matchLen); i++ {
 			if !bytes.Equal(pattern[i:i+pl], cfg.longPrefix) {
 				continue
 			}
 			v := readLE64Pad(pattern[i+pl:])
 			h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
-			if table[h>>3]&(1<<(h&7)) == 0 {
+			present := table[h>>3]&(1<<(h&7)) != 0
+			if checked == 0 {
+				firstCheckedPresent = present
+			}
+			if !present {
+				if firstCheckedPresent {
+					return true, true
+				}
 				return true, false
 			}
 			checked++
@@ -526,7 +583,9 @@ func patternCanMatchWithPrefixMask(cfg *SearchTableConfig, table []byte, mask ui
 	if len(pattern) < ml {
 		return false, true
 	}
-	checked := 0
+
+	present := 0
+	absent := 0
 	for i := 0; i <= len(pattern)-ml; i++ {
 		if i > 0 {
 			b := pattern[i-1]
@@ -534,19 +593,24 @@ func patternCanMatchWithPrefixMask(cfg *SearchTableConfig, table []byte, mask ui
 				continue
 			}
 		} else {
-			// Position 0: we don't know what precedes the pattern in the data.
-			// Skip — we can't check this window.
 			continue
 		}
 		v := readLE64Pad(pattern[i:])
 		h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
-		if table[h>>3]&(1<<(h&7)) == 0 {
-			return true, false
+		if table[h>>3]&(1<<(h&7)) != 0 {
+			present++
+		} else {
+			absent++
 		}
-		checked++
 	}
-	if checked == 0 {
-		return false, true
+	if present+absent == 0 {
+		return false, true // no prefix context in pattern
 	}
-	return true, true
+	if absent == 0 {
+		return true, true // all prefix windows present
+	}
+	if present > 0 {
+		return true, true // some present, some absent — could be boundary
+	}
+	return true, false // all checked windows absent
 }

@@ -14,26 +14,18 @@ func (c *SearchTableConfig) buildSearchTable(blockData, overlap []byte) ([]byte,
 	tableBytes := make([]byte, tableU64s*8)
 	table := unsafe.Slice((*uint64)(unsafe.Pointer(unsafe.SliceData(tableBytes))), tableU64s)
 
-	var data []byte
-	if len(overlap) > 0 {
-		data = make([]byte, len(blockData)+len(overlap))
-		copy(data, blockData)
-		copy(data[len(blockData):], overlap)
-	} else {
-		data = blockData
-	}
-
+	// Index the main block data.
 	nPositions := len(blockData)
 
 	switch c.tableType {
 	case searchTableTypeNoPrefix:
-		buildTableNoPrefix(table, data, nPositions, c.baseTableSize, c.matchLen)
+		buildTableNoPrefix(table, blockData, nPositions, c.baseTableSize, c.matchLen)
 	case searchTableTypeBytePrefix:
 		var lookup [256]bool
 		for _, p := range c.prefixBytes {
 			lookup[p] = true
 		}
-		buildTablePrefixLookup(table, data, nPositions, c.baseTableSize, c.matchLen, &lookup)
+		buildTablePrefixLookup(table, blockData, nPositions, c.baseTableSize, c.matchLen, &lookup)
 	case searchTableTypeMaskPrefix:
 		var lookup [256]bool
 		for i := range 256 {
@@ -41,9 +33,49 @@ func (c *SearchTableConfig) buildSearchTable(blockData, overlap []byte) ([]byte,
 				lookup[i] = true
 			}
 		}
-		buildTablePrefixLookup(table, data, nPositions, c.baseTableSize, c.matchLen, &lookup)
+		buildTablePrefixLookup(table, blockData, nPositions, c.baseTableSize, c.matchLen, &lookup)
 	case searchTableTypeLongPrefix:
-		buildTablePrefixLong(table, data, nPositions, c.baseTableSize, c.matchLen, c.longPrefix)
+		buildTablePrefixLong(table, blockData, nPositions, c.baseTableSize, c.matchLen, c.longPrefix)
+	}
+
+	// Index the tail positions that span into the overlap.
+	if len(overlap) > 0 {
+		ml := int(c.matchLen)
+		var tmp [16]byte
+		start := max(0, len(blockData)-ml+1)
+		for pos := start; pos < len(blockData); pos++ {
+			// For prefix tables, only index if the preceding byte is a prefix.
+			if pos > 0 {
+				switch c.tableType {
+				case searchTableTypeBytePrefix:
+					isPfx := false
+					for _, p := range c.prefixBytes {
+						if blockData[pos-1] == p {
+							isPfx = true
+							break
+						}
+					}
+					if !isPfx {
+						continue
+					}
+				case searchTableTypeMaskPrefix:
+					b := blockData[pos-1]
+					if c.prefixMask[b>>3]&(1<<(b&7)) == 0 {
+						continue
+					}
+				case searchTableTypeLongPrefix:
+					pl := len(c.longPrefix)
+					if pos < pl || !matchPrefix(blockData[pos-pl:pos], c.longPrefix) {
+						continue
+					}
+				}
+			} else if c.tableType != searchTableTypeNoPrefix {
+				continue // pos 0 with prefix type: no preceding byte
+			}
+			n := copy(tmp[:], blockData[pos:])
+			copy(tmp[n:], overlap)
+			setBit(table, hashValue(readLE64Pad(tmp[:ml]), c.baseTableSize, c.matchLen))
+		}
 	}
 
 	setBits, totalBits := tablePopulation(table)

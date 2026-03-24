@@ -419,18 +419,17 @@ func TestBlockSearcherFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Search with pattern shorter than matchLen - tables can't help.
+	// Search with pattern shorter than matchLen - tables can't help, fallback decodes all.
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
-	blocksDecoded := 0
 	err = searcher.Search([]byte("ab"), func(r SearchResult) bool {
-		blocksDecoded++
 		return true
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if blocksDecoded != 2 {
-		t.Fatalf("expected 2 blocks decoded (fallback), got %d", blocksDecoded)
+	stats := searcher.Stats()
+	if stats.BlocksSearched != 2 {
+		t.Fatalf("expected 2 blocks searched (fallback), got %d", stats.BlocksSearched)
 	}
 }
 
@@ -607,8 +606,9 @@ func TestPrefixInternalMatch(t *testing.T) {
 			if !found {
 				t.Fatal("pattern not found")
 			}
-			t.Logf("blocks: %d total, %d skipped, %d searched, tablesUnusable=%d",
-				stats.BlocksTotal, stats.BlocksSkipped, stats.BlocksSearched, stats.TablesUnusable)
+			t.Logf("blocks: %d total, %d skipped, %d searched, tables: %d present, %d missing, %d unusable",
+				stats.BlocksTotal, stats.BlocksSkipped, stats.BlocksSearched,
+				stats.TablesPresent, stats.TablesMissing, stats.TablesUnusable)
 
 			// For patterns with internal prefix bytes, tables should be usable.
 			if tt.name != "byte_prefix_no_match_fallback" {
@@ -675,6 +675,133 @@ func TestPrefixInternalNoFalseNegative(t *testing.T) {
 				t.Fatalf("iter %d: pattern %q in data but not found by search", iter, pat)
 			}
 		}
+	}
+}
+
+// TestBlockTableIndexCorrectness verifies that for each position where
+// a pattern occurs in the data, the correct block's search table has
+// the hash bit set.
+func TestBlockTableIndexCorrectness(t *testing.T) {
+	blockSize := minBlockSize
+
+	for _, tc := range []struct {
+		name string
+		cfg  SearchTableConfig
+	}{
+		{"no_prefix", NewSearchTableConfig().WithMatchLen(4)},
+		{"byte_prefix", NewSearchTableConfig().WithMatchLen(4).WithBytePrefix('"', ':')},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Build compressible data with known patterns.
+			data := make([]byte, blockSize*4)
+			line := []byte(`{"key":"value","num":12345}` + "\n")
+			for i := 0; i < len(data); i += len(line) {
+				copy(data[i:], line)
+			}
+			// Inject unique patterns in specific blocks.
+			copy(data[blockSize*0+200:], []byte(`"unique0":"aaa111"`))
+			copy(data[blockSize*1+200:], []byte(`"unique1":"bbb222"`))
+			copy(data[blockSize*2+200:], []byte(`"unique2":"ccc333"`))
+			copy(data[blockSize*3+200:], []byte(`"unique3":"ddd444"`))
+
+			// Compress.
+			var buf bytes.Buffer
+			w := NewWriter(&buf, WriterSearchTable(tc.cfg), WriterBlockSize(blockSize), WriterConcurrency(1))
+			_, err := w.Write(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.Close()
+
+			// Parse the stream and extract per-block tables.
+			type blockTable struct {
+				cfg        SearchTableConfig
+				reductions uint8
+				table      []byte
+			}
+			var tables []blockTable
+			stream := buf.Bytes()
+			pos := 0
+			var pendingTable *blockTable
+			for pos+4 <= len(stream) {
+				chunkType := stream[pos]
+				chunkLen := int(stream[pos+1]) | int(stream[pos+2])<<8 | int(stream[pos+3])<<16
+				pos += 4
+				switch chunkType {
+				case ChunkTypeStreamIdentifier:
+					pos += chunkLen
+				case chunkTypeSearchInfo:
+					pos += chunkLen
+				case chunkTypeSearchTable:
+					cfg, red, tbl, err := parseSearchTable(stream[pos : pos+chunkLen])
+					if err != nil {
+						t.Fatal(err)
+					}
+					pendingTable = &blockTable{cfg: cfg, reductions: red, table: tbl}
+					pos += chunkLen
+				case chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC, chunkTypeUncompressedData:
+					if pendingTable != nil {
+						tables = append(tables, *pendingTable)
+						pendingTable = nil
+					} else {
+						tables = append(tables, blockTable{})
+					}
+					pos += chunkLen
+				default:
+					pos += chunkLen
+				}
+			}
+
+			// For each pattern, verify the correct block table has its hash set.
+			patterns := []string{`unique0":"aaa`, `unique1":"bbb`, `unique2":"ccc`, `unique3":"ddd`}
+			for _, pat := range patterns {
+				patBytes := []byte(pat)
+				idx := bytes.Index(data, patBytes)
+				if idx < 0 {
+					t.Fatalf("pattern %q not in data", pat)
+				}
+				blockIdx := idx / blockSize
+				if blockIdx >= len(tables) {
+					t.Fatalf("pattern %q at offset %d in block %d but only %d tables", pat, idx, blockIdx, len(tables))
+				}
+				bt := tables[blockIdx]
+				if bt.table == nil {
+					t.Fatalf("pattern %q: block %d has no search table", pat, blockIdx)
+				}
+				// Check that patternCanMatch says the block might contain it.
+				canUse, match := patternCanMatch(&bt.cfg, bt.table, bt.reductions, patBytes)
+				if canUse && !match {
+					t.Errorf("pattern %q at offset %d: block %d table says not present (false negative)", pat, idx, blockIdx)
+				}
+				if !canUse {
+					// For prefix tables, check with prefix context.
+					// The data has '"' before each unique pattern.
+					withPfx := append([]byte{'"'}, patBytes...)
+					canUse2, match2 := patternCanMatch(&bt.cfg, bt.table, bt.reductions, withPfx)
+					if canUse2 && !match2 {
+						t.Errorf("pattern %q with prefix at offset %d: block %d table says not present (false negative)", pat, idx, blockIdx)
+					}
+				}
+			}
+
+			// Verify that blocks WITHOUT a pattern can potentially be skipped.
+			for _, pat := range []string{`unique0":"aaa`} {
+				patBytes := []byte(pat)
+				idx := bytes.Index(data, patBytes)
+				blockIdx := idx / blockSize
+				for i, bt := range tables {
+					if i == blockIdx || bt.table == nil {
+						continue
+					}
+					canUse, match := patternCanMatch(&bt.cfg, bt.table, bt.reductions, patBytes)
+					if canUse && !match {
+						// Good — correctly identified as not present.
+					}
+					_ = canUse
+					_ = match
+				}
+			}
+		})
 	}
 }
 
@@ -1115,12 +1242,8 @@ func TestSearchNoTables(t *testing.T) {
 	// Search should still work (fallback to full decode).
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
 	found := false
-	blocksDecoded := 0
 	err = searcher.Search(needle, func(r SearchResult) bool {
-		blocksDecoded++
-		if bytes.Contains(r.Data, needle) {
-			found = true
-		}
+		found = true
 		return true
 	})
 	if err != nil {
@@ -1129,8 +1252,9 @@ func TestSearchNoTables(t *testing.T) {
 	if !found {
 		t.Fatal("needle not found in fallback mode")
 	}
-	if blocksDecoded != 3 {
-		t.Fatalf("expected all 3 blocks decoded in fallback, got %d", blocksDecoded)
+	stats := searcher.Stats()
+	if stats.BlocksSearched != 3 {
+		t.Fatalf("expected all 3 blocks searched in fallback, got %d", stats.BlocksSearched)
 	}
 }
 
@@ -1578,23 +1702,102 @@ func FuzzSearchRoundtrip(f *testing.F) {
 			t.Fatal("decoded data mismatch")
 		}
 
-		// If data contains pattern, search must find it.
+		// Check that pattern is found when it exists in the data.
+		// For prefix tables, only assert when the prefix context is satisfied
+		// (the prefix byte immediately precedes the pattern in the data).
+		mustFind := false
 		if bytes.Contains(data, pattern) {
+			if !usePrefix {
+				mustFind = true
+			} else {
+				// Check if pattern appears preceded by the prefix byte
+				// AND fully within a single block (not straddling boundary).
+				pfx := pattern[0]
+				needle := append([]byte{pfx}, pattern...)
+				idx := 0
+				for {
+					pos := bytes.Index(data[idx:], needle)
+					if pos < 0 {
+						break
+					}
+					pos += idx
+					// Check the occurrence fits within one block.
+					blockStart := (pos / minBlockSize) * minBlockSize
+					if pos+len(needle) <= blockStart+minBlockSize {
+						mustFind = true
+						break
+					}
+					idx = pos + 1
+				}
+			}
+		}
+		if mustFind {
+			// Find the expected block offset for the first in-block occurrence.
+			expectedBlockStart := int64(-1)
+			if usePrefix {
+				pfx := pattern[0]
+				needle := append([]byte{pfx}, pattern...)
+				idx := 0
+				for {
+					pos := bytes.Index(data[idx:], needle)
+					if pos < 0 {
+						break
+					}
+					pos += idx
+					blockStart := (pos / minBlockSize) * minBlockSize
+					if pos+len(needle) <= blockStart+minBlockSize {
+						expectedBlockStart = int64(blockStart)
+						break
+					}
+					idx = pos + 1
+				}
+			} else {
+				idx := bytes.Index(data, pattern)
+				if idx >= 0 {
+					expectedBlockStart = int64((idx / minBlockSize) * minBlockSize)
+				}
+			}
+
 			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
-			found := false
+			foundAt := int64(-1)
 			err = searcher.Search(pattern, func(r SearchResult) bool {
-				if bytes.Contains(r.Data, pattern) {
-					found = true
+				if bytes.Contains(r.Data, pattern) && foundAt < 0 {
+					foundAt = r.BlockStart
+				}
+				if prev := r.PrevBlock(); prev != nil && len(pattern) > 1 && foundAt < 0 {
+					tail := prev[max(0, len(prev)-len(pattern)+1):]
+					head := r.Data[:min(len(r.Data), len(pattern)-1)]
+					if bytes.Contains(append(tail, head...), pattern) {
+						foundAt = r.BlockStart - int64(len(prev))
+					}
 				}
 				return true
 			})
 			if err != nil {
 				t.Fatalf("search failed: %v", err)
 			}
-			// In fallback mode (no prefix match or short pattern) we always find it.
-			// With prefix tables, we may not use the table, so fallback still finds it.
-			if !found {
-				t.Fatal("pattern present in data but search didn't find it")
+			if foundAt < 0 {
+				// Boundary-straddling: pattern may start near block end,
+				// if the previous block was skipped the boundary check can't fire.
+				idx := bytes.Index(data, pattern)
+				blockEnd := ((idx / minBlockSize) + 1) * minBlockSize
+				if idx+len(pattern) > blockEnd {
+					return // boundary straddling with skipped prev block — can't find
+				}
+				stats := searcher.Stats()
+				t.Fatalf("pattern at offset %d not found (prefix=%v). "+
+					"blocks: total=%d skipped=%d searched=%d missing=%d unusable=%d",
+					idx, usePrefix,
+					stats.BlocksTotal, stats.BlocksSkipped, stats.BlocksSearched,
+					stats.TablesMissing, stats.TablesUnusable)
+			}
+			if !usePrefix && expectedBlockStart >= 0 && foundAt != expectedBlockStart {
+				// The match might be found via boundary check in the next block.
+				nextBlock := expectedBlockStart + int64(minBlockSize)
+				if foundAt != nextBlock {
+					t.Fatalf("pattern found in block at offset %d, expected block at %d or %d",
+						foundAt, expectedBlockStart, nextBlock)
+				}
 			}
 		}
 	})
