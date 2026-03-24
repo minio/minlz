@@ -2,8 +2,11 @@ package minlz
 
 import (
 	"math/bits"
+	"sync"
 	"unsafe"
 )
+
+var byteTablePool sync.Pool
 
 // buildSearchTable generates a search table for blockData.
 // overlap contains up to matchLen-1 bytes from the next block (for boundary patterns).
@@ -19,7 +22,35 @@ func (c *SearchTableConfig) buildSearchTable(blockData, overlap []byte) ([]byte,
 
 	switch c.tableType {
 	case searchTableTypeNoPrefix:
-		buildTableNoPrefix(table, blockData, nPositions, c.baseTableSize, c.matchLen)
+		btSize := 1 << c.baseTableSize
+		var bt []byte
+		if v := byteTablePool.Get(); v != nil {
+			bt = v.([]byte)
+			if cap(bt) >= btSize {
+				bt = bt[:btSize]
+			} else {
+				bt = make([]byte, btSize)
+			}
+		} else {
+			bt = make([]byte, btSize)
+		}
+		clear(bt)
+		buildTableNoPrefixByte(bt, blockData, nPositions, c.baseTableSize, c.matchLen)
+		// Handle overlap tail positions (few entries, use byte table).
+		if len(overlap) > 0 {
+			ml := int(c.matchLen)
+			var tmp [16]byte
+			start := max(0, len(blockData)-ml+1)
+			for pos := start; pos < len(blockData); pos++ {
+				n := copy(tmp[:], blockData[pos:])
+				copy(tmp[n:], overlap)
+				h := hashValue(readLE64Pad(tmp[:ml]), c.baseTableSize, c.matchLen)
+				store8(bt, int(h), 0xFF)
+			}
+		}
+		packBits(tableBytes, bt)
+		byteTablePool.Put(bt)
+		goto packed
 	case searchTableTypeBytePrefix:
 		var lookup [256]bool
 		for _, p := range c.prefixBytes {
@@ -78,6 +109,7 @@ func (c *SearchTableConfig) buildSearchTable(blockData, overlap []byte) ([]byte,
 		}
 	}
 
+packed:
 	setBits, totalBits := tablePopulation(table)
 	if totalBits > 0 && setBits*100/totalBits > c.maxPopPct {
 		return nil, 0
@@ -91,10 +123,26 @@ func setBit(table []uint64, h uint32) {
 	table[h>>6] |= 1 << (h & 63)
 }
 
-// buildTableNoPrefix indexes all positions. Branchless inner loop.
-// nPositions is the number of starting positions to index (len of original block).
-// data may be longer (includes overlap for boundary reads).
-func buildTableNoPrefix(table []uint64, data []byte, nPositions int, tableSize, matchLen uint8) {
+// packBitsGeneric converts a byte-per-entry table (0x00 or 0xFF) into a bit-packed table.
+// dst must be len(src)/8 bytes.
+func packBitsGeneric(dst, src []byte) {
+	base := 0
+	for i := range dst {
+		dst[i] = (load8(src, base+0) & 0x01) |
+			(load8(src, base+1) & 0x02) |
+			(load8(src, base+2) & 0x04) |
+			(load8(src, base+3) & 0x08) |
+			(load8(src, base+4) & 0x10) |
+			(load8(src, base+5) & 0x20) |
+			(load8(src, base+6) & 0x40) |
+			(load8(src, base+7) & 0x80)
+		base += 8
+	}
+}
+
+// buildTableNoPrefixByte indexes all positions into a byte-per-entry table.
+// Each entry is set to 0xFF when present. The table must be 1<<tableSize bytes.
+func buildTableNoPrefixByte(table []byte, data []byte, nPositions int, tableSize, matchLen uint8) {
 	n := nPositions - int(matchLen) + 1
 	if n <= 0 {
 		return
@@ -105,48 +153,291 @@ func buildTableNoPrefix(table []uint64, data []byte, nPositions int, tableSize, 
 	switch matchLen {
 	case 1:
 		for i := range n {
-			setBit(table, hashValue1(uint64(data[i])))
+			store8(table, int(hashValue1(uint64(data[i]))), 0xFF)
 		}
 	case 2:
 		if tableSize >= 16 {
 			for i := range mainEnd {
-				setBit(table, hashValue2Full(load64(data, i)))
+				store8(table, int(hashValue2Full(load64(data, i))), 0xFF)
 			}
 		} else {
-			for i := range mainEnd {
-				setBit(table, hashValue2(load64(data, i), tableSize))
-			}
+			buildML2Byte(table, data, mainEnd, tableSize)
 		}
 	case 3:
-		for i := range mainEnd {
-			setBit(table, hashValue3(load64(data, i), tableSize))
-		}
+		buildML3Byte(table, data, mainEnd, tableSize)
 	case 4:
-		for i := range mainEnd {
-			setBit(table, hashValue4(load64(data, i), tableSize))
-		}
+		buildML4Byte(table, data, mainEnd, tableSize)
 	case 5:
-		for i := range mainEnd {
-			setBit(table, hashValue5(load64(data, i), tableSize))
-		}
+		buildML5Byte(table, data, mainEnd, tableSize)
 	case 6:
-		for i := range mainEnd {
-			setBit(table, hashValue6(load64(data, i), tableSize))
-		}
+		buildML6Byte(table, data, mainEnd, tableSize)
 	case 7:
-		for i := range mainEnd {
-			setBit(table, hashValue7(load64(data, i), tableSize))
-		}
+		buildML7Byte(table, data, mainEnd, tableSize)
 	case 8:
-		for i := range mainEnd {
-			setBit(table, hashValue8(load64(data, i), tableSize))
-		}
+		buildML8Byte(table, data, mainEnd, tableSize)
 	}
 
 	// Tail: positions where 8-byte read isn't safe.
 	for i := mainEnd; i < n; i++ {
 		v := readLE64Pad(data[i:])
-		setBit(table, hashValue(v, tableSize, matchLen))
+		store8(table, int(hashValue(v, tableSize, matchLen)), 0xFF)
+	}
+}
+
+func buildML2Byte(table, data []byte, n int, tableSize uint8) {
+	switch tableSize {
+	case 8:
+		for i := range n { store8(table, int(hashValue2(load64(data, i), 8)), 0xFF) }
+	case 9:
+		for i := range n { store8(table, int(hashValue2(load64(data, i), 9)), 0xFF) }
+	case 10:
+		for i := range n { store8(table, int(hashValue2(load64(data, i), 10)), 0xFF) }
+	case 11:
+		for i := range n { store8(table, int(hashValue2(load64(data, i), 11)), 0xFF) }
+	case 12:
+		for i := range n { store8(table, int(hashValue2(load64(data, i), 12)), 0xFF) }
+	case 13:
+		for i := range n { store8(table, int(hashValue2(load64(data, i), 13)), 0xFF) }
+	case 14:
+		for i := range n { store8(table, int(hashValue2(load64(data, i), 14)), 0xFF) }
+	case 15:
+		for i := range n { store8(table, int(hashValue2(load64(data, i), 15)), 0xFF) }
+	default:
+		for i := range n { store8(table, int(hashValue2(load64(data, i), tableSize)), 0xFF) }
+	}
+}
+
+func buildML3Byte(table, data []byte, n int, tableSize uint8) {
+	switch tableSize {
+	case 8:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 8)), 0xFF) }
+	case 9:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 9)), 0xFF) }
+	case 10:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 10)), 0xFF) }
+	case 11:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 11)), 0xFF) }
+	case 12:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 12)), 0xFF) }
+	case 13:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 13)), 0xFF) }
+	case 14:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 14)), 0xFF) }
+	case 15:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 15)), 0xFF) }
+	case 16:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 16)), 0xFF) }
+	case 17:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 17)), 0xFF) }
+	case 18:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 18)), 0xFF) }
+	case 19:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 19)), 0xFF) }
+	case 20:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 20)), 0xFF) }
+	case 21:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 21)), 0xFF) }
+	case 22:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 22)), 0xFF) }
+	case 23:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), 23)), 0xFF) }
+	default:
+		for i := range n { store8(table, int(hashValue3(load64(data, i), tableSize)), 0xFF) }
+	}
+}
+
+func buildML4Byte(table, data []byte, n int, tableSize uint8) {
+	switch tableSize {
+	case 8:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 8)), 0xFF) }
+	case 9:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 9)), 0xFF) }
+	case 10:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 10)), 0xFF) }
+	case 11:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 11)), 0xFF) }
+	case 12:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 12)), 0xFF) }
+	case 13:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 13)), 0xFF) }
+	case 14:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 14)), 0xFF) }
+	case 15:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 15)), 0xFF) }
+	case 16:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 16)), 0xFF) }
+	case 17:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 17)), 0xFF) }
+	case 18:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 18)), 0xFF) }
+	case 19:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 19)), 0xFF) }
+	case 20:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 20)), 0xFF) }
+	case 21:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 21)), 0xFF) }
+	case 22:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 22)), 0xFF) }
+	case 23:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), 23)), 0xFF) }
+	default:
+		for i := range n { store8(table, int(hashValue4(load64(data, i), tableSize)), 0xFF) }
+	}
+}
+
+func buildML5Byte(table, data []byte, n int, tableSize uint8) {
+	switch tableSize {
+	case 8:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 8)), 0xFF) }
+	case 9:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 9)), 0xFF) }
+	case 10:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 10)), 0xFF) }
+	case 11:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 11)), 0xFF) }
+	case 12:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 12)), 0xFF) }
+	case 13:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 13)), 0xFF) }
+	case 14:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 14)), 0xFF) }
+	case 15:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 15)), 0xFF) }
+	case 16:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 16)), 0xFF) }
+	case 17:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 17)), 0xFF) }
+	case 18:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 18)), 0xFF) }
+	case 19:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 19)), 0xFF) }
+	case 20:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 20)), 0xFF) }
+	case 21:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 21)), 0xFF) }
+	case 22:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 22)), 0xFF) }
+	case 23:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), 23)), 0xFF) }
+	default:
+		for i := range n { store8(table, int(hashValue5(load64(data, i), tableSize)), 0xFF) }
+	}
+}
+
+func buildML6Byte(table, data []byte, n int, tableSize uint8) {
+	switch tableSize {
+	case 8:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 8)), 0xFF) }
+	case 9:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 9)), 0xFF) }
+	case 10:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 10)), 0xFF) }
+	case 11:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 11)), 0xFF) }
+	case 12:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 12)), 0xFF) }
+	case 13:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 13)), 0xFF) }
+	case 14:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 14)), 0xFF) }
+	case 15:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 15)), 0xFF) }
+	case 16:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 16)), 0xFF) }
+	case 17:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 17)), 0xFF) }
+	case 18:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 18)), 0xFF) }
+	case 19:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 19)), 0xFF) }
+	case 20:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 20)), 0xFF) }
+	case 21:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 21)), 0xFF) }
+	case 22:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 22)), 0xFF) }
+	case 23:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), 23)), 0xFF) }
+	default:
+		for i := range n { store8(table, int(hashValue6(load64(data, i), tableSize)), 0xFF) }
+	}
+}
+
+func buildML7Byte(table, data []byte, n int, tableSize uint8) {
+	switch tableSize {
+	case 8:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 8)), 0xFF) }
+	case 9:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 9)), 0xFF) }
+	case 10:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 10)), 0xFF) }
+	case 11:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 11)), 0xFF) }
+	case 12:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 12)), 0xFF) }
+	case 13:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 13)), 0xFF) }
+	case 14:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 14)), 0xFF) }
+	case 15:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 15)), 0xFF) }
+	case 16:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 16)), 0xFF) }
+	case 17:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 17)), 0xFF) }
+	case 18:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 18)), 0xFF) }
+	case 19:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 19)), 0xFF) }
+	case 20:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 20)), 0xFF) }
+	case 21:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 21)), 0xFF) }
+	case 22:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 22)), 0xFF) }
+	case 23:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), 23)), 0xFF) }
+	default:
+		for i := range n { store8(table, int(hashValue7(load64(data, i), tableSize)), 0xFF) }
+	}
+}
+
+func buildML8Byte(table, data []byte, n int, tableSize uint8) {
+	switch tableSize {
+	case 8:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 8)), 0xFF) }
+	case 9:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 9)), 0xFF) }
+	case 10:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 10)), 0xFF) }
+	case 11:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 11)), 0xFF) }
+	case 12:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 12)), 0xFF) }
+	case 13:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 13)), 0xFF) }
+	case 14:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 14)), 0xFF) }
+	case 15:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 15)), 0xFF) }
+	case 16:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 16)), 0xFF) }
+	case 17:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 17)), 0xFF) }
+	case 18:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 18)), 0xFF) }
+	case 19:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 19)), 0xFF) }
+	case 20:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 20)), 0xFF) }
+	case 21:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 21)), 0xFF) }
+	case 22:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 22)), 0xFF) }
+	case 23:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), 23)), 0xFF) }
+	default:
+		for i := range n { store8(table, int(hashValue8(load64(data, i), tableSize)), 0xFF) }
 	}
 }
 

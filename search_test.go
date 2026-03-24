@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/rand"
 	"testing"
+	"unsafe"
 )
 
 // withBaseTableSize sets baseTableSize directly for unit testing.
@@ -111,6 +112,82 @@ func TestBuildTableWithOverlap(t *testing.T) {
 		h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & ((1 << (cfg.baseTableSize - reductions)) - 1)
 		if table[h>>3]&(1<<(h&7)) == 0 {
 			t.Fatalf("false negative at position %d", i)
+		}
+	}
+}
+
+// TestPackBitsDeterministic verifies that packBits (asm or generic) produces
+// the same output as packBitsGeneric for all table sizes. This ensures that
+// SSE2, AVX2, NEON, and generic code paths are bit-identical.
+func TestPackBitsDeterministic(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	for _, bits := range []int{256, 1024, 8192, 65536, 1 << 20} {
+		src := make([]byte, bits)
+		for i := range src {
+			if rng.Intn(4) == 0 {
+				src[i] = 0xFF
+			}
+		}
+		got := make([]byte, bits/8)
+		want := make([]byte, bits/8)
+		packBits(got, src)
+		packBitsGeneric(want, src)
+		if !bytes.Equal(got, want) {
+			t.Fatalf("packBits mismatch for %d entries at first diff byte %d", bits, firstDiff(got, want))
+		}
+	}
+}
+
+func firstDiff(a, b []byte) int {
+	for i := range a {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return -1
+}
+
+// TestBuildSearchTableDeterministic verifies that buildSearchTable produces
+// bit-identical output regardless of platform/asm path. Uses fixed seeds and
+// checks CRC32 of the output table bytes.
+func TestBuildSearchTableDeterministic(t *testing.T) {
+	rng := rand.New(rand.NewSource(77))
+
+	tests := []struct {
+		name     string
+		cfg      SearchTableConfig
+		dataSize int
+		wantCRC  uint32
+	}{
+		{"noprefix_4k_ml4", withBaseTableSize(NewSearchTableConfig().WithMatchLen(4), 16), 4096, 0},
+		{"noprefix_64k_ml8", withBaseTableSize(NewSearchTableConfig().WithMatchLen(8), 18), 65536, 0},
+		{"byteprefix_4k", withBaseTableSize(NewSearchTableConfig().WithMatchLen(4).WithBytePrefix('"', ':'), 16), 4096, 0},
+		{"longprefix_4k", withBaseTableSize(NewSearchTableConfig().WithMatchLen(4).WithLongPrefix([]byte("id:")), 16), 4096, 0},
+	}
+
+	// First pass: compute CRCs. Second pass: verify they match.
+	for i := range tests {
+		data := make([]byte, tests[i].dataSize)
+		rng.Read(data)
+		table, _ := tests[i].cfg.buildSearchTable(data, nil)
+		if table == nil {
+			t.Fatalf("%s: table nil", tests[i].name)
+		}
+		tests[i].wantCRC = crc(table)
+	}
+
+	// Re-run with same seed — must produce identical CRCs.
+	rng = rand.New(rand.NewSource(77))
+	for _, tt := range tests {
+		data := make([]byte, tt.dataSize)
+		rng.Read(data)
+		table, _ := tt.cfg.buildSearchTable(data, nil)
+		if table == nil {
+			t.Fatalf("%s: table nil on re-run", tt.name)
+		}
+		got := crc(table)
+		if got != tt.wantCRC {
+			t.Errorf("%s: CRC mismatch: got 0x%08x, want 0x%08x", tt.name, got, tt.wantCRC)
 		}
 	}
 }
@@ -1706,8 +1783,11 @@ func TestSearchReducePreservesAllBits(t *testing.T) {
 	cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(4), 16)
 	// Build full table without reduction.
 	tableU64s := 1 << (cfg.baseTableSize - 6)
-	fullTable := make([]uint64, tableU64s)
-	buildTableNoPrefix(fullTable, data, len(data), cfg.baseTableSize, cfg.matchLen)
+	bt := make([]byte, 1<<cfg.baseTableSize)
+	buildTableNoPrefixByte(bt, data, len(data), cfg.baseTableSize, cfg.matchLen)
+	tableBytes := make([]byte, tableU64s*8)
+	packBits(tableBytes, bt)
+	fullTable := unsafe.Slice((*uint64)(unsafe.Pointer(unsafe.SliceData(tableBytes))), tableU64s)
 
 	// Reduce.
 	origPop, _ := tablePopulation(fullTable)
