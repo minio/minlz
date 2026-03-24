@@ -101,9 +101,9 @@ type BlockSearcher struct {
 	blockReductions uint8
 	blockInfo       SearchTableConfig
 
-	decoded    [2][]byte // alternating decode buffers
-	decIdx     int      // which buffer was last used (0 or 1)
-	prevBlock  []byte   // points into decoded[(decIdx+1)&1], nil if skipped
+	decoded    [2][]byte      // alternating decode buffers
+	decIdx     int            // which buffer was last used (0 or 1)
+	prevBlock  []byte         // points into decoded[(decIdx+1)&1], nil if skipped
 	deferred   *deferredMatch // pending ErrSearchForward re-dispatch
 	maxBlock   int
 	readHeader bool
@@ -641,7 +641,7 @@ func patternCanMatch(cfg *SearchTableConfig, table []byte, reductions uint8, pat
 	switch cfg.tableType {
 	case searchTableTypeNoPrefix:
 		if len(pattern) < int(cfg.matchLen) {
-				return false, true
+			return false, true
 		}
 		// Check matchLen-windows. If any window is absent, the pattern cannot
 		// start at a position where all windows fit within this block.
