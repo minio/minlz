@@ -764,38 +764,40 @@ func patternCanMatchWithPrefixMask(cfg *SearchTableConfig, table []byte, mask ui
 		return false, true
 	}
 
-	present := 0
-	absent := 0
-	for i := 0; i <= len(pattern)-ml; i++ {
-		if i > 0 {
-			b := pattern[i-1]
-			if pfxMask[b>>3]&(1<<(b&7)) == 0 {
-				continue
-			}
-		} else {
+	// Check prefix-context windows in pattern order. For a boundary match
+	// (pattern straddling block end), only the first K windows are in the
+	// current block. So if the first prefix window is absent, only the raw
+	// fallback matters. If the first is present but a later one is absent,
+	// it could be a legitimate boundary match.
+	checked := 0
+	firstCheckedPresent := false
+	for i := 1; i <= len(pattern)-ml; i++ {
+		b := pattern[i-1]
+		if pfxMask[b>>3]&(1<<(b&7)) == 0 {
 			continue
 		}
 		v := readLE64Pad(pattern[i:])
 		h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
-		if table[h>>3]&(1<<(h&7)) != 0 {
-			present++
-		} else {
-			absent++
+		present := table[h>>3]&(1<<(h&7)) != 0
+		if checked == 0 {
+			firstCheckedPresent = present
+		}
+		checked++
+		if !present {
+			if firstCheckedPresent {
+				return true, true
+			}
+			break
 		}
 	}
-	if present+absent == 0 {
+	if checked == 0 {
 		return false, true // no prefix context in pattern
 	}
-	if absent == 0 {
-		return true, true // all prefix windows present
+	if firstCheckedPresent {
+		return true, true
 	}
-	if present > 0 {
-		return true, true // some present, some absent — could be boundary
-	}
-	// All prefix-context windows absent. The pattern could still start at a
-	// block boundary where the prefix byte is in the block data (indexed by
-	// the overlap tail). Check the first matchLen bytes of the pattern as a
-	// raw lookup — this matches what the overlap tail hashes.
+	// First prefix window absent. Check raw fallback for boundary case
+	// where the prefix byte is in the previous block's overlap.
 	v := readLE64Pad(pattern[:ml])
 	h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
 	if table[h>>3]&(1<<(h&7)) != 0 {

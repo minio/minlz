@@ -306,6 +306,319 @@ func TestPatternCanMatch(t *testing.T) {
 	}
 }
 
+// TestPatternCanMatchPrefixOrdering verifies that patternCanMatchWithPrefixMask
+// correctly uses window ordering: only the first prefix-context window determines
+// boundary match eligibility. A false positive on a LATER window must not prevent skipping.
+func TestPatternCanMatchPrefixOrdering(t *testing.T) {
+	ml := uint8(6)
+	tableSize := uint8(16)
+	cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(int(ml)).WithBytePrefix(' ', '.'), int(tableSize))
+
+	pattern := []byte(" 20.38.172.36]")
+	// Windows with prefix context:
+	// W0 at i=1: prefix=' ', hash("20.38.")
+	// W1 at i=4: prefix='.', hash("38.172")
+	// W2 at i=7: prefix='.', hash("172.36")
+	// Raw fallback: hash(" 20.38") (first ml bytes)
+
+	mask := uint32(1<<(tableSize)) - 1
+	h0 := hashValue(readLE64Pad(pattern[1:]), tableSize, ml) & mask
+	h1 := hashValue(readLE64Pad(pattern[4:]), tableSize, ml) & mask
+	h2 := hashValue(readLE64Pad(pattern[7:]), tableSize, ml) & mask
+	hRaw := hashValue(readLE64Pad(pattern[:ml]), tableSize, ml) & mask
+
+	// Verify hashes are distinct so our tests are meaningful.
+	hashes := map[uint32]string{h0: "W0", h1: "W1", h2: "W2", hRaw: "Raw"}
+	if len(hashes) < 4 {
+		t.Skipf("hash collision among test windows — can't test ordering reliably")
+	}
+
+	makeTable := func(bits ...uint32) []byte {
+		tbl := make([]byte, 1<<(tableSize-3))
+		for _, b := range bits {
+			tbl[b>>3] |= 1 << (b & 7)
+		}
+		return tbl
+	}
+
+	tests := []struct {
+		name       string
+		bits       []uint32
+		wantCanUse bool
+		wantMatch  bool
+	}{
+		{"all_present", []uint32{h0, h1, h2}, true, true},
+		{"all_absent_raw_absent", nil, true, false},
+		{"all_absent_raw_present", []uint32{hRaw}, true, true},
+
+		// First present, later absent → boundary match possible.
+		{"W0_only", []uint32{h0}, true, true},
+		{"W0_W1_only", []uint32{h0, h1}, true, true},
+
+		// KEY CASES: first absent, later present → must NOT "might match"
+		// unless raw fallback is set. Old code got this wrong.
+		{"W1_only", []uint32{h1}, true, false},
+		{"W2_only", []uint32{h2}, true, false},
+		{"W1_W2_only", []uint32{h1, h2}, true, false},
+		{"W1_only_raw_present", []uint32{h1, hRaw}, true, true},
+		{"W2_only_raw_present", []uint32{h2, hRaw}, true, true},
+		{"W1_W2_raw_present", []uint32{h1, h2, hRaw}, true, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tbl := makeTable(tt.bits...)
+			canUse, match := patternCanMatch(&cfg, tbl, 0, pattern)
+			if canUse != tt.wantCanUse || match != tt.wantMatch {
+				t.Errorf("got (canUse=%v, match=%v), want (%v, %v)", canUse, match, tt.wantCanUse, tt.wantMatch)
+			}
+		})
+	}
+}
+
+// TestPatternCanMatchPrefixOrdering_MaskPrefix same as above but with mask prefix (type 3).
+func TestPatternCanMatchPrefixOrdering_MaskPrefix(t *testing.T) {
+	ml := uint8(6)
+	tableSize := uint8(16)
+	cfg := withBaseTableSize(NewSearchTableConfig().WithBytePrefix(' ', '.', '\n'), int(tableSize))
+	// WithBytePrefix with ≤8 creates type 2; force mask prefix type 3 via WithMaskPrefix.
+	var pfxMask [32]byte
+	for _, b := range []byte{' ', '.', '\n'} {
+		pfxMask[b>>3] |= 1 << (b & 7)
+	}
+	cfg = withBaseTableSize(NewSearchTableConfig().WithMatchLen(int(ml)).WithMaskPrefix(pfxMask), int(tableSize))
+
+	pattern := []byte(" 20.38.172.36]")
+	mask := uint32(1<<tableSize) - 1
+	h0 := hashValue(readLE64Pad(pattern[1:]), tableSize, ml) & mask
+	h1 := hashValue(readLE64Pad(pattern[4:]), tableSize, ml) & mask
+	h2 := hashValue(readLE64Pad(pattern[7:]), tableSize, ml) & mask
+	hRaw := hashValue(readLE64Pad(pattern[:ml]), tableSize, ml) & mask
+
+	hashes := map[uint32]string{h0: "W0", h1: "W1", h2: "W2", hRaw: "Raw"}
+	if len(hashes) < 4 {
+		t.Skipf("hash collision among test windows")
+	}
+
+	makeTable := func(bits ...uint32) []byte {
+		tbl := make([]byte, 1<<(tableSize-3))
+		for _, b := range bits {
+			tbl[b>>3] |= 1 << (b & 7)
+		}
+		return tbl
+	}
+
+	// Same key cases: first absent + later present → must fall to raw fallback.
+	tests := []struct {
+		name       string
+		bits       []uint32
+		wantCanUse bool
+		wantMatch  bool
+	}{
+		{"all_present", []uint32{h0, h1, h2}, true, true},
+		{"all_absent", nil, true, false},
+		{"W0_only", []uint32{h0}, true, true},
+		{"W1_only_no_raw", []uint32{h1}, true, false},
+		{"W1_only_with_raw", []uint32{h1, hRaw}, true, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tbl := makeTable(tt.bits...)
+			canUse, match := patternCanMatch(&cfg, tbl, 0, pattern)
+			if canUse != tt.wantCanUse || match != tt.wantMatch {
+				t.Errorf("got (canUse=%v, match=%v), want (%v, %v)", canUse, match, tt.wantCanUse, tt.wantMatch)
+			}
+		})
+	}
+}
+
+// TestPatternCanMatchPrefixNoFalseNegatives builds real tables from data containing
+// known patterns and verifies that patternCanMatch never produces false negatives,
+// across all prefix types and various match lengths.
+func TestPatternCanMatchPrefixNoFalseNegatives(t *testing.T) {
+	rng := rand.New(rand.NewSource(999))
+	blockSize := 16384
+	data := make([]byte, blockSize)
+	rng.Read(data)
+
+	// Embed known patterns at known positions, preceded by prefix bytes.
+	patterns := []struct {
+		prefix  byte
+		payload string
+	}{
+		{' ', "ALPHA.BETA.GAMMA"},
+		{'.', "192.168.1.100"},
+		{'\n', "ERROR: something went wrong"},
+		{' ', "unique_test_pattern_xyz"},
+	}
+	pos := 100
+	for _, p := range patterns {
+		data[pos] = p.prefix
+		copy(data[pos+1:], p.payload)
+		pos += len(p.payload) + 50
+	}
+
+	prefixBytes := []byte{' ', '.', '\n'}
+	var pfxMask [32]byte
+	for _, b := range prefixBytes {
+		pfxMask[b>>3] |= 1 << (b & 7)
+	}
+
+	configs := []struct {
+		name string
+		cfg  SearchTableConfig
+	}{
+		{"bytePrefix", NewSearchTableConfig().WithBytePrefix(prefixBytes...)},
+		{"maskPrefix", NewSearchTableConfig().WithMaskPrefix(pfxMask)},
+	}
+
+	for _, cc := range configs {
+		for _, ml := range []int{2, 4, 6, 8} {
+			for _, ts := range []int{12, 16, 20} {
+				cfg := withBaseTableSize(cc.cfg.WithMatchLen(ml), ts)
+				table, reductions := cfg.buildSearchTable(data, nil)
+				if table == nil {
+					continue
+				}
+				for _, p := range patterns {
+					// Search with prefix context included.
+					search := append([]byte{p.prefix}, p.payload...)
+					if len(search) < ml {
+						continue
+					}
+					canUse, match := patternCanMatch(&cfg, table, reductions, search)
+					if canUse && !match {
+						t.Errorf("%s ml=%d ts=%d: false negative for %q", cc.name, ml, ts, search)
+					}
+
+					// Also search without prefix context — should not false-negative
+					// if any prefix byte appears inside the pattern.
+					if len(p.payload) >= ml {
+						canUse2, match2 := patternCanMatch(&cfg, table, reductions, []byte(p.payload))
+						if canUse2 && !match2 {
+							t.Errorf("%s ml=%d ts=%d: false negative for payload-only %q", cc.name, ml, ts, p.payload)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// TestPatternCanMatchPrefixReductions verifies that the prefix ordering logic
+// works correctly with reduced tables (nonzero reductions).
+func TestPatternCanMatchPrefixReductions(t *testing.T) {
+	rng := rand.New(rand.NewSource(456))
+	data := make([]byte, 4096)
+	rng.Read(data)
+	copy(data[200:], " hello.world.test!")
+
+	cfg := withBaseTableSize(
+		NewSearchTableConfig().WithMatchLen(6).WithBytePrefix(' ', '.').WithMaxReducedPopulation(80),
+		16,
+	)
+	table, reductions := cfg.buildSearchTable(data, nil)
+	if table == nil {
+		t.Fatal("table too populated")
+	}
+	if reductions == 0 {
+		t.Log("warning: no reductions applied, test is less useful")
+	}
+
+	// Pattern that IS in data — must not false-negative.
+	canUse, match := patternCanMatch(&cfg, table, reductions, []byte(" hello.world.test!"))
+	if canUse && !match {
+		t.Error("false negative for pattern in data")
+	}
+
+	// Also with partial prefix context.
+	canUse, match = patternCanMatch(&cfg, table, reductions, []byte("hello.world.test!"))
+	if canUse && !match {
+		t.Error("false negative for partial prefix pattern in data")
+	}
+}
+
+// TestPatternCanMatchPrefixNoPrefixInPattern verifies canUse=false when
+// the pattern has no prefix-context bytes at all.
+func TestPatternCanMatchPrefixNoPrefixInPattern(t *testing.T) {
+	cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(4).WithBytePrefix(' ', '.'), 16)
+	data := make([]byte, 4096)
+	for i := range data {
+		data[i] = byte(i % 251)
+	}
+	table, reductions := cfg.buildSearchTable(data, nil)
+	if table == nil {
+		t.Fatal("table too populated")
+	}
+
+	// Pattern "abcdef" has no ' ' or '.' — should return canUse=false.
+	canUse, _ := patternCanMatch(&cfg, table, reductions, []byte("abcdef"))
+	if canUse {
+		t.Error("expected canUse=false for pattern with no prefix context")
+	}
+}
+
+// TestPatternCanMatchPrefixLaterFalsePositive verifies the fix: a false positive
+// on a LATER prefix window must not prevent skipping when the first window is absent.
+// We construct patterns where only specific windows are present (false positives)
+// and verify that the function correctly falls through to the raw fallback.
+func TestPatternCanMatchPrefixLaterFalsePositive(t *testing.T) {
+	rng := rand.New(rand.NewSource(777))
+	ml := uint8(6)
+	tableSize := uint8(16)
+	cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(int(ml)).WithBytePrefix(' ', '.'), int(tableSize))
+	mask := uint32(1<<tableSize) - 1
+
+	skippedWithFix := 0
+	wouldSkipOldCode := 0
+	total := 0
+
+	for trial := range 500 {
+		// Generate patterns with ' ' and '.' to get multiple prefix windows.
+		// Format: " XX.YYYYYY.ZZZZZZ" — 3 prefix windows.
+		var pat [18]byte
+		rng.Read(pat[:])
+		pat[0] = ' '
+		pat[3] = '.'
+		pat[10] = '.'
+
+		h0 := hashValue(readLE64Pad(pat[1:]), tableSize, ml) & mask
+		h1 := hashValue(readLE64Pad(pat[4:]), tableSize, ml) & mask
+		h2 := hashValue(readLE64Pad(pat[11:]), tableSize, ml) & mask
+		hRaw := hashValue(readLE64Pad(pat[:ml]), tableSize, ml) & mask
+
+		// Skip if any hashes collide — we need distinct bits for a clean test.
+		hSet := map[uint32]bool{h0: true, h1: true, h2: true, hRaw: true}
+		if len(hSet) < 4 {
+			continue
+		}
+
+		// Build a table where only h1 is set (false positive on a later window).
+		tbl := make([]byte, 1<<(tableSize-3))
+		tbl[h1>>3] |= 1 << (h1 & 7)
+
+		canUse, match := patternCanMatch(&cfg, tbl, 0, pat[:])
+		if !canUse {
+			continue
+		}
+		total++
+		if !match {
+			skippedWithFix++
+		}
+
+		// Old code would have returned (true, true) here because present > 0.
+		// Verify the fix correctly returns (true, false).
+		if match {
+			t.Errorf("trial %d: later false positive on W1 prevented skipping (h0=%d h1=%d h2=%d hRaw=%d)",
+				trial, h0, h1, h2, hRaw)
+		}
+
+		_ = wouldSkipOldCode
+	}
+	t.Logf("tested %d patterns, all correctly skipped with fix", total)
+}
+
 func TestWriterSearchTable(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := NewSearchTableConfig().WithMatchLen(4)

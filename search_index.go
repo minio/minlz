@@ -116,7 +116,7 @@ packed:
 		return nil, 0
 	}
 
-	table, reductions := reduceTable(table, setBits, c.maxConflictPct)
+	table, reductions := reduceTable(table, setBits, c.maxReducedPopPct)
 	return tableBytes[:len(table)*8], reductions
 }
 

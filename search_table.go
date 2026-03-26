@@ -16,8 +16,8 @@ const (
 	searchTableMinLog2 = 8  // 256 entries = 32 bytes
 	searchTableMaxLog2 = 23 // matches maxBlockLog
 
-	defaultMaxPopPct      = 70
-	defaultMaxConflictPct = 25
+	defaultMaxPopPct        = 70
+	defaultMaxReducedPopPct = 15
 )
 
 // Hash primes from SPEC_SEARCH.md
@@ -34,24 +34,24 @@ const (
 // SearchTableConfig configures search table generation for a Writer.
 // Use NewSearchTableConfig to create, then chain With* methods to customize.
 type SearchTableConfig struct {
-	matchLen       uint8
-	tableType      uint8
-	baseTableSize  uint8 // log2, computed at writer init from block size
-	prefixBytes    [8]byte
-	prefixMask     [32]byte
-	longPrefix     []byte
-	maxPopPct      int
-	maxConflictPct int
+	matchLen         uint8
+	tableType        uint8
+	baseTableSize    uint8 // log2, computed at writer init from block size
+	prefixBytes      [8]byte
+	prefixMask       [32]byte
+	longPrefix       []byte
+	maxPopPct        int
+	maxReducedPopPct int
 }
 
 // NewSearchTableConfig creates a search table config.
 // Defaults: matchLen=6, no prefix (type 1), auto table size, 70% max population, 25% max conflicts.
 func NewSearchTableConfig() SearchTableConfig {
 	return SearchTableConfig{
-		matchLen:       6,
-		tableType:      searchTableTypeNoPrefix,
-		maxPopPct:      defaultMaxPopPct,
-		maxConflictPct: defaultMaxConflictPct,
+		matchLen:         6,
+		tableType:        searchTableTypeNoPrefix,
+		maxPopPct:        defaultMaxPopPct,
+		maxReducedPopPct: defaultMaxReducedPopPct,
 	}
 }
 
@@ -105,9 +105,10 @@ func (c SearchTableConfig) WithMaxPopulation(pct int) SearchTableConfig {
 	return c
 }
 
-// WithMaxConflicts sets the max accumulated conflict percentage (0-100) for reductions.
-func (c SearchTableConfig) WithMaxConflicts(pct int) SearchTableConfig {
-	c.maxConflictPct = pct
+// WithMaxReducedPopulation sets the max population percentage (0-100) for the
+// reduced table. Reductions stop before exceeding this threshold.
+func (c SearchTableConfig) WithMaxReducedPopulation(pct int) SearchTableConfig {
+	c.maxReducedPopPct = pct
 	return c
 }
 
@@ -199,12 +200,11 @@ func tablePopulation(table []uint64) (setBits, totalBits int) {
 	return setBits, len(table) * 64
 }
 
-// reduceTable OR-folds table halves. Stops when accumulated conflicts
-// exceed maxConflictPct% of the original set bits, or table reaches min 32 bytes (4 uint64s).
+// reduceTable OR-folds table halves. Stops when the reduced table's population
+// would exceed maxReducedPopPct%, or table reaches min 32 bytes (4 uint64s).
 // Returns the reduced table and number of reductions applied.
-func reduceTable(table []uint64, origPopcount, maxConflictPct int) ([]uint64, uint8) {
+func reduceTable(table []uint64, origPopcount, maxReducedPopPct int) ([]uint64, uint8) {
 	if origPopcount == 0 {
-		// Empty table — reduce to minimum size (all zeros is still valid).
 		reductions := uint8(0)
 		for len(table)/2 >= 4 {
 			table = table[:len(table)/2]
@@ -212,8 +212,6 @@ func reduceTable(table []uint64, origPopcount, maxConflictPct int) ([]uint64, ui
 		}
 		return table, reductions
 	}
-	threshold := origPopcount * maxConflictPct / 100
-	totalConflicts := 0
 	reductions := uint8(0)
 
 	// Minimum table: 4 uint64s = 32 bytes = 256 bits.
@@ -222,14 +220,14 @@ func reduceTable(table []uint64, origPopcount, maxConflictPct int) ([]uint64, ui
 		lower := table[:half]
 		upper := table[half:]
 		upper = upper[:len(lower)]
-		conflicts := 0
+		// Compute population after fold.
+		pop := 0
 		for i := range lower {
-			conflicts += bits.OnesCount64(lower[i] & upper[i])
+			pop += bits.OnesCount64(lower[i] | upper[i])
 		}
-		if totalConflicts+conflicts > threshold {
+		if pop*100 > half*64*maxReducedPopPct {
 			break
 		}
-		totalConflicts += conflicts
 		for i := range lower {
 			lower[i] |= upper[i]
 		}
@@ -295,11 +293,11 @@ func parseSearchInfo(payload []byte) (SearchTableConfig, error) {
 		return SearchTableConfig{}, fmt.Errorf("minlz: search info chunk too short")
 	}
 	cfg := SearchTableConfig{
-		tableType:      payload[0],
-		matchLen:       payload[1],
-		baseTableSize:  payload[2],
-		maxPopPct:      defaultMaxPopPct,
-		maxConflictPct: defaultMaxConflictPct,
+		tableType:        payload[0],
+		matchLen:         payload[1],
+		baseTableSize:    payload[2],
+		maxPopPct:        defaultMaxPopPct,
+		maxReducedPopPct: defaultMaxReducedPopPct,
 	}
 	payload = payload[3:]
 	switch cfg.tableType {
