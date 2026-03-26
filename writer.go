@@ -451,7 +451,7 @@ func (w *Writer) EncodeBuffer(buf []byte) (err error) {
 			if searchCfg != nil && n2 > 0 {
 				table, reductions := searchCfg.buildSearchTable(uncompressed, overlap)
 				if table != nil {
-					searchLen = marshalSearchTableChunkTo(obuf[:smc], searchCfg, reductions, table)
+					searchLen = len(appendSearchTableChunk(obuf[:0], searchCfg, reductions, table))
 				}
 			}
 
@@ -594,7 +594,7 @@ func (w *Writer) write(p []byte) (nRet int, errRet error) {
 				table, reductions := searchCfg.buildSearchTable(uncompressed, overlap)
 				if table != nil {
 					// obuf still points to the pool buffer with smc space at front.
-					searchLen = marshalSearchTableChunkTo(inbuf[:smc], searchCfg, reductions, table)
+					searchLen = len(appendSearchTableChunk(inbuf[:0], searchCfg, reductions, table))
 				}
 			}
 
@@ -692,7 +692,7 @@ func (w *Writer) writeFull(inbuf []byte) (errRet error) {
 			if table != nil {
 				// Search chunk is in the original obuf (may have been swapped if incompressible,
 				// but we only reach here for compressible blocks so obuf is unchanged).
-				searchLen = marshalSearchTableChunkTo(obuf[:smc], searchCfg, reductions, table)
+				searchLen = len(appendSearchTableChunk(obuf[:0], searchCfg, reductions, table))
 			}
 		}
 

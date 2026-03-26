@@ -248,71 +248,45 @@ func tableToBytes(table []uint64) []byte {
 	return b
 }
 
+func (c *SearchTableConfig) appendPrefix(dst []byte) []byte {
+	switch c.tableType {
+	case searchTableTypeBytePrefix:
+		return append(dst, c.prefixBytes[:]...)
+	case searchTableTypeMaskPrefix:
+		return append(dst, c.prefixMask[:]...)
+	case searchTableTypeLongPrefix:
+		dst = append(dst, uint8(len(c.longPrefix)-1))
+		return append(dst, c.longPrefix...)
+	}
+	return dst
+}
+
+func (c *SearchTableConfig) appendConfig(dst []byte) []byte {
+	dst = append(dst, c.tableType, c.matchLen, c.baseTableSize)
+	return c.appendPrefix(dst)
+}
+
+func appendChunkHeader(dst []byte, chunkType byte, payloadSize int) []byte {
+	return append(dst, chunkType, uint8(payloadSize), uint8(payloadSize>>8), uint8(payloadSize>>16))
+}
+
 // marshalSearchInfoChunk produces a complete 0x44 chunk.
 func (c *SearchTableConfig) marshalSearchInfoChunk() []byte {
-	payloadSize := 3 + c.prefixSize()
-	chunk := make([]byte, 4+payloadSize)
-	chunk[0] = chunkTypeSearchInfo
-	chunk[1] = uint8(payloadSize)
-	chunk[2] = uint8(payloadSize >> 8)
-	chunk[3] = uint8(payloadSize >> 16)
-	chunk[4] = c.tableType
-	chunk[5] = c.matchLen
-	chunk[6] = c.baseTableSize
-	c.marshalPrefix(chunk[7:])
-	return chunk
+	dst := appendChunkHeader(nil, chunkTypeSearchInfo, 3+c.prefixSize())
+	return c.appendConfig(dst)
 }
 
 // marshalSearchTableChunk produces a complete 0x45 chunk.
 func marshalSearchTableChunk(cfg *SearchTableConfig, reductions uint8, table []byte) []byte {
-	prefixSize := cfg.prefixSize()
-	payloadSize := 3 + prefixSize + 1 + len(table)
-	chunk := make([]byte, 4+payloadSize)
-	chunk[0] = chunkTypeSearchTable
-	chunk[1] = uint8(payloadSize)
-	chunk[2] = uint8(payloadSize >> 8)
-	chunk[3] = uint8(payloadSize >> 16)
-	chunk[4] = cfg.tableType
-	chunk[5] = cfg.matchLen
-	chunk[6] = cfg.baseTableSize
-	off := 7 + cfg.marshalPrefix(chunk[7:])
-	chunk[off] = reductions
-	copy(chunk[off+1:], table)
-	return chunk
+	return appendSearchTableChunk(nil, cfg, reductions, table)
 }
 
-// marshalSearchTableChunkTo writes a 0x45 chunk into dst, returning bytes written.
-// dst must be large enough (use maxChunkSize).
-func marshalSearchTableChunkTo(dst []byte, cfg *SearchTableConfig, reductions uint8, table []byte) int {
-	prefixSize := cfg.prefixSize()
-	payloadSize := 3 + prefixSize + 1 + len(table)
-	dst[0] = chunkTypeSearchTable
-	dst[1] = uint8(payloadSize)
-	dst[2] = uint8(payloadSize >> 8)
-	dst[3] = uint8(payloadSize >> 16)
-	dst[4] = cfg.tableType
-	dst[5] = cfg.matchLen
-	dst[6] = cfg.baseTableSize
-	off := 7 + cfg.marshalPrefix(dst[7:])
-	dst[off] = reductions
-	copy(dst[off+1:], table)
-	return 4 + payloadSize
-}
-
-func (c *SearchTableConfig) marshalPrefix(dst []byte) int {
-	switch c.tableType {
-	case searchTableTypeBytePrefix:
-		copy(dst, c.prefixBytes[:])
-		return 8
-	case searchTableTypeMaskPrefix:
-		copy(dst, c.prefixMask[:])
-		return 32
-	case searchTableTypeLongPrefix:
-		dst[0] = uint8(len(c.longPrefix) - 1)
-		copy(dst[1:], c.longPrefix)
-		return 1 + len(c.longPrefix)
-	}
-	return 0
+// appendSearchTableChunk appends a complete 0x45 chunk to dst.
+func appendSearchTableChunk(dst []byte, cfg *SearchTableConfig, reductions uint8, table []byte) []byte {
+	dst = appendChunkHeader(dst, chunkTypeSearchTable, 3+cfg.prefixSize()+1+len(table))
+	dst = cfg.appendConfig(dst)
+	dst = append(dst, reductions)
+	return append(dst, table...)
 }
 
 // parseSearchInfo parses the payload (after chunk header) of a 0x44 chunk.

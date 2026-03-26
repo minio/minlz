@@ -883,21 +883,53 @@ func TestBlockTableIndexCorrectness(t *testing.T) {
 }
 
 func FuzzSearchNoFalseNegatives(f *testing.F) {
-	f.Add([]byte("hello world test data"), 4, 12)
-	f.Fuzz(func(t *testing.T, data []byte, matchLen, tableSize int) {
-		if len(data) < 16 || matchLen < 1 || matchLen > 8 || tableSize < 8 || tableSize > 20 {
+	seeds := [][]byte{
+		bytes.Repeat([]byte("hello world test data"), 15),
+		bytes.Repeat([]byte("A"), 100),
+	}
+	// Deterministic pseudo-random seed.
+	prng := make([]byte, 400)
+	for i := range prng {
+		prng[i] = byte(i*179 + 83)
+	}
+	seeds = append(seeds, prng)
+	for _, data := range seeds {
+		for matchLen := 1; matchLen <= 8; matchLen++ {
+			for tableSize := 8; tableSize <= 23; tableSize++ {
+				f.Add(data, matchLen, tableSize, []byte(nil))
+				if matchLen > 1 {
+					f.Add(data, matchLen, tableSize, bytes.Repeat([]byte("Z"), matchLen-1))
+				}
+			}
+		}
+	}
+
+	f.Fuzz(func(t *testing.T, data []byte, matchLen, tableSize int, overlap []byte) {
+		if len(data) < 256 || matchLen < 1 || matchLen > 8 || tableSize < 8 || tableSize > 23 {
 			return
 		}
+		if len(overlap) > matchLen-1 {
+			overlap = overlap[:matchLen-1]
+		}
 		cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(matchLen), tableSize)
-		table, reductions := cfg.buildSearchTable(data, nil)
+		table, reductions := cfg.buildSearchTable(data, overlap)
 		if table == nil {
 			return // too populated
 		}
-		for i := 0; i <= len(data)-matchLen; i++ {
-			v := readLE64Pad(data[i:])
-			h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & ((1 << (cfg.baseTableSize - reductions)) - 1)
+		combined := data
+		if len(overlap) > 0 {
+			combined = append(append([]byte{}, data...), overlap...)
+		}
+		mask := uint32((1 << (cfg.baseTableSize - reductions)) - 1)
+		// Every position in data must have its bit set.
+		for i := 0; i < len(data); i++ {
+			if i+int(cfg.matchLen) > len(combined) {
+				break
+			}
+			v := readLE64Pad(combined[i:])
+			h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
 			if table[h>>3]&(1<<(h&7)) == 0 {
-				t.Fatalf("false negative at pos %d (ml=%d ts=%d red=%d)", i, matchLen, tableSize, reductions)
+				t.Fatalf("false negative at pos %d (ml=%d ts=%d red=%d overlap=%d)", i, matchLen, tableSize, reductions, len(overlap))
 			}
 		}
 	})
@@ -2182,16 +2214,16 @@ func TestCanBoundaryMatch(t *testing.T) {
 		pattern string
 		want    bool
 	}{
-		{"hello world", "world!", true},    // "world" suffix is prefix of "world!"
-		{"hello world", "xyzzy", false},    // no suffix of prev starts pattern
-		{"abcdef", "efgh", true},           // "ef" suffix matches "ef" prefix
-		{"abcdef", "f_extra", true},        // "f" suffix matches "f" prefix
-		{"abcdef", "ghij", false},          // no match
-		{"", "anything", false},            // empty prev
-		{"data", "d", false},               // single-byte pattern can't straddle
-		{"aaaa", "aaaa_end", true},         // full prev is prefix
-		{"xxABC", "ABCdef", true},          // 3-byte suffix
-		{"random bytes", "NEEDLE", false},  // no overlap
+		{"hello world", "world!", true},   // "world" suffix is prefix of "world!"
+		{"hello world", "xyzzy", false},   // no suffix of prev starts pattern
+		{"abcdef", "efgh", true},          // "ef" suffix matches "ef" prefix
+		{"abcdef", "f_extra", true},       // "f" suffix matches "f" prefix
+		{"abcdef", "ghij", false},         // no match
+		{"", "anything", false},           // empty prev
+		{"data", "d", false},              // single-byte pattern can't straddle
+		{"aaaa", "aaaa_end", true},        // full prev is prefix
+		{"xxABC", "ABCdef", true},         // 3-byte suffix
+		{"random bytes", "NEEDLE", false}, // no overlap
 	}
 	for _, tt := range tests {
 		got := canBoundaryMatch([]byte(tt.prev), []byte(tt.pattern))

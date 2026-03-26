@@ -19,7 +19,7 @@ func mainSearch(args []string) {
 
 		count   = fs.Bool("c", false, "Only print count of matching blocks/lines")
 		noColor = fs.Bool("no-color", false, "Disable colored output")
-		lineN   = fs.Bool("n", false, "Print line numbers")
+		lineN   = fs.Bool("n", false, "Print match line numbers")
 		bail    = fs.Bool("bail", false, "Return error if search tables cannot be used")
 		quiet   = fs.Bool("q", false, "Quiet: only set exit code (0=found, 1=not found)")
 		lines   = fs.Bool("l", true, "Print matching lines instead of whole blocks")
@@ -122,15 +122,12 @@ func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats
 
 	matchCount := 0
 	lineOffset := int64(1)
+	lastLineEnd := int64(-1)
 
 	err = searcher.Search(pattern, func(r minlz.SearchResult) error {
-		matchCount++
 		found = true
 		if opts.quiet {
 			return fmt.Errorf("done")
-		}
-		if opts.count {
-			return nil
 		}
 
 		prefix := ""
@@ -139,15 +136,27 @@ func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats
 		}
 
 		if opts.lines {
-			line := extractLine(r, pattern)
+			// Skip matches within an already-emitted line.
+			if r.StreamOffset < lastLineEnd {
+				return nil
+			}
+			line, endOff := extractLine(r, pattern)
+			lastLineEnd = r.StreamOffset + int64(endOff)
+			matchCount++
+			if opts.count {
+				return nil
+			}
 			if opts.lineNums {
 				fmt.Printf("%s%d:%d:%s\n", prefix, lineOffset, r.StreamOffset, line)
 			} else {
 				fmt.Printf("%s%d:%s\n", prefix, r.StreamOffset, line)
 			}
-			// Line offset tracking is approximate when blocks are skipped.
 			lineOffset++
 		} else {
+			matchCount++
+			if opts.count {
+				return nil
+			}
 			fmt.Printf("%s%d:\n", prefix, r.StreamOffset)
 		}
 		return nil
@@ -171,8 +180,9 @@ func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats
 }
 
 // extractLine extracts the full line containing the match from the block context.
-func extractLine(r minlz.SearchResult, pattern []byte) string {
-	// Build the relevant data window.
+// extractLine extracts the full line containing the match.
+// Returns the line and the distance from the match start to the line end.
+func extractLine(r minlz.SearchResult, pattern []byte) (string, int) {
 	var data []byte
 	var matchPos int
 	if r.Blocks[0] != nil {
@@ -183,7 +193,6 @@ func extractLine(r minlz.SearchResult, pattern []byte) string {
 		matchPos = r.Offset
 	}
 
-	// Find line boundaries around the match.
 	lineStart := bytes.LastIndexByte(data[:matchPos], '\n')
 	if lineStart < 0 {
 		lineStart = 0
@@ -196,5 +205,5 @@ func extractLine(r minlz.SearchResult, pattern []byte) string {
 	} else {
 		lineEnd += matchPos + len(pattern)
 	}
-	return string(data[lineStart:lineEnd])
+	return string(data[lineStart:lineEnd]), lineEnd - matchPos
 }

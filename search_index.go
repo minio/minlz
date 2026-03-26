@@ -1,6 +1,7 @@
 package minlz
 
 import (
+	"bytes"
 	"math/bits"
 	"sync"
 	"unsafe"
@@ -187,257 +188,479 @@ func buildTableNoPrefixByte(table []byte, data []byte, nPositions int, tableSize
 func buildML2Byte(table, data []byte, n int, tableSize uint8) {
 	switch tableSize {
 	case 8:
-		for i := range n { store8(table, int(hashValue2(load64(data, i), 8)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue2(load64(data, i), 8)), 0xFF)
+		}
 	case 9:
-		for i := range n { store8(table, int(hashValue2(load64(data, i), 9)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue2(load64(data, i), 9)), 0xFF)
+		}
 	case 10:
-		for i := range n { store8(table, int(hashValue2(load64(data, i), 10)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue2(load64(data, i), 10)), 0xFF)
+		}
 	case 11:
-		for i := range n { store8(table, int(hashValue2(load64(data, i), 11)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue2(load64(data, i), 11)), 0xFF)
+		}
 	case 12:
-		for i := range n { store8(table, int(hashValue2(load64(data, i), 12)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue2(load64(data, i), 12)), 0xFF)
+		}
 	case 13:
-		for i := range n { store8(table, int(hashValue2(load64(data, i), 13)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue2(load64(data, i), 13)), 0xFF)
+		}
 	case 14:
-		for i := range n { store8(table, int(hashValue2(load64(data, i), 14)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue2(load64(data, i), 14)), 0xFF)
+		}
 	case 15:
-		for i := range n { store8(table, int(hashValue2(load64(data, i), 15)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue2(load64(data, i), 15)), 0xFF)
+		}
 	default:
-		for i := range n { store8(table, int(hashValue2(load64(data, i), tableSize)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue2(load64(data, i), tableSize)), 0xFF)
+		}
 	}
 }
 
 func buildML3Byte(table, data []byte, n int, tableSize uint8) {
 	switch tableSize {
 	case 8:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 8)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 8)), 0xFF)
+		}
 	case 9:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 9)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 9)), 0xFF)
+		}
 	case 10:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 10)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 10)), 0xFF)
+		}
 	case 11:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 11)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 11)), 0xFF)
+		}
 	case 12:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 12)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 12)), 0xFF)
+		}
 	case 13:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 13)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 13)), 0xFF)
+		}
 	case 14:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 14)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 14)), 0xFF)
+		}
 	case 15:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 15)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 15)), 0xFF)
+		}
 	case 16:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 16)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 16)), 0xFF)
+		}
 	case 17:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 17)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 17)), 0xFF)
+		}
 	case 18:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 18)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 18)), 0xFF)
+		}
 	case 19:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 19)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 19)), 0xFF)
+		}
 	case 20:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 20)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 20)), 0xFF)
+		}
 	case 21:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 21)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 21)), 0xFF)
+		}
 	case 22:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 22)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 22)), 0xFF)
+		}
 	case 23:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), 23)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), 23)), 0xFF)
+		}
 	default:
-		for i := range n { store8(table, int(hashValue3(load64(data, i), tableSize)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue3(load64(data, i), tableSize)), 0xFF)
+		}
 	}
 }
 
 func buildML4Byte(table, data []byte, n int, tableSize uint8) {
 	switch tableSize {
 	case 8:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 8)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 8)), 0xFF)
+		}
 	case 9:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 9)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 9)), 0xFF)
+		}
 	case 10:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 10)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 10)), 0xFF)
+		}
 	case 11:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 11)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 11)), 0xFF)
+		}
 	case 12:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 12)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 12)), 0xFF)
+		}
 	case 13:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 13)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 13)), 0xFF)
+		}
 	case 14:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 14)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 14)), 0xFF)
+		}
 	case 15:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 15)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 15)), 0xFF)
+		}
 	case 16:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 16)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 16)), 0xFF)
+		}
 	case 17:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 17)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 17)), 0xFF)
+		}
 	case 18:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 18)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 18)), 0xFF)
+		}
 	case 19:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 19)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 19)), 0xFF)
+		}
 	case 20:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 20)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 20)), 0xFF)
+		}
 	case 21:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 21)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 21)), 0xFF)
+		}
 	case 22:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 22)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 22)), 0xFF)
+		}
 	case 23:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), 23)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), 23)), 0xFF)
+		}
 	default:
-		for i := range n { store8(table, int(hashValue4(load64(data, i), tableSize)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue4(load64(data, i), tableSize)), 0xFF)
+		}
 	}
 }
 
 func buildML5Byte(table, data []byte, n int, tableSize uint8) {
 	switch tableSize {
 	case 8:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 8)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 8)), 0xFF)
+		}
 	case 9:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 9)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 9)), 0xFF)
+		}
 	case 10:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 10)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 10)), 0xFF)
+		}
 	case 11:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 11)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 11)), 0xFF)
+		}
 	case 12:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 12)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 12)), 0xFF)
+		}
 	case 13:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 13)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 13)), 0xFF)
+		}
 	case 14:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 14)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 14)), 0xFF)
+		}
 	case 15:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 15)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 15)), 0xFF)
+		}
 	case 16:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 16)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 16)), 0xFF)
+		}
 	case 17:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 17)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 17)), 0xFF)
+		}
 	case 18:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 18)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 18)), 0xFF)
+		}
 	case 19:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 19)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 19)), 0xFF)
+		}
 	case 20:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 20)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 20)), 0xFF)
+		}
 	case 21:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 21)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 21)), 0xFF)
+		}
 	case 22:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 22)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 22)), 0xFF)
+		}
 	case 23:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), 23)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), 23)), 0xFF)
+		}
 	default:
-		for i := range n { store8(table, int(hashValue5(load64(data, i), tableSize)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue5(load64(data, i), tableSize)), 0xFF)
+		}
 	}
 }
 
 func buildML6Byte(table, data []byte, n int, tableSize uint8) {
 	switch tableSize {
 	case 8:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 8)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 8)), 0xFF)
+		}
 	case 9:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 9)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 9)), 0xFF)
+		}
 	case 10:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 10)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 10)), 0xFF)
+		}
 	case 11:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 11)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 11)), 0xFF)
+		}
 	case 12:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 12)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 12)), 0xFF)
+		}
 	case 13:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 13)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 13)), 0xFF)
+		}
 	case 14:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 14)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 14)), 0xFF)
+		}
 	case 15:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 15)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 15)), 0xFF)
+		}
 	case 16:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 16)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 16)), 0xFF)
+		}
 	case 17:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 17)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 17)), 0xFF)
+		}
 	case 18:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 18)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 18)), 0xFF)
+		}
 	case 19:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 19)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 19)), 0xFF)
+		}
 	case 20:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 20)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 20)), 0xFF)
+		}
 	case 21:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 21)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 21)), 0xFF)
+		}
 	case 22:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 22)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 22)), 0xFF)
+		}
 	case 23:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), 23)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), 23)), 0xFF)
+		}
 	default:
-		for i := range n { store8(table, int(hashValue6(load64(data, i), tableSize)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue6(load64(data, i), tableSize)), 0xFF)
+		}
 	}
 }
 
 func buildML7Byte(table, data []byte, n int, tableSize uint8) {
 	switch tableSize {
 	case 8:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 8)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 8)), 0xFF)
+		}
 	case 9:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 9)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 9)), 0xFF)
+		}
 	case 10:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 10)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 10)), 0xFF)
+		}
 	case 11:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 11)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 11)), 0xFF)
+		}
 	case 12:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 12)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 12)), 0xFF)
+		}
 	case 13:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 13)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 13)), 0xFF)
+		}
 	case 14:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 14)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 14)), 0xFF)
+		}
 	case 15:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 15)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 15)), 0xFF)
+		}
 	case 16:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 16)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 16)), 0xFF)
+		}
 	case 17:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 17)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 17)), 0xFF)
+		}
 	case 18:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 18)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 18)), 0xFF)
+		}
 	case 19:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 19)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 19)), 0xFF)
+		}
 	case 20:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 20)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 20)), 0xFF)
+		}
 	case 21:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 21)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 21)), 0xFF)
+		}
 	case 22:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 22)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 22)), 0xFF)
+		}
 	case 23:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), 23)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), 23)), 0xFF)
+		}
 	default:
-		for i := range n { store8(table, int(hashValue7(load64(data, i), tableSize)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue7(load64(data, i), tableSize)), 0xFF)
+		}
 	}
 }
 
 func buildML8Byte(table, data []byte, n int, tableSize uint8) {
 	switch tableSize {
 	case 8:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 8)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 8)), 0xFF)
+		}
 	case 9:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 9)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 9)), 0xFF)
+		}
 	case 10:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 10)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 10)), 0xFF)
+		}
 	case 11:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 11)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 11)), 0xFF)
+		}
 	case 12:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 12)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 12)), 0xFF)
+		}
 	case 13:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 13)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 13)), 0xFF)
+		}
 	case 14:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 14)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 14)), 0xFF)
+		}
 	case 15:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 15)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 15)), 0xFF)
+		}
 	case 16:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 16)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 16)), 0xFF)
+		}
 	case 17:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 17)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 17)), 0xFF)
+		}
 	case 18:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 18)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 18)), 0xFF)
+		}
 	case 19:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 19)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 19)), 0xFF)
+		}
 	case 20:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 20)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 20)), 0xFF)
+		}
 	case 21:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 21)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 21)), 0xFF)
+		}
 	case 22:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 22)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 22)), 0xFF)
+		}
 	case 23:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), 23)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), 23)), 0xFF)
+		}
 	default:
-		for i := range n { store8(table, int(hashValue8(load64(data, i), tableSize)), 0xFF) }
+		for i := range n {
+			store8(table, int(hashValue8(load64(data, i), tableSize)), 0xFF)
+		}
 	}
 }
 
@@ -598,12 +821,7 @@ func matchPrefix(data, prefix []byte) bool {
 	case 4:
 		return load32(data, 0) == load32(prefix, 0)
 	default:
-		for i := range prefix {
-			if data[i] != prefix[i] {
-				return false
-			}
-		}
-		return true
+		return bytes.Equal(prefix, data[:len(prefix)])
 	}
 }
 
