@@ -430,3 +430,131 @@ When a block is decoded solely for a boundary check (the table indicates no
 match within the block), the previous block reference should be cleared
 afterward. This prevents a cascade where every decoded block forces the next
 to decode as well.
+
+### B.4 Deferred Block Decode
+
+The boundary handling in B.2 is conservative: when the first window is present
+but later windows are absent, the block is decoded because the pattern *might*
+start near the block end. In practice, the first window is often a false positive
+in the table and no match exists. The deferred decode optimization avoids this
+unnecessary decode.
+
+#### B.4.1 Principle
+
+When a block N has the first window present but later windows W₁, W₂, ..., Wₖ
+absent, these absent windows represent the continuation of the pattern into
+block N+1. If block N+1's search table also does not contain ALL of
+W₁, W₂, ..., Wₖ, then the boundary match is impossible and block N can be
+skipped.
+
+The hash values for the absent windows are computed at full `baseTableSize`
+resolution (before reduction masking). When checking against block N+1's table,
+the per-block reduction mask for block N+1 is applied:
+
+```
+mask_N1 = (1 << (baseTableSize - reductions_N1)) - 1
+for each absent hash h:
+    h_masked = h & mask_N1
+    if table_N1[h_masked >> 3] & (1 << (h_masked & 7)) == 0:
+        skip block N  -- continuation not in block N+1
+```
+
+All absent windows must be present in block N+1's table for the boundary
+match to remain possible. If even one is absent, the match cannot exist.
+
+#### B.4.2 Flow
+
+1. Block N's table says "might match" due to the boundary case.
+2. Read block N's compressed data into a buffer but do NOT decompress.
+3. Record the absent window hashes.
+4. When block N+1's search table (0x45 chunk) arrives, check the absent
+   hashes against it.
+5. If all absent hashes are present in block N+1 → decompress and search
+   block N (the match might be real).
+6. If any absent hash is missing in block N+1 → skip block N (the boundary
+   match is impossible).
+
+The savings come from avoiding decompression of false-positive blocks. The
+compressed data must still be read (or seeked past) to advance the stream.
+
+#### B.4.3 Prefix Tables: Safe Deferral Conditions
+
+For prefix tables (types 2, 3, 4), not all absent windows can be safely
+deferred. The issue: block N+1's table builder cannot see prefix bytes that
+are in block N (section 3.3.1). For a boundary match, continuation windows
+whose prefix bytes fall within block N will NOT be indexed in block N+1's
+table, producing false negatives if checked.
+
+Two conditions must both be met for safe deferral:
+
+**Condition 1 — Position threshold.** Let `iFirst` be the pattern position
+of the first prefix-context window. For a boundary match via the overlap
+region, at most `matchLen - 1 + iFirst` pattern bytes can be in block N.
+A continuation window at pattern position `j` has its prefix byte at
+`pattern[j-1]`, which is in block N+1 only when `j >= matchLen + iFirst`.
+Only absent windows above this threshold may be deferred.
+
+For type 4 (long prefix) with prefix length `K`, the threshold is
+`matchLen + K + iFirst`.
+
+**Condition 2 — Near window confirmation.** The position threshold is only
+valid when the match is within the overlap range (K ≤ matchLen - 1 + iFirst).
+If the first prefix window's hash was set by a normal (non-overlap) position
+deeper in the block, K can exceed the overlap range and the threshold is
+insufficient.
+
+To confirm the overlap range: check whether any prefix window between
+`iFirst` and the threshold ("near" windows) is absent from block N's table.
+If a near window is absent, K cannot exceed the overlap range — otherwise
+the near window would be at a normal position within block N and would be
+present. If ALL near windows are present, K might exceed the overlap range
+and deferral must be skipped (decode conservatively).
+
+**Raw fallback.** When the first prefix window is absent but the raw hash
+is present, K ≤ iFirst (the first prefix window would be within block N for
+larger K and would be present). The near-window condition is inherently
+satisfied (the first prefix window itself is absent). The position threshold
+still applies.
+
+If no windows meet the threshold, or the near-window condition is not met,
+deferral is not possible and the block must be decoded.
+
+#### B.4.4 Limitations
+
+- Deferral requires the next block to have a search table. If the next block
+  has no table (missing 0x45 chunk), or the stream ends, the deferred block
+  must be decoded conservatively.
+- Only one block can be deferred at a time. If block N is deferred and block
+  N+1 would also be deferred, block N must be resolved first (decoded).
+- The optimization provides no benefit when the pattern is shorter than
+  `2 × matchLen` (only one window, nothing to defer).
+
+### B.5 Lazy Previous Block Access
+
+When a block is skipped, the searcher may retain its compressed data so that
+it can be decompressed on demand later. This is useful for providing context
+around matches — for example, extracting the full line containing a match
+when the line starts in a previous (skipped) block.
+
+The `SearchResult.PrevBlock()` method returns the previous block's data:
+- If the previous block was decoded normally, returns the decoded data directly.
+- If the previous block was skipped (or deferred-then-skipped), decompresses
+  the buffered compressed data on first access and caches the result.
+- Returns nil if no previous block exists (first block or stream start).
+
+When a lazy previous block is available, `Offset` and `BlockStart` in the
+search result are set as if the previous block were present:
+
+```
+Offset    = prevBlockDecompSize + matchOffsetInCurrentBlock
+BlockStart = currentBlockStreamOffset - prevBlockDecompSize
+```
+
+This allows callers to uniformly concatenate `PrevBlock()` with `Blocks[1]`
+and use `Offset` directly, regardless of whether the previous block was
+decoded or lazy:
+
+```
+data = append(result.PrevBlock(), result.Blocks[1]...)
+matchPos = result.Offset  // always valid within data
+```

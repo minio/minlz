@@ -15,26 +15,30 @@ var ErrSearchTablesUnusable = errors.New("minlz: search tables cannot be used fo
 
 // SearchStats contains statistics from a BlockSearcher.Search call.
 type SearchStats struct {
-	BlocksTotal         int     // Total data blocks encountered
-	BlocksSkipped       int     // Blocks skipped via search table (definitely no match)
-	BlocksSearched      int     // Blocks decoded and passed to callback
-	CompBytesSkipped    int64   // Compressed bytes skipped
-	UncompBytesSearched int64   // Uncompressed bytes decoded and searched
-	TablesPresent       int     // Number of 0x45 search table chunks seen
-	TablesBytes         int64   // Total bytes of search table chunks
-	TablesMissing       int     // Data blocks without a preceding search table
-	TablesUnusable      int     // Tables present but incompatible with query
-	TableBitsSum        int     // Sum of effective table bits (for avg: TableBitsSum/TablesPresent)
-	TableReductionsSum  int     // Sum of reductions applied (for avg: TableReductionsSum/TablesPresent)
-	TablePopMin         float64 // Min population % across tables seen
-	TablePopMax         float64 // Max population % across tables seen
-	TablePopSum         float64 // Sum of population % (for computing average)
-	UncompressedSize    int64   // Total uncompressed bytes in stream
+	BlocksTotal           int     // Total data blocks encountered
+	BlocksSkipped         int     // Blocks skipped via search table (definitely no match)
+	BlocksSearched        int     // Blocks decoded and passed to callback
+	CompBytesSkipped      int64   // Compressed bytes skipped
+	UncompBytesSearched   int64   // Uncompressed bytes decoded and searched
+	TablesPresent         int     // Number of 0x45 search table chunks seen
+	TablesBytes           int64   // Total bytes of search table chunks
+	TablesMissing         int     // Data blocks without a preceding search table
+	TablesUnusable        int     // Tables present but incompatible with query
+	TableBitsSum          int     // Sum of effective table bits (for avg: TableBitsSum/TablesPresent)
+	TableReductionsSum    int     // Sum of reductions applied (for avg: TableReductionsSum/TablesPresent)
+	BlocksDeferred        int     // Blocks that entered the deferred path
+	BlocksDeferredSkipped int     // Deferred blocks ultimately skipped (subset of BlocksSkipped)
+	BlocksFalsePositive   int     // Blocks decoded due to table match but containing no actual matches
+	TablePopMin           float64 // Min population % across tables seen
+	TablePopMax           float64 // Max population % across tables seen
+	TablePopSum           float64 // Sum of population % (for computing average)
+	UncompressedSize      int64   // Total uncompressed bytes in stream
 }
 
 // Fprint writes a human-readable summary of the search stats to w.
 func (st SearchStats) Fprint(w io.Writer) {
-	fmt.Fprintf(w, "Blocks total: %d, skipped: %d, searched: %d\n", st.BlocksTotal, st.BlocksSkipped, st.BlocksSearched)
+	fmt.Fprintf(w, "Blocks total: %d, skipped: %d, searched: %d (false positive: %d), deferred: %d (%d skipped)\n",
+		st.BlocksTotal, st.BlocksSkipped, st.BlocksSearched, st.BlocksFalsePositive, st.BlocksDeferred, st.BlocksDeferredSkipped)
 	if st.BlocksTotal > 0 {
 		fmt.Fprintf(w, "Skip rate: %.1f%%\n", 100*float64(st.BlocksSkipped)/float64(st.BlocksTotal))
 	}
@@ -63,21 +67,93 @@ var ErrSearchForward = errors.New("minlz: forward to next block")
 // SearchResult is passed to the search callback for each pattern match.
 type SearchResult struct {
 	// Blocks contains the block data surrounding the match.
-	// Blocks[0] is the previous block (nil if first or previous was skipped).
+	// Blocks[0] is the previous block (nil if previous was skipped or lazy).
 	// Blocks[1] is the current block. The match may start in Blocks[0] (boundary match).
 	// Both slices are invalid after the callback returns.
 	Blocks [2][]byte
 
-	// Offset is the position of the match within the Blocks.
-	// Relative to Blocks[0] if non-nil, otherwise relative to Blocks[1].
+	// Offset is the position of the match relative to PrevBlock()+Blocks[1].
+	// When PrevBlock() returns nil, Offset is relative to just Blocks[1].
 	Offset int
 
 	// StreamOffset is the absolute uncompressed stream offset of the match.
 	StreamOffset int64
 
-	// BlockStart is the stream offset of Blocks[0] (or Blocks[1] if Blocks[0]==nil).
+	// BlockStart is the stream offset of PrevBlock() data (or Blocks[1] if no prev).
 	// Invariant: Offset == int(StreamOffset - BlockStart)
 	BlockStart int64
+
+	prevLazy *lazyBlock // lazily decompressible previous block; nil if not available
+}
+
+// PrevBlock returns the previous block's decompressed data.
+// Returns Blocks[0] if non-nil, otherwise lazily decompresses the previous
+// block if available. Returns nil if no previous block exists.
+func (r SearchResult) PrevBlock() []byte {
+	if r.Blocks[0] != nil {
+		return r.Blocks[0]
+	}
+	if r.prevLazy != nil {
+		return r.prevLazy.decode()
+	}
+	return nil
+}
+
+// lazyBlock holds compressed block data for on-demand decompression.
+type lazyBlock struct {
+	chunkData []byte // chunk payload: checksum + compressed/uncompressed data
+	chunkType byte
+	decompLen int    // decompressed size (from varint); avoids decode to get length
+	decoded   []byte // cached result; nil until first decode
+	ignoreCRC bool
+}
+
+func (lb *lazyBlock) decode() []byte {
+	if lb.decoded != nil {
+		return lb.decoded
+	}
+	buf := lb.chunkData
+	if len(buf) < checksumSize {
+		return nil
+	}
+	checksum := uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16 | uint32(buf[3])<<24
+	buf = buf[checksumSize:]
+
+	switch lb.chunkType {
+	case chunkTypeUncompressedData:
+		if !lb.ignoreCRC && crc(buf) != checksum {
+			return nil
+		}
+		lb.decoded = make([]byte, len(buf))
+		copy(lb.decoded, buf)
+	default:
+		n, hdrLen, err := decodedLen(buf)
+		if err != nil || n != lb.decompLen {
+			return nil
+		}
+		dst := make([]byte, n)
+		if minLZDecode(dst, buf[hdrLen:]) != 0 {
+			return nil
+		}
+		toCRC := dst
+		if lb.chunkType == chunkTypeMinLZCompressedDataCompCRC {
+			toCRC = buf
+		}
+		if !lb.ignoreCRC && crc(toCRC) != checksum {
+			return nil
+		}
+		lb.decoded = dst
+	}
+	return lb.decoded
+}
+
+// pendingBlock holds a block whose decode is deferred until the next
+// block's search table can confirm or deny a boundary match.
+type pendingBlock struct {
+	lazy         lazyBlock
+	blockStart   int64    // stream offset where this block's decompressed data starts
+	deferHashes  []uint32 // absent window hashes at full baseTableSize resolution
+	tableNoMatch bool     // table said no match (decoded only for boundary check)
 }
 
 type deferredMatch struct {
@@ -101,16 +177,19 @@ type BlockSearcher struct {
 	blockReductions uint8
 	blockInfo       SearchTableConfig
 
-	decoded    [2][]byte      // alternating decode buffers
-	decIdx     int            // which buffer was last used (0 or 1)
-	prevBlock  []byte         // points into decoded[(decIdx+1)&1], nil if skipped
-	deferred   *deferredMatch // pending ErrSearchForward re-dispatch
-	maxBlock   int
-	readHeader bool
-	ignoreCRC  bool
-	bail       bool // return error if tables can't answer query
-	blockStart int64
-	stats      SearchStats
+	decoded      [2][]byte      // alternating decode buffers
+	decIdx       int            // which buffer was last used (0 or 1)
+	prevBlock    []byte         // points into decoded[(decIdx+1)&1], nil if skipped
+	prevLazy     *lazyBlock     // compressed previous block for lazy PrevBlock(); nil if decoded
+	deferred     *deferredMatch // pending ErrSearchForward re-dispatch
+	pending      *pendingBlock  // block deferred pending next table check
+	maxBlock     int
+	readHeader   bool
+	ignoreCRC    bool
+	bail         bool // return error if tables can't answer query
+	blockStart   int64
+	blockMatches int // matches found in current block (for false positive tracking)
+	stats        SearchStats
 }
 
 // BlockSearchOption configures a BlockSearcher.
@@ -176,12 +255,19 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 	}
 	s.stats = SearchStats{}
 	s.deferred = nil
+	s.pending = nil
+	s.prevLazy = nil
 
 	defer func() { s.stats.UncompressedSize = s.blockStart }()
 
 	for {
 		if !s.readFull(s.tmp[:4]) {
 			if s.err == io.EOF {
+				if s.pending != nil {
+					if err := s.resolvePending(pattern, fn); err != nil {
+						return err
+					}
+				}
 				if s.deferred != nil {
 					if err := s.flushDeferred(nil, fn); err != nil {
 						return err
@@ -220,6 +306,8 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			}
 			s.maxBlock = blockSize
 			s.blockStart = 0
+			s.pending = nil
+			s.prevLazy = nil
 			continue
 
 		case chunkTypeSearchInfo:
@@ -246,6 +334,12 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			s.blockInfo = cfg
 			s.blockReductions = reductions
 			s.blockTable = table
+			// Resolve any pending block against this new table.
+			if s.pending != nil {
+				if err := s.resolvePending(pattern, fn); err != nil {
+					return err
+				}
+			}
 			s.stats.TablesPresent++
 			s.stats.TablesBytes += int64(chunkLen + 4) // +4 for chunk header
 			s.stats.TableBitsSum += int(cfg.baseTableSize - reductions)
@@ -269,32 +363,32 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if chunkLen < checksumSize {
 				return ErrCorrupt
 			}
+			// Resolve any pending block that wasn't resolved at table arrival.
+			if s.pending != nil {
+				if err := s.resolvePending(pattern, fn); err != nil {
+					return err
+				}
+			}
+
 			s.stats.BlocksTotal++
 			tableNoMatch := false
+			deferrable := false
 			if s.blockTable != nil {
-				canUse, match := patternCanMatch(&s.blockInfo, s.blockTable, s.blockReductions, pattern)
+				savedTable := s.blockTable
+				savedReductions := s.blockReductions
+				savedInfo := s.blockInfo
+				canUse, match := patternCanMatch(&savedInfo, savedTable, savedReductions, pattern)
 				s.blockTable = nil
 				if canUse && !match {
 					if s.prevBlock == nil || !canBoundaryMatch(s.prevBlock, pattern) {
+						// Definite skip — buffer compressed data for lazy PrevBlock.
+						decompLen, err := s.bufferSkippedBlock(chunkType, chunkLen)
+						if err != nil {
+							return err
+						}
 						s.stats.BlocksSkipped++
 						s.stats.CompBytesSkipped += int64(chunkLen)
-						// Read checksum + varint to get exact decompressed size before skipping.
-						if !s.readFull(s.tmp[:checksumSize]) {
-							return s.err
-						}
-						remain := chunkLen - checksumSize
-						// Read enough for the varint (max 10 bytes).
-						peek := min(remain, 10)
-						if !s.readFull(s.tmp[checksumSize : checksumSize+peek]) {
-							return s.err
-						}
-						n, _, _ := decodedLen(s.tmp[checksumSize : checksumSize+peek])
-						if n > 0 {
-							s.blockStart += int64(n)
-						}
-						if !s.skip(remain - peek) {
-							return s.err
-						}
+						s.blockStart += int64(decompLen)
 						if s.deferred != nil {
 							if err := s.flushDeferred(nil, fn); err != nil {
 								return err
@@ -303,8 +397,30 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 						s.prevBlock = nil
 						continue
 					}
-					// Table says no match, but prevBlock tail has a pattern prefix — must decode.
 					tableNoMatch = true
+				}
+				if canUse && match {
+					// Don't defer if the previous block could have a boundary
+					// match into this block — deferral would skip that check.
+					dh := patternDeferHashes(&savedInfo, savedTable, savedReductions, pattern)
+					if dh != nil && (s.prevBlock == nil || !canBoundaryMatch(s.prevBlock, pattern)) {
+						deferrable = true
+						// Buffer compressed data and defer decode.
+						decompLen, err := s.bufferSkippedBlock(chunkType, chunkLen)
+						if err != nil {
+							return err
+						}
+						s.pending = &pendingBlock{
+							lazy:        *s.prevLazy,
+							blockStart:  s.blockStart,
+							deferHashes: dh,
+						}
+						s.prevLazy = nil
+						s.blockStart += int64(decompLen)
+						s.stats.BlocksDeferred++
+						s.prevBlock = nil
+						continue
+					}
 				}
 				if !canUse {
 					s.stats.TablesUnusable++
@@ -319,6 +435,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				}
 			}
 
+			_ = deferrable
 			s.ensureBuf(chunkLen)
 			if !s.readFull(s.buf[:chunkLen]) {
 				return s.err
@@ -334,7 +451,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if n > s.maxBlock {
 				return ErrTooLarge
 			}
-			di := s.decIdx ^ 1 // alternate buffer
+			di := s.decIdx ^ 1
 			if n > len(s.decoded[di]) {
 				s.decoded[di] = make([]byte, n)
 			}
@@ -352,6 +469,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 
 			s.stats.BlocksSearched++
 			s.stats.UncompBytesSearched += int64(n)
+			s.blockMatches = 0
 			blockOff := s.blockStart
 			s.blockStart += int64(n)
 			blk := s.decoded[di][:n]
@@ -364,19 +482,27 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if err := s.dispatchMatches(blk, blockOff, pattern, fn); err != nil {
 				return err
 			}
+			if s.blockMatches == 0 {
+				s.stats.BlocksFalsePositive++
+			}
 			if tableNoMatch {
-				// Table confirmed pattern can't start in this block,
-				// so no future block needs a boundary check against it.
 				s.prevBlock = nil
 			} else {
 				s.prevBlock = blk
 			}
+			s.prevLazy = nil
 			continue
 
 		case chunkTypeUncompressedData:
 			if chunkLen < checksumSize {
 				return ErrCorrupt
 			}
+			if s.pending != nil {
+				if err := s.resolvePending(pattern, fn); err != nil {
+					return err
+				}
+			}
+
 			s.stats.BlocksTotal++
 			tableNoMatch := false
 			if s.blockTable != nil {
@@ -384,12 +510,13 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				s.blockTable = nil
 				if canUse && !match {
 					if s.prevBlock == nil || !canBoundaryMatch(s.prevBlock, pattern) {
+						decompLen, err := s.bufferSkippedBlock(chunkType, chunkLen)
+						if err != nil {
+							return err
+						}
 						s.stats.BlocksSkipped++
 						s.stats.CompBytesSkipped += int64(chunkLen)
-						if !s.skip(chunkLen) {
-							return s.err
-						}
-						s.blockStart += int64(chunkLen - checksumSize)
+						s.blockStart += int64(decompLen)
 						if s.deferred != nil {
 							if err := s.flushDeferred(nil, fn); err != nil {
 								return err
@@ -434,6 +561,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 
 			s.stats.BlocksSearched++
 			s.stats.UncompBytesSearched += int64(n)
+			s.blockMatches = 0
 			blockOff := s.blockStart
 			s.blockStart += int64(n)
 			blk := s.decoded[di][:n]
@@ -446,11 +574,15 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if err := s.dispatchMatches(blk, blockOff, pattern, fn); err != nil {
 				return err
 			}
+			if s.blockMatches == 0 {
+				s.stats.BlocksFalsePositive++
+			}
 			if tableNoMatch {
 				s.prevBlock = nil
 			} else {
 				s.prevBlock = blk
 			}
+			s.prevLazy = nil
 			continue
 
 		case chunkTypeEOF:
@@ -483,7 +615,11 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []byte, fn func(SearchResult) error) error {
 	prevBlockStart := blockOff - int64(len(s.prevBlock))
 	if s.prevBlock == nil {
-		prevBlockStart = blockOff
+		if s.prevLazy != nil {
+			prevBlockStart = blockOff - int64(s.prevLazy.decompLen)
+		} else {
+			prevBlockStart = blockOff
+		}
 	}
 
 	// Check for matches spanning the boundary between prevBlock and blk.
@@ -512,6 +648,7 @@ func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []by
 				StreamOffset: streamOff,
 				BlockStart:   prevBlockStart,
 			}
+			s.blockMatches++
 			err := fn(result)
 			if err != nil {
 				if errors.Is(err, ErrSearchForward) {
@@ -549,12 +686,18 @@ func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []by
 		} else {
 			result = SearchResult{
 				Blocks:       [2][]byte{nil, blk},
-				Offset:       matchOff,
 				StreamOffset: streamOff,
-				BlockStart:   blockOff,
+				BlockStart:   prevBlockStart,
+				prevLazy:     s.prevLazy,
+			}
+			if s.prevLazy != nil {
+				result.Offset = s.prevLazy.decompLen + matchOff
+			} else {
+				result.Offset = matchOff
 			}
 		}
 
+		s.blockMatches++
 		err := fn(result)
 		if err == nil {
 			off = matchOff + 1
@@ -643,6 +786,130 @@ func (s *BlockSearcher) ensureBuf(n int) {
 		s.buf = make([]byte, 0, n+n/4)
 	}
 	s.buf = s.buf[:n]
+}
+
+// decodePending decompresses a pending block using one of the alternating buffers.
+func (s *BlockSearcher) decodePending(p *pendingBlock) ([]byte, error) {
+	lb := &p.lazy
+	buf := lb.chunkData
+	if len(buf) < checksumSize {
+		return nil, ErrCorrupt
+	}
+	checksum := uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16 | uint32(buf[3])<<24
+	buf = buf[checksumSize:]
+
+	di := s.decIdx ^ 1
+	if lb.chunkType == chunkTypeUncompressedData {
+		n := len(buf)
+		if n > len(s.decoded[di]) {
+			s.decoded[di] = make([]byte, n)
+		}
+		copy(s.decoded[di][:n], buf)
+		if !s.ignoreCRC && crc(s.decoded[di][:n]) != checksum {
+			return nil, ErrCRC
+		}
+		s.decIdx = di
+		return s.decoded[di][:n], nil
+	}
+
+	n, hdrLen, err := decodedLen(buf)
+	if err != nil {
+		return nil, err
+	}
+	if n > s.maxBlock {
+		return nil, ErrTooLarge
+	}
+	if n > len(s.decoded[di]) {
+		s.decoded[di] = make([]byte, n)
+	}
+	if ret := minLZDecode(s.decoded[di][:n], buf[hdrLen:]); ret != 0 {
+		return nil, ErrCorrupt
+	}
+	toCRC := s.decoded[di][:n]
+	if lb.chunkType == chunkTypeMinLZCompressedDataCompCRC {
+		toCRC = buf
+	}
+	if !s.ignoreCRC && crc(toCRC) != checksum {
+		return nil, ErrCRC
+	}
+	s.decIdx = di
+	return s.decoded[di][:n], nil
+}
+
+// resolvePending decodes or skips the pending block. If the next block's
+// search table is available (s.blockTable != nil), the deferred hashes are
+// checked to decide. Otherwise the block is decoded (conservative).
+func (s *BlockSearcher) resolvePending(pattern []byte, fn func(SearchResult) error) error {
+	p := s.pending
+	s.pending = nil
+
+	skip := false
+	if p.deferHashes != nil && s.blockTable != nil {
+		if !checkDeferredHashes(s.blockTable, s.blockReductions, s.blockInfo.baseTableSize, p.deferHashes) {
+			skip = true
+		}
+	}
+
+	if skip {
+		s.stats.BlocksSkipped++
+		s.stats.BlocksDeferredSkipped++
+		s.stats.CompBytesSkipped += int64(len(p.lazy.chunkData))
+		if s.deferred != nil {
+			if err := s.flushDeferred(nil, fn); err != nil {
+				return err
+			}
+		}
+		s.prevLazy = &p.lazy
+		s.prevBlock = nil
+		return nil
+	}
+
+	blk, err := s.decodePending(p)
+	if err != nil {
+		return err
+	}
+	s.stats.BlocksSearched++
+	s.stats.UncompBytesSearched += int64(len(blk))
+	s.blockMatches = 0
+	if s.deferred != nil {
+		if err := s.flushDeferred(blk, fn); err != nil {
+			return err
+		}
+	}
+	if err := s.dispatchMatches(blk, p.blockStart, pattern, fn); err != nil {
+		return err
+	}
+	if s.blockMatches == 0 {
+		s.stats.BlocksFalsePositive++
+	}
+	if p.tableNoMatch {
+		s.prevBlock = nil
+	} else {
+		s.prevBlock = blk
+	}
+	s.prevLazy = nil
+	return nil
+}
+
+// bufferSkippedBlock reads and buffers a compressed block's data for lazy PrevBlock().
+func (s *BlockSearcher) bufferSkippedBlock(chunkType byte, chunkLen int) (decompLen int, err error) {
+	s.ensureBuf(chunkLen)
+	if !s.readFull(s.buf[:chunkLen]) {
+		return 0, s.err
+	}
+	if chunkType == chunkTypeUncompressedData {
+		decompLen = chunkLen - checksumSize
+	} else {
+		n, _, _ := decodedLen(s.buf[checksumSize : checksumSize+min(chunkLen-checksumSize, 10)])
+		decompLen = n
+	}
+	s.prevLazy = &lazyBlock{
+		chunkData: append([]byte{}, s.buf[:chunkLen]...),
+		chunkType: chunkType,
+		decompLen: decompLen,
+		ignoreCRC: s.ignoreCRC,
+	}
+	return decompLen, nil
 }
 
 // canBoundaryMatch reports whether pattern could start in the tail of prev
@@ -804,4 +1071,153 @@ func patternCanMatchWithPrefixMask(cfg *SearchTableConfig, table []byte, mask ui
 		return true, true
 	}
 	return true, false
+}
+
+// patternDeferHashes returns the absent window hashes (at full baseTableSize
+// resolution) when patternCanMatch would return (true, true) due to the
+// boundary case (first window present, later absent). Returns nil if the
+// match is definite (all present), impossible (first absent), or can't be used.
+func patternDeferHashes(cfg *SearchTableConfig, table []byte, reductions uint8, pattern []byte) []uint32 {
+	mask := uint32(1<<(cfg.baseTableSize-reductions)) - 1
+
+	switch cfg.tableType {
+	case searchTableTypeNoPrefix:
+		ml := int(cfg.matchLen)
+		if len(pattern) < ml {
+			return nil
+		}
+		nWindows := len(pattern) - ml + 1
+		if nWindows <= 1 {
+			return nil
+		}
+		// Check first window.
+		h0 := hashValue(readLE64Pad(pattern[:ml]), cfg.baseTableSize, cfg.matchLen)
+		if table[(h0&mask)>>3]&(1<<((h0&mask)&7)) == 0 {
+			return nil // first absent → definite skip
+		}
+		// Collect absent later windows (store full hash, no mask).
+		var absent []uint32
+		for i := 1; i < nWindows; i++ {
+			h := hashValue(readLE64Pad(pattern[i:]), cfg.baseTableSize, cfg.matchLen)
+			if table[(h&mask)>>3]&(1<<((h&mask)&7)) == 0 {
+				absent = append(absent, h)
+			}
+		}
+		if len(absent) == 0 {
+			return nil // all present → definite match
+		}
+		return absent
+
+	case searchTableTypeBytePrefix:
+		var pfxMask [32]byte
+		for _, p := range cfg.prefixBytes {
+			pfxMask[p>>3] |= 1 << (p & 7)
+		}
+		return deferHashesWithPrefixMask(cfg, table, mask, &pfxMask, pattern)
+
+	case searchTableTypeMaskPrefix:
+		return deferHashesWithPrefixMask(cfg, table, mask, &cfg.prefixMask, pattern)
+
+	case searchTableTypeLongPrefix:
+		ml := int(cfg.matchLen)
+		pl := len(cfg.longPrefix)
+		if len(pattern) < ml {
+			return nil
+		}
+		first := true
+		firstPresent := false
+		safeThreshold := 0
+		var absent []uint32
+		for i := 0; i <= len(pattern)-pl-ml; i++ {
+			if !bytes.Equal(pattern[i:i+pl], cfg.longPrefix) {
+				continue
+			}
+			h := hashValue(readLE64Pad(pattern[i+pl:]), cfg.baseTableSize, cfg.matchLen)
+			present := table[(h&mask)>>3]&(1<<((h&mask)&7)) != 0
+			if first {
+				firstPresent = present
+				safeThreshold = ml + pl + i
+				first = false
+			}
+			if !present && i >= safeThreshold {
+				absent = append(absent, h)
+			}
+		}
+		if !firstPresent || len(absent) == 0 {
+			return nil
+		}
+		return absent
+	}
+	return nil
+}
+
+func deferHashesWithPrefixMask(cfg *SearchTableConfig, table []byte, mask uint32, pfxMask *[32]byte, pattern []byte) []uint32 {
+	ml := int(cfg.matchLen)
+	if len(pattern) < ml {
+		return nil
+	}
+
+	first := true
+	firstPresent := false
+	safeThreshold := 0  // pattern positions >= this are safe to defer
+	nearAbsent := false // any prefix window between iFirst and safeThreshold absent?
+	var absent []uint32
+	for i := 1; i <= len(pattern)-ml; i++ {
+		b := pattern[i-1]
+		if pfxMask[b>>3]&(1<<(b&7)) == 0 {
+			continue
+		}
+		h := hashValue(readLE64Pad(pattern[i:]), cfg.baseTableSize, cfg.matchLen)
+		present := table[(h&mask)>>3]&(1<<((h&mask)&7)) != 0
+		if first {
+			firstPresent = present
+			// For a boundary match via overlap, at most matchLen-1+i pattern
+			// bytes are in block N. Continuation windows with prefix bytes in
+			// block N can't be verified against block N+1's table.
+			safeThreshold = ml + i
+			first = false
+			continue
+		}
+		if !present {
+			if i >= safeThreshold {
+				absent = append(absent, h)
+			} else {
+				// A "near" window is absent — the match can't be at K > overlap
+				// range (otherwise this window would be within block N and present).
+				nearAbsent = true
+			}
+		}
+	}
+	if len(absent) == 0 {
+		return nil
+	}
+	if firstPresent {
+		// Only defer if a near window confirms K ≤ overlap range.
+		// If all near windows are present, K could exceed the overlap range
+		// and the far windows' prefix bytes could be at the block boundary.
+		if !nearAbsent {
+			return nil
+		}
+		return absent
+	}
+	// Raw fallback: first prefix window absent, check raw hash.
+	hRaw := hashValue(readLE64Pad(pattern[:ml]), cfg.baseTableSize, cfg.matchLen)
+	if table[(hRaw&mask)>>3]&(1<<((hRaw&mask)&7)) != 0 {
+		return absent
+	}
+	return nil // raw fallback also absent → definite skip
+}
+
+// checkDeferredHashes checks if ALL deferred hashes are present in a table.
+// For a boundary match, every absent window from block N must appear in block N+1.
+// Hashes are at full baseTableSize resolution; the per-block reduction mask is applied.
+func checkDeferredHashes(table []byte, reductions, baseTableSize uint8, hashes []uint32) bool {
+	mask := uint32(1<<(baseTableSize-reductions)) - 1
+	for _, h := range hashes {
+		h &= mask
+		if table[h>>3]&(1<<(h&7)) == 0 {
+			return false
+		}
+	}
+	return true
 }

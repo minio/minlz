@@ -17,7 +17,7 @@ const (
 	searchTableMaxLog2 = 23 // matches maxBlockLog
 
 	defaultMaxPopPct        = 70
-	defaultMaxReducedPopPct = 15
+	defaultMaxReducedPopPct = 25
 )
 
 // Hash primes from SPEC_SEARCH.md

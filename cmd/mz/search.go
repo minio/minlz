@@ -179,19 +179,12 @@ func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats
 	return found, stats, nil
 }
 
-// extractLine extracts the full line containing the match from the block context.
 // extractLine extracts the full line containing the match.
 // Returns the line and the distance from the match start to the line end.
 func extractLine(r minlz.SearchResult, pattern []byte) (string, int) {
-	var data []byte
-	var matchPos int
-	if r.Blocks[0] != nil {
-		data = append(r.Blocks[0], r.Blocks[1]...)
-		matchPos = r.Offset
-	} else {
-		data = r.Blocks[1]
-		matchPos = r.Offset
-	}
+	prev := r.PrevBlock()
+	data := append(prev, r.Blocks[1]...)
+	matchPos := r.Offset
 
 	lineStart := bytes.LastIndexByte(data[:matchPos], '\n')
 	if lineStart < 0 {

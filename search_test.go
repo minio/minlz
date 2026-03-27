@@ -2307,6 +2307,73 @@ func FuzzSearchRoundtrip(f *testing.F) {
 	})
 }
 
+func TestSearchDeferNoPrefixRegression(t *testing.T) {
+	// Regression: no-prefix deferral skipped a block containing a real boundary match.
+	// Data has repetitive ')' and '\xa2' bytes creating many near-identical hashes.
+	// Pattern: 32×')' + 30×'\xa2', matchLen=7.
+	pattern := append(bytes.Repeat([]byte(")"), 32), bytes.Repeat([]byte{0xa2}, 30)...)
+	matchLen := 7
+
+	// Build data that reproduces the issue: blocks of ')' and '\xa2' with
+	// enough variation to trigger the deferred path.
+	blockSize := minBlockSize
+	data := make([]byte, 63*blockSize)
+	rng := rand.New(rand.NewSource(0xa2))
+	for i := range data {
+		// Mostly ')' and '\xa2' with occasional other bytes
+		switch rng.Intn(10) {
+		case 0:
+			data[i] = 0xa2
+		default:
+			data[i] = ')'
+		}
+	}
+	// Ensure pattern appears at a block boundary
+	off := 39*blockSize + blockSize - 48
+	copy(data[off:], pattern)
+
+	cfg := NewSearchTableConfig().WithMatchLen(matchLen)
+	var buf bytes.Buffer
+	w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(blockSize), WriterConcurrency(1))
+	w.Write(data)
+	w.Close()
+
+	var expected []int64
+	idx := 0
+	for {
+		i := bytes.Index(data[idx:], pattern)
+		if i < 0 {
+			break
+		}
+		expected = append(expected, int64(idx+i))
+		idx += i + 1
+	}
+
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+	var found []int64
+	err := searcher.Search(pattern, func(r SearchResult) error {
+		found = append(found, r.StreamOffset)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foundSet := make(map[int64]bool, len(found))
+	for _, f := range found {
+		foundSet[f] = true
+	}
+	for _, e := range expected {
+		if !foundSet[e] {
+			stats := searcher.Stats()
+			t.Fatalf("expected match at offset %d not found (expected=%d found=%d). "+
+				"blocks: total=%d skipped=%d searched=%d deferred=%d",
+				e, len(expected), len(found),
+				stats.BlocksTotal, stats.BlocksSkipped, stats.BlocksSearched, stats.BlocksDeferred)
+		}
+	}
+}
+
 func BenchmarkBuildTablePrefix(b *testing.B) {
 	rng := rand.New(rand.NewSource(42))
 	for _, size := range []int{4 << 10, 64 << 10, 1 << 20, 4 << 20} {

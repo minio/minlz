@@ -140,7 +140,7 @@ func ExampleSearchStats_Fprint() {
 	s := strings.Replace(out.String(), fmt.Sprintf("skipped: %d compressed", searcher.Stats().CompBytesSkipped), "skipped: <N> compressed", 1)
 	fmt.Print(s)
 	// Output:
-	// Blocks total: 2, skipped: 1, searched: 1
+	// Blocks total: 2, skipped: 1, searched: 1 (false positive: 0), deferred: 0 (0 skipped)
 	// Skip rate: 50.0%
 	// Bytes skipped: <N> compressed, searched: 8192 uncompressed
 	// Tables: 2 present, 0 missing, 0 unusable
