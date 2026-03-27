@@ -115,12 +115,19 @@ Options:`)
 			exitErr(fmt.Errorf("cannot use both -search.prefix and -search.prefixes"))
 		}
 		cfg := minlz.NewSearchTableConfig().WithMatchLen(*searchLen)
+		hasPrefix := false
 		if len(*searchPfxString) == 1 {
 			cfg = cfg.WithBytePrefix((*searchPfxString)[0])
+			hasPrefix = true
 		} else if len(*searchPfxString) > 1 {
 			cfg = cfg.WithLongPrefix([]byte(*searchPfxString))
+			hasPrefix = true
 		} else if len(*searchPfx) > 0 {
 			cfg = cfg.WithBytePrefix([]byte(*searchPfx)...)
+			hasPrefix = true
+		}
+		if !hasPrefix {
+			cfg = cfg.WithMaxReducedPopulation(50)
 		}
 		opts = append(opts, minlz.WriterSearchTable(cfg))
 	}

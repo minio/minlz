@@ -37,11 +37,18 @@ type SearchStats struct {
 
 // Fprint writes a human-readable summary of the search stats to w.
 func (st SearchStats) Fprint(w io.Writer) {
-	fmt.Fprintf(w, "Blocks total: %d, skipped: %d, searched: %d (false positive: %d), deferred: %d (%d skipped)\n",
-		st.BlocksTotal, st.BlocksSkipped, st.BlocksSearched, st.BlocksFalsePositive, st.BlocksDeferred, st.BlocksDeferredSkipped)
-	if st.BlocksTotal > 0 {
-		fmt.Fprintf(w, "Skip rate: %.1f%%\n", 100*float64(st.BlocksSkipped)/float64(st.BlocksTotal))
+	total := st.BlocksTotal
+	if total == 0 {
+		total = 1 // avoid division by zero
 	}
+	pct := func(n, d int) float64 { return 100 * float64(n) / float64(d) }
+	fmt.Fprintf(w, "Blocks total: %d, skipped: %d (%.1f%%), deferred: %d (%.1f%%, %d skipped)\n",
+		st.BlocksTotal, st.BlocksSkipped, pct(st.BlocksSkipped, total),
+		st.BlocksDeferred, pct(st.BlocksDeferred, total), st.BlocksDeferredSkipped)
+	searched := max(st.BlocksSearched, 1)
+	fmt.Fprintf(w, "Blocks searched: %d (%.1f%%), false positive: %d (%.1f%%)\n",
+		st.BlocksSearched, pct(st.BlocksSearched, total),
+		st.BlocksFalsePositive, pct(st.BlocksFalsePositive, searched))
 	fmt.Fprintf(w, "Bytes skipped: %d compressed, searched: %d uncompressed\n", st.CompBytesSkipped, st.UncompBytesSearched)
 	fmt.Fprintf(w, "Tables: %d present, %d missing, %d unusable\n", st.TablesPresent, st.TablesMissing, st.TablesUnusable)
 	if st.TablesPresent > 0 {
@@ -903,11 +910,22 @@ func (s *BlockSearcher) bufferSkippedBlock(chunkType byte, chunkLen int) (decomp
 		n, _, _ := decodedLen(s.buf[checksumSize : checksumSize+min(chunkLen-checksumSize, 10)])
 		decompLen = n
 	}
+	// Hand s.buf to the lazy block and reclaim the previous lazy block's buffer.
+	// This avoids an alloc+copy on every skipped block.
+	var reclaimed []byte
+	if s.prevLazy != nil {
+		reclaimed = s.prevLazy.chunkData
+	}
 	s.prevLazy = &lazyBlock{
-		chunkData: append([]byte{}, s.buf[:chunkLen]...),
+		chunkData: s.buf[:chunkLen],
 		chunkType: chunkType,
 		decompLen: decompLen,
 		ignoreCRC: s.ignoreCRC,
+	}
+	if reclaimed != nil {
+		s.buf = reclaimed[:0]
+	} else {
+		s.buf = nil
 	}
 	return decompLen, nil
 }

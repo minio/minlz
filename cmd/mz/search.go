@@ -140,12 +140,14 @@ func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats
 			if r.StreamOffset < lastLineEnd {
 				return nil
 			}
+			if opts.count {
+				lastLineEnd = r.StreamOffset + int64(lineEndOffset(r, pattern))
+				matchCount++
+				return nil
+			}
 			line, endOff := extractLine(r, pattern)
 			lastLineEnd = r.StreamOffset + int64(endOff)
 			matchCount++
-			if opts.count {
-				return nil
-			}
 			if opts.lineNums {
 				fmt.Printf("%s%d:%d:%s\n", prefix, lineOffset, r.StreamOffset, line)
 			} else {
@@ -177,6 +179,26 @@ func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats
 		fmt.Printf("%s%d\n", prefix, matchCount)
 	}
 	return found, stats, nil
+}
+
+// lineEndOffset returns the distance from the match start to the end of its line.
+// Avoids allocating by searching Blocks[1] directly.
+func lineEndOffset(r minlz.SearchResult, pattern []byte) int {
+	// Match position within Blocks[1]: Offset counts from PrevBlock start,
+	// so subtract Blocks[0] length (which is the decoded prev if available).
+	prevLen := len(r.Blocks[0])
+	posInBlk := r.Offset - prevLen
+	after := posInBlk + len(pattern)
+	if after < 0 {
+		after = 0
+	}
+	blk := r.Blocks[1]
+	if after < len(blk) {
+		if idx := bytes.IndexByte(blk[after:], '\n'); idx >= 0 {
+			return after - posInBlk + idx
+		}
+	}
+	return len(blk) - posInBlk
 }
 
 // extractLine extracts the full line containing the match.
