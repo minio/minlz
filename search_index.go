@@ -13,16 +13,20 @@ var byteTablePool sync.Pool
 // overlap contains up to matchLen-1 bytes from the next block (for boundary patterns).
 // Returns (table, reductions) or (nil, 0) if the table is too populated.
 // Base table size is fixed per c.baseTableSize; reductions vary per block.
-func (c *SearchTableConfig) buildSearchTable(blockData, overlap []byte) ([]byte, uint8) {
+// To reduce L3 cache pressure the "packed" can be used with less L3 cache pressure.
+func (c *SearchTableConfig) buildSearchTable(blockData, overlap []byte, packed bool) ([]byte, uint8) {
 	tableU64s := max(4, 1<<(c.baseTableSize-6))
 	tableBytes := make([]byte, tableU64s*8)
 	table := unsafe.Slice((*uint64)(unsafe.Pointer(unsafe.SliceData(tableBytes))), tableU64s)
 
 	// Index the main block data.
 	nPositions := len(blockData)
-
 	switch c.tableType {
 	case searchTableTypeNoPrefix:
+		if packed {
+			buildTableNoPrefix(table, blockData, nPositions, c.baseTableSize, c.matchLen)
+			break
+		}
 		btSize := 1 << c.baseTableSize
 		var bt []byte
 		if v := byteTablePool.Get(); v != nil {
@@ -120,6 +124,12 @@ packed:
 	return tableBytes[:len(table)*8], reductions
 }
 
+// shouldPack returns true if the expected L3 cache usage is above 8MB.
+// Typically at this point performance starts degrading.
+func (s *SearchTableConfig) shouldPack(concurrency int) bool {
+	return concurrency*(1<<s.baseTableSize) > 8<<20
+}
+
 func setBit(table []uint64, h uint32) {
 	table[h>>6] |= 1 << (h & 63)
 }
@@ -138,6 +148,94 @@ func packBitsGeneric(dst, src []byte) {
 			(load8(src, base+6) & 0x40) |
 			(load8(src, base+7) & 0x80)
 		base += 8
+	}
+}
+
+// buildTableNoPrefix indexes all positions. Branchless inner loop.
+// nPositions is the number of starting positions to index (len of original block).
+// data may be longer (includes overlap for boundary reads).
+func buildTableNoPrefix(table []uint64, data []byte, nPositions int, tableSize, matchLen uint8) {
+	n := nPositions - int(matchLen) + 1
+	if n <= 0 {
+		return
+	}
+	safeEnd := max(0, len(data)-7)
+	mainEnd := min(n, safeEnd)
+
+	switch matchLen {
+	case 1:
+		for i := range n {
+			setBit(table, hashValue1(uint64(data[i])))
+		}
+	case 2:
+		if tableSize >= 16 {
+			for i := range mainEnd {
+				setBit(table, hashValue2Full(load64(data, i)))
+			}
+		} else {
+			for i := range mainEnd {
+				setBit(table, hashValue2(load64(data, i), tableSize))
+			}
+		}
+	case 3:
+		for i := range mainEnd {
+			setBit(table, hashValue3(load64(data, i), tableSize))
+		}
+	case 4:
+		i := 0
+		for ; i < mainEnd-4; i += 4 {
+			v := load64(data, i)
+			setBit(table, hashValue4(v, tableSize))
+			setBit(table, hashValue4(v>>8, tableSize))
+			setBit(table, hashValue4(v>>16, tableSize))
+			setBit(table, hashValue4(v>>24, tableSize))
+		}
+		for ; i < mainEnd; i++ {
+			setBit(table, hashValue4(load64(data, i), tableSize))
+		}
+	case 5:
+		i := 0
+		for ; i < mainEnd-4; i += 4 {
+			v := load64(data, i)
+			setBit(table, hashValue5(v, tableSize))
+			setBit(table, hashValue5(v>>8, tableSize))
+			setBit(table, hashValue5(v>>16, tableSize))
+			setBit(table, hashValue5(v>>24, tableSize))
+		}
+		for ; i < mainEnd; i++ {
+			setBit(table, hashValue5(load64(data, i), tableSize))
+		}
+	case 6:
+		i := 0
+		for ; i < mainEnd-3; i += 3 {
+			v := load64(data, i)
+			setBit(table, hashValue6(v, tableSize))
+			setBit(table, hashValue6(v>>8, tableSize))
+			setBit(table, hashValue6(v>>16, tableSize))
+		}
+		for ; i < mainEnd; i++ {
+			setBit(table, hashValue6(load64(data, i), tableSize))
+		}
+	case 7:
+		i := 0
+		for ; i < mainEnd-2; i += 2 {
+			v := load64(data, i)
+			setBit(table, hashValue7(v, tableSize))
+			setBit(table, hashValue7(v>>8, tableSize))
+		}
+		for ; i < mainEnd; i++ {
+			setBit(table, hashValue7(load64(data, i), tableSize))
+		}
+	case 8:
+		for i := range mainEnd {
+			setBit(table, hashValue8(load64(data, i), tableSize))
+		}
+	}
+
+	// Tail: positions where 8-byte read isn't safe.
+	for i := mainEnd; i < n; i++ {
+		v := readLE64Pad(data[i:])
+		setBit(table, hashValue(v, tableSize, matchLen))
 	}
 }
 

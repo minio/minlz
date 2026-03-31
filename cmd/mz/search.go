@@ -184,10 +184,7 @@ func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats
 // lineEndOffset returns the distance from the match start to the end of its line.
 // Avoids allocating by searching Blocks[1] directly.
 func lineEndOffset(r minlz.SearchResult, pattern []byte) int {
-	// Match position within Blocks[1]: Offset counts from PrevBlock start,
-	// so subtract Blocks[0] length (which is the decoded prev if available).
-	prevLen := len(r.Blocks[0])
-	posInBlk := r.Offset - prevLen
+	posInBlk := r.Offset - r.PrevBlockLen
 	after := posInBlk + len(pattern)
 	if after < 0 {
 		after = 0

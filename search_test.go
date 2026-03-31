@@ -53,18 +53,22 @@ func TestBuildTableNoPrefix(t *testing.T) {
 	rng.Read(data)
 
 	cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(4), 16)
-	table, reductions := cfg.buildSearchTable(data, nil)
-	if table == nil {
-		t.Fatal("table should not be nil for 4KB data with 16-bit table")
-	}
+	for _, packed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("packed=%v", packed), func(t *testing.T) {
+			table, reductions := cfg.buildSearchTable(data, nil, packed)
+			if table == nil {
+				t.Fatal("table should not be nil for 4KB data with 16-bit table")
+			}
 
-	// Verify no false negatives: every 4-byte window must be set.
-	for i := 0; i <= len(data)-4; i++ {
-		v := readLE64Pad(data[i:])
-		h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & ((1 << (cfg.baseTableSize - reductions)) - 1)
-		if table[h>>3]&(1<<(h&7)) == 0 {
-			t.Fatalf("false negative at position %d (h=%d, reductions=%d, tableLen=%d)", i, h, reductions, len(table))
-		}
+			// Verify no false negatives: every 4-byte window must be set.
+			for i := 0; i <= len(data)-4; i++ {
+				v := readLE64Pad(data[i:])
+				h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & ((1 << (cfg.baseTableSize - reductions)) - 1)
+				if table[h>>3]&(1<<(h&7)) == 0 {
+					t.Fatalf("false negative at position %d (h=%d, reductions=%d, tableLen=%d)", i, h, reductions, len(table))
+				}
+			}
+		})
 	}
 }
 
@@ -75,19 +79,21 @@ func TestBuildTableNoPrefix_NoFalseNegative(t *testing.T) {
 		rng.Read(data)
 
 		for ml := 1; ml <= 8; ml++ {
-			cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(ml), 16)
-			table, reductions := cfg.buildSearchTable(data, nil)
-			if table == nil {
-				continue // too populated, skip
-			}
-			effectiveSize := cfg.baseTableSize - reductions
+			for _, packed := range []bool{false, true} {
+				cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(ml), 16)
+				table, reductions := cfg.buildSearchTable(data, nil, packed)
+				if table == nil {
+					continue // too populated, skip
+				}
+				effectiveSize := cfg.baseTableSize - reductions
 
-			for i := 0; i <= len(data)-ml; i++ {
-				v := readLE64Pad(data[i:])
-				h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & ((1 << (cfg.baseTableSize - reductions)) - 1)
-				_ = effectiveSize
-				if table[h>>3]&(1<<(h&7)) == 0 {
-					t.Fatalf("false negative: size=%d ml=%d pos=%d reductions=%d", size, ml, i, reductions)
+				for i := 0; i <= len(data)-ml; i++ {
+					v := readLE64Pad(data[i:])
+					h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & ((1 << (cfg.baseTableSize - reductions)) - 1)
+					_ = effectiveSize
+					if table[h>>3]&(1<<(h&7)) == 0 {
+						t.Fatalf("false negative: size=%d ml=%d packed=%v pos=%d reductions=%d", size, ml, packed, i, reductions)
+					}
 				}
 			}
 		}
@@ -98,21 +104,25 @@ func TestBuildTableWithOverlap(t *testing.T) {
 	data := []byte("hello world test")
 	overlap := []byte("xyz")
 	cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(4), 10)
-	table, reductions := cfg.buildSearchTable(data, overlap)
-	if table == nil {
-		t.Fatal("table should not be nil")
-	}
+	for _, packed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("packed=%v", packed), func(t *testing.T) {
+			table, reductions := cfg.buildSearchTable(data, overlap, packed)
+			if table == nil {
+				t.Fatal("table should not be nil")
+			}
 
-	// The last position in data that extends into overlap should be indexed.
-	// Position len(data)-3 reads "stx" which is 3 bytes of data + overlap[0].
-	// With matchLen=4, position len(data)-3 = 13 reads data[13:17] = "est" + overlap "x".
-	combined := append(data, overlap...)
-	for i := 0; i <= len(data)-4; i++ {
-		v := readLE64Pad(combined[i:])
-		h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & ((1 << (cfg.baseTableSize - reductions)) - 1)
-		if table[h>>3]&(1<<(h&7)) == 0 {
-			t.Fatalf("false negative at position %d", i)
-		}
+			// The last position in data that extends into overlap should be indexed.
+			// Position len(data)-3 reads "stx" which is 3 bytes of data + overlap[0].
+			// With matchLen=4, position len(data)-3 = 13 reads data[13:17] = "est" + overlap "x".
+			combined := append(data, overlap...)
+			for i := 0; i <= len(data)-4; i++ {
+				v := readLE64Pad(combined[i:])
+				h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & ((1 << (cfg.baseTableSize - reductions)) - 1)
+				if table[h>>3]&(1<<(h&7)) == 0 {
+					t.Fatalf("false negative at position %d", i)
+				}
+			}
+		})
 	}
 }
 
@@ -157,19 +167,22 @@ func TestBuildSearchTableDeterministic(t *testing.T) {
 		name     string
 		cfg      SearchTableConfig
 		dataSize int
+		packed   bool
 		wantCRC  uint32
 	}{
-		{"noprefix_4k_ml4", withBaseTableSize(NewSearchTableConfig().WithMatchLen(4), 16), 4096, 0},
-		{"noprefix_64k_ml8", withBaseTableSize(NewSearchTableConfig().WithMatchLen(8), 18), 65536, 0},
-		{"byteprefix_4k", withBaseTableSize(NewSearchTableConfig().WithMatchLen(4).WithBytePrefix('"', ':'), 16), 4096, 0},
-		{"longprefix_4k", withBaseTableSize(NewSearchTableConfig().WithMatchLen(4).WithLongPrefix([]byte("id:")), 16), 4096, 0},
+		{"noprefix_4k_ml4", withBaseTableSize(NewSearchTableConfig().WithMatchLen(4), 16), 4096, false, 0},
+		{"noprefix_4k_ml4_packed", withBaseTableSize(NewSearchTableConfig().WithMatchLen(4), 16), 4096, true, 0},
+		{"noprefix_64k_ml8", withBaseTableSize(NewSearchTableConfig().WithMatchLen(8), 18), 65536, false, 0},
+		{"noprefix_64k_ml8_packed", withBaseTableSize(NewSearchTableConfig().WithMatchLen(8), 18), 65536, true, 0},
+		{"byteprefix_4k", withBaseTableSize(NewSearchTableConfig().WithMatchLen(4).WithBytePrefix('"', ':'), 16), 4096, false, 0},
+		{"longprefix_4k", withBaseTableSize(NewSearchTableConfig().WithMatchLen(4).WithLongPrefix([]byte("id:")), 16), 4096, false, 0},
 	}
 
 	// First pass: compute CRCs. Second pass: verify they match.
 	for i := range tests {
 		data := make([]byte, tests[i].dataSize)
 		rng.Read(data)
-		table, _ := tests[i].cfg.buildSearchTable(data, nil)
+		table, _ := tests[i].cfg.buildSearchTable(data, nil, tests[i].packed)
 		if table == nil {
 			t.Fatalf("%s: table nil", tests[i].name)
 		}
@@ -181,7 +194,7 @@ func TestBuildSearchTableDeterministic(t *testing.T) {
 	for _, tt := range tests {
 		data := make([]byte, tt.dataSize)
 		rng.Read(data)
-		table, _ := tt.cfg.buildSearchTable(data, nil)
+		table, _ := tt.cfg.buildSearchTable(data, nil, tt.packed)
 		if table == nil {
 			t.Fatalf("%s: table nil on re-run", tt.name)
 		}
@@ -219,12 +232,14 @@ func TestPopulationThreshold(t *testing.T) {
 	data := make([]byte, 10000)
 	rng.Read(data)
 	cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(4), 8) // 256 entries, tiny table
-	table, _ := cfg.buildSearchTable(data, nil)
-	// With 10K positions into 256 entries, >70% should be set → table skipped (nil).
-	if table != nil {
-		t.Log("table was not skipped (unexpected for such a small table with random data)")
-	} else {
-		t.Log("table correctly skipped due to high population")
+	for _, packed := range []bool{false, true} {
+		table, _ := cfg.buildSearchTable(data, nil, packed)
+		// With 10K positions into 256 entries, >70% should be set → table skipped (nil).
+		if table != nil {
+			t.Logf("packed=%v: table was not skipped (unexpected for such a small table with random data)", packed)
+		} else {
+			t.Logf("packed=%v: table correctly skipped due to high population", packed)
+		}
 	}
 }
 
@@ -284,22 +299,26 @@ func TestPatternCanMatch(t *testing.T) {
 	rng.Read(data)
 
 	cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(4), 16)
-	table, reductions := cfg.buildSearchTable(data, nil)
-	if table == nil {
-		t.Fatal("table should not be nil")
-	}
+	for _, packed := range []bool{false, true} {
+		table, reductions := cfg.buildSearchTable(data, nil, packed)
+		if table == nil {
+			t.Fatal("table should not be nil")
+		}
 
-	// Every 4+ byte substring in data should match.
-	for i := 0; i < 100; i++ {
-		pos := rng.Intn(len(data) - 8)
-		pattern := data[pos : pos+4+rng.Intn(5)]
-		canUse, match := patternCanMatch(&cfg, table, reductions, pattern)
-		if canUse && !match {
-			t.Fatalf("false negative for pattern at pos %d", pos)
+		// Every 4+ byte substring in data should match.
+		rng2 := rand.New(rand.NewSource(123))
+		for i := 0; i < 100; i++ {
+			pos := rng2.Intn(len(data) - 8)
+			pattern := data[pos : pos+4+rng2.Intn(5)]
+			canUse, match := patternCanMatch(&cfg, table, reductions, pattern)
+			if canUse && !match {
+				t.Fatalf("packed=%v: false negative for pattern at pos %d", packed, pos)
+			}
 		}
 	}
 
 	// Pattern too short should return canUse=false.
+	table, reductions := cfg.buildSearchTable(data, nil, false)
 	canUse, _ := patternCanMatch(&cfg, table, reductions, []byte("ab"))
 	if canUse {
 		t.Fatal("expected canUse=false for short pattern")
@@ -477,7 +496,7 @@ func TestPatternCanMatchPrefixNoFalseNegatives(t *testing.T) {
 		for _, ml := range []int{2, 4, 6, 8} {
 			for _, ts := range []int{12, 16, 20} {
 				cfg := withBaseTableSize(cc.cfg.WithMatchLen(ml), ts)
-				table, reductions := cfg.buildSearchTable(data, nil)
+				table, reductions := cfg.buildSearchTable(data, nil, false)
 				if table == nil {
 					continue
 				}
@@ -518,7 +537,7 @@ func TestPatternCanMatchPrefixReductions(t *testing.T) {
 		NewSearchTableConfig().WithMatchLen(6).WithBytePrefix(' ', '.').WithMaxReducedPopulation(80),
 		16,
 	)
-	table, reductions := cfg.buildSearchTable(data, nil)
+	table, reductions := cfg.buildSearchTable(data, nil, false)
 	if table == nil {
 		t.Fatal("table too populated")
 	}
@@ -547,7 +566,7 @@ func TestPatternCanMatchPrefixNoPrefixInPattern(t *testing.T) {
 	for i := range data {
 		data[i] = byte(i % 251)
 	}
-	table, reductions := cfg.buildSearchTable(data, nil)
+	table, reductions := cfg.buildSearchTable(data, nil, false)
 	if table == nil {
 		t.Fatal("table too populated")
 	}
@@ -1225,24 +1244,26 @@ func FuzzSearchNoFalseNegatives(f *testing.F) {
 			overlap = overlap[:matchLen-1]
 		}
 		cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(matchLen), tableSize)
-		table, reductions := cfg.buildSearchTable(data, overlap)
-		if table == nil {
-			return // too populated
-		}
-		combined := data
-		if len(overlap) > 0 {
-			combined = append(append([]byte{}, data...), overlap...)
-		}
-		mask := uint32((1 << (cfg.baseTableSize - reductions)) - 1)
-		// Every position in data must have its bit set.
-		for i := 0; i < len(data); i++ {
-			if i+int(cfg.matchLen) > len(combined) {
-				break
+		for _, packed := range []bool{false, true} {
+			table, reductions := cfg.buildSearchTable(data, overlap, packed)
+			if table == nil {
+				continue // too populated
 			}
-			v := readLE64Pad(combined[i:])
-			h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
-			if table[h>>3]&(1<<(h&7)) == 0 {
-				t.Fatalf("false negative at pos %d (ml=%d ts=%d red=%d overlap=%d)", i, matchLen, tableSize, reductions, len(overlap))
+			combined := data
+			if len(overlap) > 0 {
+				combined = append(append([]byte{}, data...), overlap...)
+			}
+			mask := uint32((1 << (cfg.baseTableSize - reductions)) - 1)
+			// Every position in data must have its bit set.
+			for i := 0; i < len(data); i++ {
+				if i+int(cfg.matchLen) > len(combined) {
+					break
+				}
+				v := readLE64Pad(combined[i:])
+				h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
+				if table[h>>3]&(1<<(h&7)) == 0 {
+					t.Fatalf("false negative at pos %d (ml=%d ts=%d red=%d overlap=%d packed=%v)", i, matchLen, tableSize, reductions, len(overlap), packed)
+				}
 			}
 		}
 	})
@@ -1254,13 +1275,24 @@ func BenchmarkBuildTableNoPrefix(b *testing.B) {
 		data := make([]byte, size)
 		rng.Read(data)
 		cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(4), int(autoTableSize(size)))
-		b.Run(sizeLabel(size), func(b *testing.B) {
-			b.SetBytes(int64(size))
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				cfg.buildSearchTable(data, nil)
-			}
-		})
+		for _, packed := range []bool{false, true} {
+			b.Run(fmt.Sprintf("%s/packed=%v", sizeLabel(size), packed), func(b *testing.B) {
+				b.SetBytes(int64(size))
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					cfg.buildSearchTable(data, nil, packed)
+				}
+			})
+			b.Run(fmt.Sprintf("%s/packed=%v/parallel", sizeLabel(size), packed), func(b *testing.B) {
+				b.SetBytes(int64(size))
+				b.ReportAllocs()
+				b.RunParallel(func(pb *testing.PB) {
+					for pb.Next() {
+						cfg.buildSearchTable(data, nil, packed)
+					}
+				})
+			})
+		}
 	}
 }
 
@@ -1282,21 +1314,23 @@ func TestSearchAllMatchLengths(t *testing.T) {
 	rng.Read(data)
 
 	for ml := 1; ml <= 8; ml++ {
-		t.Run(fmt.Sprintf("matchLen=%d", ml), func(t *testing.T) {
-			cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(ml), 16)
-			table, reductions := cfg.buildSearchTable(data, nil)
-			if table == nil {
-				t.Skip("table too populated")
-			}
-			mask := uint32(1<<(cfg.baseTableSize-reductions)) - 1
-			for i := 0; i <= len(data)-ml; i++ {
-				v := readLE64Pad(data[i:])
-				h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
-				if table[h>>3]&(1<<(h&7)) == 0 {
-					t.Fatalf("false negative at pos %d", i)
+		for _, packed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("matchLen=%d/packed=%v", ml, packed), func(t *testing.T) {
+				cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(ml), 16)
+				table, reductions := cfg.buildSearchTable(data, nil, packed)
+				if table == nil {
+					t.Skip("table too populated")
 				}
-			}
-		})
+				mask := uint32(1<<(cfg.baseTableSize-reductions)) - 1
+				for i := 0; i <= len(data)-ml; i++ {
+					v := readLE64Pad(data[i:])
+					h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
+					if table[h>>3]&(1<<(h&7)) == 0 {
+						t.Fatalf("false negative at pos %d, reduction: %d", i, reductions)
+					}
+				}
+			})
+		}
 	}
 }
 
@@ -2080,22 +2114,24 @@ func TestSearchTableSizes(t *testing.T) {
 	rng.Read(data)
 
 	for ts := 8; ts <= 16; ts++ {
-		t.Run(fmt.Sprintf("ts=%d", ts), func(t *testing.T) {
-			cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(4), ts)
-			table, reductions := cfg.buildSearchTable(data, nil)
-			if table == nil {
-				t.Log("table skipped (too populated)")
-				return
-			}
-			mask := uint32(1<<(cfg.baseTableSize-reductions)) - 1
-			for i := 0; i <= len(data)-4; i++ {
-				v := readLE64Pad(data[i:])
-				h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
-				if table[h>>3]&(1<<(h&7)) == 0 {
-					t.Fatalf("false negative at pos %d (ts=%d red=%d)", i, ts, reductions)
+		for _, packed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("ts=%d/packed=%v", ts, packed), func(t *testing.T) {
+				cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(4), ts)
+				table, reductions := cfg.buildSearchTable(data, nil, packed)
+				if table == nil {
+					t.Log("table skipped (too populated)")
+					return
 				}
-			}
-		})
+				mask := uint32(1<<(cfg.baseTableSize-reductions)) - 1
+				for i := 0; i <= len(data)-4; i++ {
+					v := readLE64Pad(data[i:])
+					h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
+					if table[h>>3]&(1<<(h&7)) == 0 {
+						t.Fatalf("false negative at pos %d (ts=%d red=%d packed=%v)", i, ts, reductions, packed)
+					}
+				}
+			})
+		}
 	}
 }
 
@@ -2384,7 +2420,7 @@ func BenchmarkBuildTablePrefix(b *testing.B) {
 			b.SetBytes(int64(size))
 			b.ReportAllocs()
 			for b.Loop() {
-				cfg.buildSearchTable(data, nil)
+				cfg.buildSearchTable(data, nil, false)
 			}
 		})
 	}
@@ -2618,14 +2654,18 @@ func BenchmarkPatternCanMatch(b *testing.B) {
 	data := make([]byte, 1<<20)
 	rng.Read(data)
 	cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(4), 20)
-	table, reductions := cfg.buildSearchTable(data, nil)
-	if table == nil {
-		b.Fatal("table nil")
-	}
-	pattern := data[5000:5020]
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		patternCanMatch(&cfg, table, reductions, pattern)
+	for _, packed := range []bool{false, true} {
+		b.Run(fmt.Sprintf("packed=%v", packed), func(b *testing.B) {
+			table, reductions := cfg.buildSearchTable(data, nil, packed)
+			if table == nil {
+				b.Fatal("table nil")
+			}
+			pattern := data[5000:5020]
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				patternCanMatch(&cfg, table, reductions, pattern)
+			}
+		})
 	}
 }

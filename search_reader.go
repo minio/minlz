@@ -90,6 +90,10 @@ type SearchResult struct {
 	// Invariant: Offset == int(StreamOffset - BlockStart)
 	BlockStart int64
 
+	// PrevBlockLen is the decompressed size of the previous block.
+	// This equals len(PrevBlock()) but avoids forcing a lazy decode.
+	PrevBlockLen int
+
 	prevLazy *lazyBlock // lazily decompressible previous block; nil if not available
 }
 
@@ -654,6 +658,7 @@ func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []by
 				Offset:       len(s.prevBlock) - matchInPrev,
 				StreamOffset: streamOff,
 				BlockStart:   prevBlockStart,
+				PrevBlockLen: len(s.prevBlock),
 			}
 			s.blockMatches++
 			err := fn(result)
@@ -689,6 +694,7 @@ func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []by
 				Offset:       len(s.prevBlock) + matchOff,
 				StreamOffset: streamOff,
 				BlockStart:   prevBlockStart,
+				PrevBlockLen: len(s.prevBlock),
 			}
 		} else {
 			result = SearchResult{
@@ -699,6 +705,7 @@ func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []by
 			}
 			if s.prevLazy != nil {
 				result.Offset = s.prevLazy.decompLen + matchOff
+				result.PrevBlockLen = s.prevLazy.decompLen
 			} else {
 				result.Offset = matchOff
 			}
@@ -734,6 +741,7 @@ func (s *BlockSearcher) flushDeferred(nextBlk []byte, fn func(SearchResult) erro
 		Offset:       d.matchOff,
 		StreamOffset: d.streamOff,
 		BlockStart:   d.blockOff,
+		PrevBlockLen: len(d.blk),
 	}
 	err := fn(result)
 	if err == nil {

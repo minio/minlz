@@ -48,9 +48,12 @@ func mainCompress(args []string) {
 		blockSize       = fs.String("bs", "8M", "Max block size. Examples: 64K, 256K, 1M, 8M. Must be power of two and <= 8MB")
 		index           = fs.Bool("index", true, "Add seek index")
 		padding         = fs.String("pad", "1", "Pad size to a multiple of this value, Examples: 500, 64K, 256K, 1M, 4M, etc")
-		searchLen       = fs.Int("search", 0, "Add search tables with given match length (1-8). 0=disabled")
+		searchTable     = fs.Bool("search", false, "Add search table")
+		searchLen       = fs.Int("search.len", 6, "Add search tables with given match length (1-8)")
 		searchPfx       = fs.String("search.prefixes", "", "Search table prefix bytes (e.g. '=', '=:')")
 		searchPfxString = fs.String("search.prefix", "", "Single value longer prefix, eg 'id:\\\"'")
+		searchMax       = fs.Int("search.max", 75, "Discards search table entries with a population percentage higher than this")
+		searchLim       = fs.Int("search.lim", 50, "Stops reducing search tables if population exceeds this percentage. Divided by 2 if using prefix")
 
 		// Shared
 		block  = fs.Bool("block", false, "Use as a single block. Will load content into memory. Max 8MB.")
@@ -110,9 +113,18 @@ Options:`)
 		level = minlz.LevelUncompressed
 	}
 	opts := []minlz.WriterOption{minlz.WriterBlockSize(int(sz)), minlz.WriterConcurrency(*cpu), minlz.WriterPadding(int(pad)), minlz.WriterLevel(level), minlz.WriterAddIndex(*index)}
-	if *searchLen > 0 {
+	if *searchTable {
 		if len(*searchPfxString) > 0 && len(*searchPfx) > 0 {
 			exitErr(fmt.Errorf("cannot use both -search.prefix and -search.prefixes"))
+		}
+		if *searchLen < 1 || *searchLen > 8 {
+			exitErr(fmt.Errorf("search length must be between 1 and 8"))
+		}
+		if *searchMax < 1 || *searchMax > 100 {
+			exitErr(fmt.Errorf("search max must be between 1 and 100"))
+		}
+		if *searchLim < 1 || *searchLim > 100 {
+			exitErr(fmt.Errorf("search limit must be between 1 and 100"))
 		}
 		cfg := minlz.NewSearchTableConfig().WithMatchLen(*searchLen)
 		hasPrefix := false
@@ -126,8 +138,10 @@ Options:`)
 			cfg = cfg.WithBytePrefix([]byte(*searchPfx)...)
 			hasPrefix = true
 		}
-		if !hasPrefix {
-			cfg = cfg.WithMaxReducedPopulation(50)
+		if hasPrefix {
+			cfg = cfg.WithMaxReducedPopulation(*searchLim / 2)
+		} else {
+			cfg = cfg.WithMaxReducedPopulation(*searchLim)
 		}
 		opts = append(opts, minlz.WriterSearchTable(cfg))
 	}
@@ -286,7 +300,8 @@ func processStream(filename string, recomp *bool, ext string, outFile *string, q
 		elapsed := time.Since(start)
 		mbpersec := (float64(input) / 1e6) / (float64(elapsed) / (float64(time.Second)))
 		pct := float64(wc.n) * 100 / float64(input)
-		fmt.Printf(" %d -> %d [%.02f%%]; %.01fMB/s\n", input, wc.n, pct, mbpersec)
+		ratio := float64(input) / float64(wc.n)
+		fmt.Printf(" %d -> %d [%.02f%% %.03f:1]; %.01fMB/s\n", input, wc.n, pct, ratio, mbpersec)
 	}
 	exitErr(errFn())
 	if *remove {
@@ -349,7 +364,8 @@ func processBlock(recomp *bool, filename string, ext string, outFile *string, qu
 			elapsed := time.Since(start)
 			mbpersec := (float64(len(inBytes)) / 1e6) / (float64(elapsed) / (float64(time.Second)))
 			pct := float64(len(compressed)) * 100 / float64(len(inBytes))
-			fmt.Printf(" %d -> %d [%.02f%%]; %.01fMB/s\n", len(inBytes), len(compressed), pct, mbpersec)
+			ratio := float64(len(inBytes)) / float64(len(compressed))
+			fmt.Printf(" %d -> %d [%.02f%% %.03f:1]; %.01fMB/s\n", len(inBytes), len(compressed), pct, ratio, mbpersec)
 		}
 		if *verify {
 			got, err := minlz.Decode(make([]byte, 0, len(inBytes)), compressed)
@@ -441,7 +457,8 @@ func runBenchStream(quiet *bool, filename string, err error, bench *int, verify 
 			mbpersec := (float64(input) / 1e6) / (float64(elapsed) / (float64(time.Second)))
 			pct := float64(wc.n) * 100 / float64(input)
 			ms := elapsed.Round(time.Millisecond)
-			fmt.Printf(" %d -> %d [%.02f%%]; %v, %.01fMB/s", input, wc.n, pct, ms, mbpersec)
+			ratio := float64(input) / float64(wc.n)
+			fmt.Printf(" %d -> %d [%.02f%% %.03f:1]; %v, %.01fMB/s", input, wc.n, pct, ratio, ms, mbpersec)
 		}
 		if *verify {
 			runtime.GC()
@@ -463,8 +480,9 @@ func runBenchStream(quiet *bool, filename string, err error, bench *int, verify 
 			mbpersecConc := (float64(input) / 1e6) / (float64(elapsed) / (float64(time.Second)))
 			if !*quiet {
 				pct := float64(input) * 100 / float64(wc.n)
+				ratio := float64(input) / float64(wc.n)
 				ms := elapsed.Round(time.Millisecond)
-				str := fmt.Sprintf(" %d -> %d [%.02f%%]; %v, %.01fMB/s", wc.n, n, pct, ms, mbpersecConc)
+				str := fmt.Sprintf(" %d -> %d [%.02f%% 1:%.03f]; %v, %.01fMB/s", wc.n, n, pct, ratio, ms, mbpersecConc)
 				fmt.Print(str)
 				speedIdx += strings.IndexByte(str, ';') + 1
 			}
@@ -537,8 +555,9 @@ func runBenchBlock(quiet *bool, filename string, err error, bench *int, level in
 			elapsed := time.Since(start)
 			singleSpeed = (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
 			pct := output * 100 / input
+			ratio := input / output
 			ms := elapsed.Round(time.Millisecond)
-			fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s           \r", len(b), len(compressed), pct, ms, singleSpeed)
+			fmt.Printf(" * %d -> %d bytes [%.02f%% %.03f:1]; %v, %.01fMB/s           \r", len(b), len(compressed), pct, ratio, ms, singleSpeed)
 			lastUpdate = time.Now()
 		}
 	}
@@ -571,8 +590,9 @@ func runBenchBlock(quiet *bool, filename string, err error, bench *int, level in
 			mbpersec := (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
 			scale := mbpersec / singleSpeed
 			pct := output * 100 / input
+			ratio := input / output
 			ms := elapsed.Round(time.Millisecond)
-			fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s (%.1fx)          \r", len(b), len(compressed), pct, ms, mbpersec, scale)
+			fmt.Printf(" * %d -> %d bytes [%.02f%% %.03f:1]; %v, %.01fMB/s (%.1fx)          \r", len(b), len(compressed), pct, ratio, ms, mbpersec, scale)
 			time.Sleep(time.Second / 6)
 		}
 		wg.Wait()
@@ -602,8 +622,9 @@ func runBenchBlock(quiet *bool, filename string, err error, bench *int, level in
 				elapsed := time.Since(start)
 				singleSpeed = (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
 				pct := input * 100 / output
+				ratio := input / output
 				ms := elapsed.Round(time.Millisecond)
-				fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s               \r", len(compressed), len(decomp), pct, ms, singleSpeed)
+				fmt.Printf(" * %d -> %d bytes [%.02f%% 1:%.03f]; %v, %.01fMB/s               \r", len(compressed), len(decomp), pct, ratio, ms, singleSpeed)
 				lastUpdate = time.Now()
 			}
 		}
@@ -639,8 +660,9 @@ func runBenchBlock(quiet *bool, filename string, err error, bench *int, level in
 				mbpersec := (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
 				scale := mbpersec / singleSpeed
 				pct := input * 100 / output
+				ratio := input / output
 				ms := elapsed.Round(time.Millisecond)
-				fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s (%.1fx)          \r", len(b), len(compressed), pct, ms, mbpersec, scale)
+				fmt.Printf(" * %d -> %d bytes [%.02f%% 1:%.03f]; %v, %.01fMB/s (%.1fx)          \r", len(b), len(compressed), pct, ratio, ms, mbpersec, scale)
 				time.Sleep(time.Second / 6)
 			}
 			wg.Wait()
