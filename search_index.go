@@ -4,20 +4,28 @@ import (
 	"bytes"
 	"math/bits"
 	"sync"
-	"unsafe"
 )
 
-var byteTablePool sync.Pool
+var (
+	byteTablePool   sync.Pool
+	searchTablePool sync.Pool
+)
 
 // buildSearchTable generates a search table for blockData.
 // overlap contains up to matchLen-1 bytes from the next block (for boundary patterns).
+// dst is an optional reusable buffer; if nil or too small a new one is allocated.
 // Returns (table, reductions) or (nil, 0) if the table is too populated.
 // Base table size is fixed per c.baseTableSize; reductions vary per block.
 // To reduce L3 cache pressure the "packed" can be used with less L3 cache pressure.
-func (c *SearchTableConfig) buildSearchTable(blockData, overlap []byte, packed bool) ([]byte, uint8) {
-	tableU64s := max(4, 1<<(c.baseTableSize-6))
-	tableBytes := make([]byte, tableU64s*8)
-	table := unsafe.Slice((*uint64)(unsafe.Pointer(unsafe.SliceData(tableBytes))), tableU64s)
+func (c *SearchTableConfig) buildSearchTable(blockData, overlap, dst []byte, packed bool) ([]byte, uint8) {
+	tableSize := max(32, 1<<(c.baseTableSize-3))
+	table := dst
+	if cap(table) < tableSize {
+		table = make([]byte, tableSize)
+	} else {
+		table = table[:tableSize]
+		clear(table)
+	}
 
 	// Index the main block data.
 	nPositions := len(blockData)
@@ -53,7 +61,7 @@ func (c *SearchTableConfig) buildSearchTable(blockData, overlap []byte, packed b
 				store8(bt, int(h), 0xFF)
 			}
 		}
-		packBits(tableBytes, bt)
+		packBits(table, bt)
 		byteTablePool.Put(bt)
 		goto packed
 	case searchTableTypeBytePrefix:
@@ -121,7 +129,7 @@ packed:
 	}
 
 	table, reductions := reduceTable(table, setBits, c.maxReducedPopPct)
-	return tableBytes[:len(table)*8], reductions
+	return table, reductions
 }
 
 // shouldPack returns true if the expected L3 cache usage is above 8MB.
@@ -130,8 +138,8 @@ func (s *SearchTableConfig) shouldPack(concurrency int) bool {
 	return concurrency*(1<<s.baseTableSize) > 8<<20
 }
 
-func setBit(table []uint64, h uint32) {
-	table[h>>6] |= 1 << (h & 63)
+func setBit(table []byte, h uint32) {
+	table[h>>3] |= 1 << (h & 7)
 }
 
 // packBitsGeneric converts a byte-per-entry table (0x00 or 0xFF) into a bit-packed table.
@@ -154,7 +162,7 @@ func packBitsGeneric(dst, src []byte) {
 // buildTableNoPrefix indexes all positions. Branchless inner loop.
 // nPositions is the number of starting positions to index (len of original block).
 // data may be longer (includes overlap for boundary reads).
-func buildTableNoPrefix(table []uint64, data []byte, nPositions int, tableSize, matchLen uint8) {
+func buildTableNoPrefix(table []byte, data []byte, nPositions int, tableSize, matchLen uint8) {
 	n := nPositions - int(matchLen) + 1
 	if n <= 0 {
 		return
@@ -764,7 +772,7 @@ func buildML8Byte(table, data []byte, n int, tableSize uint8) {
 
 // buildTablePrefixLookup indexes positions following a prefix byte.
 // lookup[b] == true means b is a prefix byte.
-func buildTablePrefixLookup(table []uint64, data []byte, nPositions int, tableSize, matchLen uint8, lookup *[256]bool) {
+func buildTablePrefixLookup(table []byte, data []byte, nPositions int, tableSize, matchLen uint8, lookup *[256]bool) {
 	n := nPositions - int(matchLen) + 1
 	if n <= 1 {
 		return
@@ -839,7 +847,7 @@ func buildTablePrefixLookup(table []uint64, data []byte, nPositions int, tableSi
 }
 
 // buildTablePrefixLong indexes positions following a long prefix match.
-func buildTablePrefixLong(table []uint64, data []byte, nPositions int, tableSize, matchLen uint8, prefix []byte) {
+func buildTablePrefixLong(table []byte, data []byte, nPositions int, tableSize, matchLen uint8, prefix []byte) {
 	n := nPositions - int(matchLen) + 1
 	if n <= 0 {
 		return

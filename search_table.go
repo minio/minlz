@@ -3,7 +3,6 @@ package minlz
 import (
 	"encoding/binary"
 	"fmt"
-	"math/bits"
 	"slices"
 )
 
@@ -191,60 +190,6 @@ func hashValue8(v uint64, ts uint8) uint32 { return uint32((v * prime8bytes) >> 
 
 // hashValue2Full handles the special case where tableSize >= 16 for matchLen 2.
 func hashValue2Full(v uint64) uint32 { return uint32(v & 0xffff) }
-
-// tablePopulation returns the number of set bits and total bits.
-func tablePopulation(table []uint64) (setBits, totalBits int) {
-	for _, v := range table {
-		setBits += bits.OnesCount64(v)
-	}
-	return setBits, len(table) * 64
-}
-
-// reduceTable OR-folds table halves. Stops when the reduced table's population
-// would exceed maxReducedPopPct%, or table reaches min 32 bytes (4 uint64s).
-// Returns the reduced table and number of reductions applied.
-func reduceTable(table []uint64, origPopcount, maxReducedPopPct int) ([]uint64, uint8) {
-	if origPopcount == 0 {
-		reductions := uint8(0)
-		for len(table)/2 >= 4 {
-			table = table[:len(table)/2]
-			reductions++
-		}
-		return table, reductions
-	}
-	reductions := uint8(0)
-
-	// Minimum table: 4 uint64s = 32 bytes = 256 bits.
-	for len(table)/2 >= 4 {
-		half := len(table) / 2
-		lower := table[:half]
-		upper := table[half:]
-		upper = upper[:len(lower)]
-		// Compute population after fold.
-		pop := 0
-		for i := range lower {
-			pop += bits.OnesCount64(lower[i] | upper[i])
-		}
-		if pop*100 > half*64*maxReducedPopPct {
-			break
-		}
-		for i := range lower {
-			lower[i] |= upper[i]
-		}
-		table = lower
-		reductions++
-	}
-	return table, reductions
-}
-
-// tableToBytes converts the internal uint64 table to bytes for wire serialization.
-func tableToBytes(table []uint64) []byte {
-	b := make([]byte, len(table)*8)
-	for i, v := range table {
-		binary.LittleEndian.PutUint64(b[i*8:], v)
-	}
-	return b
-}
 
 func (c *SearchTableConfig) appendPrefix(dst []byte) []byte {
 	switch c.tableType {
