@@ -70,6 +70,7 @@ Options:`)
 				bail:      *bail,
 				quiet:     *quiet,
 				lines:     *lines,
+				verbose:   *verbose,
 				multiFile: multiFile,
 			})
 			if err != nil {
@@ -98,6 +99,7 @@ type searchOpts struct {
 	bail      bool
 	quiet     bool
 	lines     bool
+	verbose   bool
 	multiFile bool
 }
 
@@ -117,6 +119,9 @@ func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats
 	var bsOpts []minlz.BlockSearchOption
 	if opts.bail {
 		bsOpts = append(bsOpts, minlz.BlockSearchBailOnMissing())
+	}
+	if opts.verbose {
+		bsOpts = append(bsOpts, minlz.BlockSearchCollectStats())
 	}
 	searcher := minlz.NewBlockSearcher(r, bsOpts...)
 

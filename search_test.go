@@ -825,7 +825,7 @@ func TestBlockSearcherFallback(t *testing.T) {
 	}
 
 	// Search with pattern shorter than matchLen - tables can't help, fallback decodes all.
-	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
 	err = searcher.Search([]byte("ab"), func(r SearchResult) error {
 		return nil
 	})
@@ -994,7 +994,7 @@ func TestPrefixInternalMatch(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
 			found := false
 			blocksSearched := 0
 			err = searcher.Search(tt.pattern, func(r SearchResult) error {
@@ -1694,7 +1694,7 @@ func TestSearchNoTables(t *testing.T) {
 	}
 
 	// Search should still work (fallback to full decode).
-	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
 	found := false
 	err = searcher.Search(needle, func(r SearchResult) error {
 		found = true
@@ -2301,7 +2301,7 @@ func FuzzSearchRoundtrip(f *testing.F) {
 		}
 
 		if len(expected) > 0 {
-			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
 			var found []int64
 			err = searcher.Search(pattern, func(r SearchResult) error {
 				found = append(found, r.StreamOffset)
@@ -2380,7 +2380,7 @@ func TestSearchDeferNoPrefixRegression(t *testing.T) {
 		idx += i + 1
 	}
 
-	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
 	var found []int64
 	err := searcher.Search(pattern, func(r SearchResult) error {
 		found = append(found, r.StreamOffset)
@@ -2492,7 +2492,7 @@ func TestSearchTableEfficiency(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
 			found := 0
 			err := searcher.Search(tt.pattern, func(r SearchResult) error {
 				found++
@@ -2549,7 +2549,7 @@ func TestSearchNoCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
 	found := 0
 	err := searcher.Search(needle, func(r SearchResult) error {
 		found++
@@ -2595,7 +2595,7 @@ func TestSearchBoundarySkipOptimization(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
 	found := 0
 	err := searcher.Search(needle, func(r SearchResult) error {
 		found++
@@ -2642,6 +2642,136 @@ func TestCanBoundaryMatch(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("canBoundaryMatch(%q, %q) = %v, want %v", tt.prev, tt.pattern, got, tt.want)
 		}
+	}
+}
+
+// TestSearchLongPatternUTF8NoCascade verifies that searching for a long
+// UTF-8 pattern doesn't cause cascading block decodes due to single-byte
+// prefix collisions (e.g. 0xD0 at block boundaries in Cyrillic text).
+func TestSearchLongPatternUTF8NoCascade(t *testing.T) {
+	blockSize := 4096
+	nBlocks := 16
+	// Cyrillic filler: "абвгдежз" repeated, each char is 2 bytes starting with 0xD0 or 0xD1.
+	filler := []byte("абвгдежзийклмнопрстуфхцчшщъыьэюя")
+	data := make([]byte, blockSize*nBlocks)
+	for i := 0; i < len(data); i += len(filler) {
+		copy(data[i:], filler)
+	}
+	// Long Cyrillic needle (>20 bytes) placed in one block only.
+	needle := []byte("объединяющий комплементарные")
+	copy(data[7*blockSize+100:], needle)
+
+	var buf bytes.Buffer
+	cfg := NewSearchTableConfig().WithMatchLen(6)
+	w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(blockSize), WriterConcurrency(1))
+	if err := w.EncodeBuffer(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
+	found := 0
+	err := searcher.Search(needle, func(r SearchResult) error {
+		found++
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found != 1 {
+		t.Fatalf("expected 1 match, got %d", found)
+	}
+
+	stats := searcher.Stats()
+	t.Logf("blocks: %d total, %d skipped, %d searched, %d deferred (%d skipped)",
+		stats.BlocksTotal, stats.BlocksSkipped, stats.BlocksSearched,
+		stats.BlocksDeferred, stats.BlocksDeferredSkipped)
+	// With the table-aware boundary check, most blocks should be skipped.
+	// Without it, Cyrillic 0xD0 at block boundaries causes cascading decodes.
+	if stats.BlocksSearched > 4 {
+		t.Errorf("too many blocks searched: %d (expected <=4 for %d blocks)", stats.BlocksSearched, stats.BlocksTotal)
+	}
+}
+
+// TestSearchBoundaryMatchStillFound verifies that actual boundary matches
+// are not missed by the table-aware boundary check.
+func TestSearchBoundaryMatchStillFound(t *testing.T) {
+	blockSize := 4096
+	data := make([]byte, blockSize*3)
+	for i := range data {
+		data[i] = byte('a' + i%26)
+	}
+	// Place a long pattern straddling the boundary between block 0 and block 1.
+	needle := []byte("STRADDLING_BOUNDARY_MATCH_TEST_PATTERN")
+	splitPoint := blockSize - 10
+	copy(data[splitPoint:], needle)
+
+	var buf bytes.Buffer
+	cfg := NewSearchTableConfig().WithMatchLen(4)
+	w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(blockSize), WriterConcurrency(1))
+	if err := w.EncodeBuffer(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+	found := 0
+	var matchOff int64
+	err := searcher.Search(needle, func(r SearchResult) error {
+		found++
+		matchOff = r.StreamOffset
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found != 1 {
+		t.Fatalf("expected 1 match, got %d", found)
+	}
+	if matchOff != int64(splitPoint) {
+		t.Fatalf("expected match at offset %d, got %d", splitPoint, matchOff)
+	}
+}
+
+// TestSearchShortOverlapConservative verifies that boundary overlaps shorter
+// than matchLen (where no full window fits in the current block) are handled
+// conservatively — the block is still decoded.
+func TestSearchShortOverlapConservative(t *testing.T) {
+	blockSize := 4096
+	data := make([]byte, blockSize*2)
+	for i := range data {
+		data[i] = byte('a' + i%26)
+	}
+	// Pattern: 8 bytes, matchLen=6. Place it so only 3 bytes are in block 0.
+	needle := []byte("XY_SPLIT")
+	splitPoint := blockSize - 3
+	copy(data[splitPoint:], needle)
+
+	var buf bytes.Buffer
+	cfg := NewSearchTableConfig().WithMatchLen(6)
+	w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(blockSize), WriterConcurrency(1))
+	if err := w.EncodeBuffer(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+	found := 0
+	err := searcher.Search(needle, func(r SearchResult) error {
+		found++
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found != 1 {
+		t.Fatalf("expected 1 match, got %d", found)
 	}
 }
 

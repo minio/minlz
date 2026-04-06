@@ -32,6 +32,15 @@ filtering. For example, a 19-byte pattern with matchLen=8 produces 12 window
 checks — all 12 must match for a false positive, which is extremely unlikely
 with typical table populations of 10–30%.
 
+There is a limit to table sizes at 1 bit per byte. This means that at most the tables will b 1/8th of the
+uncompressed stream size - and for these tables a maximum population count - default at 70%.
+If the 8:1 table is filled more than this they will not be saved to the stream.
+
+This means that blocks with near-random data will not have any tables
+and searching will have to fall back to decompression.
+
+MinLZ will not attempt to generate tables for incompressible blocks.
+
 ## Parameters
 
 ### Match Length
@@ -52,7 +61,7 @@ The match length must be less than or equal to the search pattern length. Patter
 shorter than the match length cannot use the table (the searcher falls back to full
 decode).
 
-A good default is 6: it balances table density against the number of check windows.
+A good default is 6; it balances table density against the number of check windows.
 Use 4 for short patterns (e.g. short IDs), but be aware that short windows from common
 character classes (digits, hex, lowercase) will appear in nearly every block, collapsing
 skip rates. For example, searching numeric data with matchLen=4 can drop skip rates to

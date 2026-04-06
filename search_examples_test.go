@@ -50,7 +50,7 @@ func ExampleWriterSearchTable_withPrefix() {
 	// Search for a pattern that contains prefix bytes internally.
 	// The searcher finds '"' at position 2 and ':' at position 3 inside the pattern,
 	// and uses those to check the table — no need to start with a prefix byte.
-	searcher := minlz.NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+	searcher := minlz.NewBlockSearcher(bytes.NewReader(buf.Bytes()), minlz.BlockSearchCollectStats())
 	searcher.Search([]byte(`"unique-9876"`), func(r minlz.SearchResult) error {
 		fmt.Println("found at stream offset", r.StreamOffset)
 		return nil
@@ -80,7 +80,7 @@ func ExampleBlockSearcher() {
 	w.Close()
 
 	// Search for the needle.
-	searcher := minlz.NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+	searcher := minlz.NewBlockSearcher(bytes.NewReader(buf.Bytes()), minlz.BlockSearchCollectStats())
 	err := searcher.Search([]byte("NEEDLE_PATTERN"), func(r minlz.SearchResult) error {
 		fmt.Printf("found at stream offset %d\n", r.StreamOffset)
 		return nil
@@ -132,7 +132,7 @@ func ExampleSearchStats_Fprint() {
 	w.Write(data)
 	w.Close()
 
-	searcher := minlz.NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+	searcher := minlz.NewBlockSearcher(bytes.NewReader(buf.Bytes()), minlz.BlockSearchCollectStats())
 	searcher.Search([]byte("FINDME"), func(r minlz.SearchResult) error { return nil })
 
 	var out strings.Builder

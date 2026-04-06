@@ -198,6 +198,7 @@ type BlockSearcher struct {
 	readHeader   bool
 	ignoreCRC    bool
 	bail         bool // return error if tables can't answer query
+	collectStats bool
 	blockStart   int64
 	blockMatches int // matches found in current block (for false positive tracking)
 	stats        SearchStats
@@ -219,6 +220,15 @@ func BlockSearchBailOnMissing() BlockSearchOption {
 func BlockSearchIgnoreCRC() BlockSearchOption {
 	return func(s *BlockSearcher) error {
 		s.ignoreCRC = true
+		return nil
+	}
+}
+
+// BlockSearchCollectStats enables collection of search statistics.
+// When enabled, Stats() returns detailed metrics after Search completes.
+func BlockSearchCollectStats() BlockSearchOption {
+	return func(s *BlockSearcher) error {
+		s.collectStats = true
 		return nil
 	}
 }
@@ -269,7 +279,9 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 	s.pending = nil
 	s.prevLazy = nil
 
-	defer func() { s.stats.UncompressedSize = s.blockStart }()
+	if s.collectStats {
+		defer func() { s.stats.UncompressedSize = s.blockStart }()
+	}
 
 	for {
 		if !s.readFull(s.tmp[:4]) {
@@ -351,22 +363,23 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 					return err
 				}
 			}
-			s.stats.TablesPresent++
-			s.stats.TablesBytes += int64(chunkLen + 4) // +4 for chunk header
-			s.stats.TableBitsSum += int(cfg.baseTableSize - reductions)
-			s.stats.TableReductionsSum += int(reductions)
-			// Compute population %.
-			setBits := 0
-			for _, b := range table {
-				setBits += bits.OnesCount8(b)
-			}
-			pop := float64(setBits) * 100 / float64(len(table)*8)
-			s.stats.TablePopSum += pop
-			if s.stats.TablesPresent == 1 || pop < s.stats.TablePopMin {
-				s.stats.TablePopMin = pop
-			}
-			if pop > s.stats.TablePopMax {
-				s.stats.TablePopMax = pop
+			if s.collectStats {
+				s.stats.TablesPresent++
+				s.stats.TablesBytes += int64(chunkLen + 4) // +4 for chunk header
+				s.stats.TableBitsSum += int(cfg.baseTableSize - reductions)
+				s.stats.TableReductionsSum += int(reductions)
+				setBits := 0
+				for _, b := range table {
+					setBits += bits.OnesCount8(b)
+				}
+				pop := float64(setBits) * 100 / float64(len(table)*8)
+				s.stats.TablePopSum += pop
+				if s.stats.TablesPresent == 1 || pop < s.stats.TablePopMin {
+					s.stats.TablePopMin = pop
+				}
+				if pop > s.stats.TablePopMax {
+					s.stats.TablePopMax = pop
+				}
 			}
 			continue
 
@@ -381,7 +394,9 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				}
 			}
 
-			s.stats.BlocksTotal++
+			if s.collectStats {
+				s.stats.BlocksTotal++
+			}
 			tableNoMatch := false
 			deferrable := false
 			if s.blockTable != nil {
@@ -397,8 +412,10 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 						if err != nil {
 							return err
 						}
-						s.stats.BlocksSkipped++
-						s.stats.CompBytesSkipped += int64(chunkLen)
+						if s.collectStats {
+							s.stats.BlocksSkipped++
+							s.stats.CompBytesSkipped += int64(chunkLen)
+						}
 						s.blockStart += int64(decompLen)
 						if s.deferred != nil {
 							if err := s.flushDeferred(nil, fn); err != nil {
@@ -428,19 +445,25 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 						}
 						s.prevLazy = nil
 						s.blockStart += int64(decompLen)
-						s.stats.BlocksDeferred++
+						if s.collectStats {
+							s.stats.BlocksDeferred++
+						}
 						s.prevBlock = nil
 						continue
 					}
 				}
 				if !canUse {
-					s.stats.TablesUnusable++
+					if s.collectStats {
+						s.stats.TablesUnusable++
+					}
 					if s.bail {
 						return ErrSearchTablesUnusable
 					}
 				}
 			} else {
-				s.stats.TablesMissing++
+				if s.collectStats {
+					s.stats.TablesMissing++
+				}
 				if s.bail {
 					return ErrSearchTablesUnusable
 				}
@@ -478,8 +501,10 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				return ErrCRC
 			}
 
-			s.stats.BlocksSearched++
-			s.stats.UncompBytesSearched += int64(n)
+			if s.collectStats {
+				s.stats.BlocksSearched++
+				s.stats.UncompBytesSearched += int64(n)
+			}
 			s.blockMatches = 0
 			blockOff := s.blockStart
 			s.blockStart += int64(n)
@@ -493,7 +518,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if err := s.dispatchMatches(blk, blockOff, pattern, fn); err != nil {
 				return err
 			}
-			if s.blockMatches == 0 {
+			if s.collectStats && s.blockMatches == 0 {
 				s.stats.BlocksFalsePositive++
 			}
 			if tableNoMatch {
@@ -514,7 +539,9 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				}
 			}
 
-			s.stats.BlocksTotal++
+			if s.collectStats {
+				s.stats.BlocksTotal++
+			}
 			tableNoMatch := false
 			if s.blockTable != nil {
 				canUse, match := patternCanMatch(&s.blockInfo, s.blockTable, s.blockReductions, pattern)
@@ -525,8 +552,10 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 						if err != nil {
 							return err
 						}
-						s.stats.BlocksSkipped++
-						s.stats.CompBytesSkipped += int64(chunkLen)
+						if s.collectStats {
+							s.stats.BlocksSkipped++
+							s.stats.CompBytesSkipped += int64(chunkLen)
+						}
 						s.blockStart += int64(decompLen)
 						if s.deferred != nil {
 							if err := s.flushDeferred(nil, fn); err != nil {
@@ -539,13 +568,17 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 					tableNoMatch = true
 				}
 				if !canUse {
-					s.stats.TablesUnusable++
+					if s.collectStats {
+						s.stats.TablesUnusable++
+					}
 					if s.bail {
 						return ErrSearchTablesUnusable
 					}
 				}
 			} else {
-				s.stats.TablesMissing++
+				if s.collectStats {
+					s.stats.TablesMissing++
+				}
 				if s.bail {
 					return ErrSearchTablesUnusable
 				}
@@ -570,8 +603,10 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				return ErrCRC
 			}
 
-			s.stats.BlocksSearched++
-			s.stats.UncompBytesSearched += int64(n)
+			if s.collectStats {
+				s.stats.BlocksSearched++
+				s.stats.UncompBytesSearched += int64(n)
+			}
 			s.blockMatches = 0
 			blockOff := s.blockStart
 			s.blockStart += int64(n)
@@ -585,7 +620,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if err := s.dispatchMatches(blk, blockOff, pattern, fn); err != nil {
 				return err
 			}
-			if s.blockMatches == 0 {
+			if s.collectStats && s.blockMatches == 0 {
 				s.stats.BlocksFalsePositive++
 			}
 			if tableNoMatch {
@@ -866,9 +901,11 @@ func (s *BlockSearcher) resolvePending(pattern []byte, fn func(SearchResult) err
 	}
 
 	if skip {
-		s.stats.BlocksSkipped++
-		s.stats.BlocksDeferredSkipped++
-		s.stats.CompBytesSkipped += int64(len(p.lazy.chunkData))
+		if s.collectStats {
+			s.stats.BlocksSkipped++
+			s.stats.BlocksDeferredSkipped++
+			s.stats.CompBytesSkipped += int64(len(p.lazy.chunkData))
+		}
 		if s.deferred != nil {
 			if err := s.flushDeferred(nil, fn); err != nil {
 				return err
@@ -883,8 +920,10 @@ func (s *BlockSearcher) resolvePending(pattern []byte, fn func(SearchResult) err
 	if err != nil {
 		return err
 	}
-	s.stats.BlocksSearched++
-	s.stats.UncompBytesSearched += int64(len(blk))
+	if s.collectStats {
+		s.stats.BlocksSearched++
+		s.stats.UncompBytesSearched += int64(len(blk))
+	}
 	s.blockMatches = 0
 	if s.deferred != nil {
 		if err := s.flushDeferred(blk, fn); err != nil {
@@ -894,7 +933,7 @@ func (s *BlockSearcher) resolvePending(pattern []byte, fn func(SearchResult) err
 	if err := s.dispatchMatches(blk, p.blockStart, pattern, fn); err != nil {
 		return err
 	}
-	if s.blockMatches == 0 {
+	if s.collectStats && s.blockMatches == 0 {
 		s.stats.BlocksFalsePositive++
 	}
 	if p.tableNoMatch {
