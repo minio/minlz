@@ -24,6 +24,20 @@ are hashed and checked against the table:
 - If **any** window hash is not set: the block **definitely** doesn't contain the pattern — skip it.
 - If **all** window hashes are set: the block **might** contain the pattern — decode and search.
 
+#### Example
+
+Say you are indexing a block with hashes of 4 bytes. This means that a block witj `abcdefgh` will be
+hashed as `abcd`, `bcde`, `cdef`, and `defg`.
+
+So if we are looking for `bcdef` in a block, we will check if `bcde` and `cdef` are set
+in the table. If not, we skip the block.
+
+We do not know anything about the position or the order of the values, so a block with `bcdeXYZbcde` 
+will also appear to match the search. There is a chance that collisions will occur, 
+so it is possible that `1234` will collide with `bcde` and therefore produce a false positive. 
+
+#### Sizes and Reductions
+
 Tables are reduced (halved) by OR-folding the upper and lower halves, trading accuracy
 for size. Reductions are applied per-block based on population density.
 
