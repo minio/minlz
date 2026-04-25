@@ -42,7 +42,7 @@ search_loop_encodeBlockAsm:
 	MOVL  DX, SI
 	SUBL  12(SP), SI
 	SHRL  $0x06, SI
-	LEAL  3(DX)(SI*1), SI
+	LEAL  4(DX)(SI*1), SI
 	CMPL  SI, 8(SP)
 	JAE   emit_remainder_encodeBlockAsm
 	MOVQ  (BX)(DX*1), DI
@@ -1296,7 +1296,7 @@ search_loop_encodeBlockAsm2MB:
 	MOVL  DX, SI
 	SUBL  12(SP), SI
 	SHRL  $0x06, SI
-	LEAL  3(DX)(SI*1), SI
+	LEAL  4(DX)(SI*1), SI
 	CMPL  SI, 8(SP)
 	JAE   emit_remainder_encodeBlockAsm2MB
 	MOVQ  (BX)(DX*1), DI
@@ -2537,7 +2537,7 @@ search_loop_encodeBlockAsm512K:
 	MOVL  DX, SI
 	SUBL  12(SP), SI
 	SHRL  $0x06, SI
-	LEAL  3(DX)(SI*1), SI
+	LEAL  4(DX)(SI*1), SI
 	CMPL  SI, 8(SP)
 	JAE   emit_remainder_encodeBlockAsm512K
 	MOVQ  (BX)(DX*1), DI
