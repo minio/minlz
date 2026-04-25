@@ -54,7 +54,7 @@ func main() {
 		skipOutput:   false}
 
 	// 16 bit hash table has too big of a speed impact.
-	o.fastOpts = fastOpts{match8: false, fuselits: true, checkRepeats: false, checkBack: true, skipOne: false, incLoop: 4, minSizeLog: 5}
+	o.fastOpts = fastOpts{match8: false, fuselits: true, checkRepeats: true, checkBack: true, skipOne: false, incLoop: 3, minSizeLog: 5}
 	o.genEncodeBlockAsm("encodeBlockAsm", 15, 6, 6, 8<<20)
 	o.genEncodeBlockAsm("encodeBlockAsm2MB", 15, 6, 6, 2<<20)
 	o.genEncodeBlockAsm("encodeBlockAsm512K", 14, 6, 6, 512<<10)
