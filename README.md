@@ -336,7 +336,32 @@ func ExampleWriterAddUserChunk() {
 }
 ```
 
-The maximum single chunk size is 16MB, but as many chunks as needed can be added. 
+The maximum single chunk size is 16MB, but as many chunks as needed can be added.
+
+## Block Search Tables
+
+MinLZ streams can include optional per-block hash tables that enable fast pattern
+searching without decompressing every block. Blocks that definitely don't contain the
+search pattern are skipped entirely.
+
+```go
+// Compression: add search tables.
+cfg := minlz.NewSearchTableConfig() // matchLen defaults to 6
+w := minlz.NewWriter(output, minlz.WriterSearchTable(cfg))
+```
+
+```go
+// Searching: skip non-matching blocks automatically.
+searcher := minlz.NewBlockSearcher(input)
+err := searcher.Search([]byte("pattern"), func(r minlz.SearchResult) error {
+    fmt.Printf("match at stream offset %d\n", r.StreamOffset)
+    return nil
+})
+```
+
+Prefix filtering can reduce table size by only indexing positions after specific bytes
+(e.g. `"` and `:` for JSON). See [SEARCH.md](SEARCH.md) for parameter tuning, prefix
+configuration, API details, and CLI usage.
 
 ## Build Tags
 
@@ -806,6 +831,38 @@ search for the next newline, start outputting data.
 After 1KB, it will stop at the next newline.
 
 Partial files - decoded with tail, offset or limit will have `.part` extension.
+
+## Searching
+
+The `search` (or `find` or `s`) command searches for a literal pattern in compressed streams,
+using search tables to skip non-matching blocks:
+
+```
+mz search [options] <pattern> <file...>
+```
+
+Options:
+- `-l` Print matching lines (default: show match offsets)
+- `-c` Print match count only
+- `-n` Include line numbers (with `-l`)
+- `-q` Quiet mode, exit code only (0=found, 1=not found)
+- `-bail` Error if search tables are not available
+
+Example:
+
+```
+$ mz search -l "error_pattern" server.log.mz
+10506612227:{"message":"error_pattern found in processing"}
+```
+
+Files must be compressed with `-search` to include search tables:
+
+```
+$ mz c -search=6 server.log
+$ mz c -search=4 -search.prefixes="," data.csv
+```
+
+Without search tables, the search command falls back to decompressing every block.
 
 # Snappy/S2 Compatibility
 
