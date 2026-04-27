@@ -18,6 +18,8 @@ if %ERRORLEVEL% neq 0 (
 SET GOOS=windows
 SET GOARCH=amd64
 
+echo Enabling ARM64...
+docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 echo Running tests in ARM64 container...
-docker run --rm --platform linux/arm64 -e GOGC=20 -e GOMEMLIMIT=2GiB -v "%cd%:/work" -w /work arm64v8/alpine ./minlz_arm64.test %*
+docker run --rm --platform linux/arm64 -e GOGC=20 -e GOMEMLIMIT=2GiB -v "%cd%:/work" -w /work arm64v8/alpine ./minlz_arm64.test -test.v %*
 
