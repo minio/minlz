@@ -454,7 +454,8 @@ func (cfg *decompressConfig) decompressFile() {
 		elapsed := time.Since(start)
 		mbPerSec := (float64(output) / 1e6) / (float64(elapsed) / (float64(time.Second)))
 		pct := float64(output) * 100 / float64(rc.BytesRead())
-		fmt.Printf(" %d -> %d [%.02f%%]; %.01fMB/s\n", rc.BytesRead(), output, pct, mbPerSec)
+		ratio := float64(output) / float64(rc.BytesRead())
+		fmt.Printf(" %d -> %d [%.02f%% 1:%.03f]; %.01fMB/s\n", rc.BytesRead(), output, pct, ratio, mbPerSec)
 	}
 	if *cfg.remove && !*cfg.verify {
 		closeOnce.Do(func() {
@@ -518,7 +519,8 @@ func benchDecompOnly(files []string, block *bool, quiet *bool, bench *int, cpu *
 				ms := elapsed.Round(time.Millisecond)
 				mbPerSec := (float64(output) / 1e6) / (float64(elapsed) / (float64(time.Second)))
 				pct := float64(output) * 100 / float64(len(compressed))
-				fmt.Printf(" %d -> %d [%.02f%%]; %v, %.01fMB/s", len(compressed), output, pct, ms, mbPerSec)
+				ratio := float64(output) / float64(len(compressed))
+				fmt.Printf(" %d -> %d [%.02f%% 1:%.03f]; %v, %.01fMB/s", len(compressed), output, pct, ratio, ms, mbPerSec)
 			}
 		}
 		if !*quiet {
@@ -553,8 +555,9 @@ func decompresBlockBench(quiet *bool, bench *int, compressed []byte, cpu *int) {
 			elapsed := time.Since(start)
 			singleSpeed = (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
 			pct := input * 100 / output
+			ratio := input / output
 			ms := elapsed.Round(time.Millisecond)
-			fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s                  \r", len(compressed), len(decomp), pct, ms, singleSpeed)
+			fmt.Printf(" * %d -> %d bytes [%.02f%% 1:%.03f]; %v, %.01fMB/s                  \r", len(compressed), len(decomp), pct, ratio, ms, singleSpeed)
 			lastUpdate = time.Now()
 		}
 	}
@@ -591,8 +594,9 @@ func decompresBlockBench(quiet *bool, bench *int, compressed []byte, cpu *int) {
 			mbpersec := (input / 1e6) / (float64(elapsed) / (float64(time.Second)))
 			scale := mbpersec / singleSpeed
 			pct := output * 100 / input
+			ratio := input / output
 			ms := elapsed.Round(time.Millisecond)
-			fmt.Printf(" * %d -> %d bytes [%.02f%%]; %v, %.01fMB/s (%.1fx)          \r", len(compressed), len(decomp), pct, ms, mbpersec, scale)
+			fmt.Printf(" * %d -> %d bytes [%.02f%% 1:%.03f]; %v, %.01fMB/s (%.1fx)          \r", len(compressed), len(decomp), pct, ratio, ms, mbpersec, scale)
 			time.Sleep(time.Second / 6)
 		}
 		wg.Wait()

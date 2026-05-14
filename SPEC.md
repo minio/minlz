@@ -1,4 +1,4 @@
-# MINLZ FORMAT SPECIFICATION V1.0.0
+# MINLZ FORMAT SPECIFICATION V1.0.1
 
 All implementations are requested to state: "This implements the MinLZ specification v1.0"
 
@@ -573,6 +573,10 @@ To decode from any given uncompressed offset `(wantOffset)`:
 * Discard `entry[n-1].UncompressedOffset - wantOffset` bytes from the decoded stream.
 
 This is similar to S2, except the ID is 0x40 instead of 0x99.
+
+### 4.12 Block Search (chunk type 0x44, 0x45) — OPTIONAL
+
+See [SPEC_SEARCH.md](SPEC_SEARCH.md) for details.
 
 # Implementation Notes
 

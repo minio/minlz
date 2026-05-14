@@ -19,6 +19,7 @@
 package minlz
 
 import (
+	"math/bits"
 	"unsafe"
 )
 
@@ -49,11 +50,50 @@ func store8(b []byte, idx int, v uint8) {
 }
 
 func store16(b []byte, idx int, v uint16) {
-	//binary.LittleEndian.PutUint16(b, v)
+	//binary.LittleEndian.PutUint16(b[idx:], v)
 	*(*uint16)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(b)), idx)) = v
 }
 
 func store32(b []byte, idx int, v uint32) {
-	//binary.LittleEndian.PutUint32(b, v)
+	//binary.LittleEndian.PutUint32(b[idx:], v)
 	*(*uint32)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(b)), idx)) = v
+}
+
+func tablePopulation(table []byte) (setBits, totalBits int) {
+	u64s := unsafe.Slice((*uint64)(unsafe.Pointer(unsafe.SliceData(table))), len(table)/8)
+	for _, v := range u64s {
+		setBits += bits.OnesCount64(v)
+	}
+	return setBits, len(table) * 8
+}
+
+func reduceTable(table []byte, origPopcount, maxReducedPopPct int) ([]byte, uint8) {
+	u64s := unsafe.Slice((*uint64)(unsafe.Pointer(unsafe.SliceData(table))), len(table)/8)
+	if origPopcount == 0 {
+		reductions := uint8(0)
+		for len(u64s)/2 >= 4 {
+			u64s = u64s[:len(u64s)/2]
+			reductions++
+		}
+		return table[:len(u64s)*8], reductions
+	}
+	reductions := uint8(0)
+	for len(u64s)/2 >= 4 {
+		half := len(u64s) / 2
+		lower := u64s[:half]
+		upper := u64s[half : half+half]
+		pop := 0
+		for i := range lower {
+			pop += bits.OnesCount64(lower[i] | upper[i])
+		}
+		if pop*100 > half*64*maxReducedPopPct {
+			break
+		}
+		for i := range lower {
+			lower[i] |= upper[i]
+		}
+		u64s = lower
+		reductions++
+	}
+	return table[:len(u64s)*8], reductions
 }

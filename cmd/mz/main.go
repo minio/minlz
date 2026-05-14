@@ -62,7 +62,8 @@ func main() {
 		fmt.Fprintf(w, "Usage:\nCompress:     %s c [options] <input>\n", os.Args[0])
 		fmt.Fprintf(w, "Decompress:   %s d [options] <input>\n", os.Args[0])
 		fmt.Fprintf(w, " (cat)    :   %s cat [options] <input>\n", os.Args[0])
-		fmt.Fprintf(w, " (tail)   :   %s tail [options] <input>\n\n", os.Args[0])
+		fmt.Fprintf(w, " (tail)   :   %s tail [options] <input>\n", os.Args[0])
+		fmt.Fprintf(w, "Search:       %s search [options] <pattern> <input>\n\n", os.Args[0])
 		fmt.Fprintf(w, "Without options 'c' and 'd' can be omitted. Extension decides if decompressing.\n")
 		fmt.Fprintf(w, "Compress file:    %s file.txt\n", os.Args[0])
 		fmt.Fprintf(w, "Compress stdin:   %s -\n", os.Args[0])
@@ -107,6 +108,8 @@ func main() {
 		mainCompress(flag.Args()[1:])
 	case "d", "decompress", "tail", "cat":
 		mainDecompress(flag.Args()[1:], flag.Arg(0) == "cat", flag.Arg(0) == "tail")
+	case "s", "search", "find":
+		mainSearch(flag.Args()[1:])
 	default:
 		if len(flag.Args()) > 0 {
 			cmp := strings.ToLower(flag.Arg(0))

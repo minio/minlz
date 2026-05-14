@@ -46,7 +46,19 @@ func NewWriter(w io.Writer, opts ...WriterOption) *Writer {
 			return &w2
 		}
 	}
+	if w2.searchCfg != nil {
+		w2.searchCfg.baseTableSize = autoTableSize(w2.blockSize)
+		if w2.searchCfg.baseTableSize < searchTableMinLog2 {
+			w2.errState = fmt.Errorf("minlz: block size %d too small for search tables (min table size %d bits)",
+				w2.blockSize, 1<<searchTableMinLog2)
+			return &w2
+		}
+	}
 	w2.obufLen = obufHeaderLen + MaxEncodedLen(w2.blockSize)
+	if w2.searchCfg != nil {
+		w2.searchMaxChunk = w2.searchCfg.maxChunkSize()
+		w2.obufLen += w2.searchMaxChunk
+	}
 	w2.paramsOK = true
 	w2.ibuf = make([]byte, 0, w2.blockSize)
 	w2.buffers.New = func() interface{} {
@@ -78,6 +90,10 @@ type Writer struct {
 	writerWg  sync.WaitGroup
 	index     *Index
 	customEnc func(dst, src []byte) int
+
+	searchCfg      *SearchTableConfig
+	searchInfoBuf  []byte // cached 0x44 chunk
+	searchMaxChunk int    // max 0x45 chunk size, 0 if no search
 
 	// wroteStreamHeader is whether we have written the stream header.
 	wroteStreamHeader bool
@@ -128,6 +144,7 @@ func (w *Writer) Reset(writer io.Writer) {
 	w.errState = nil
 	w.ibuf = w.ibuf[:0]
 	w.wroteStreamHeader = false
+	w.searchInfoBuf = nil
 	w.written = 0
 	w.writer = writer
 	w.uncompWritten = 0
@@ -371,6 +388,12 @@ func (w *Writer) EncodeBuffer(buf []byte) (err error) {
 		hWriter := make(chan result)
 		w.output <- hWriter
 		hWriter <- result{startOffset: w.uncompWritten, b: makeHeader(w.blockSize)}
+		if w.searchCfg != nil && w.searchInfoBuf == nil {
+			w.searchInfoBuf = w.searchCfg.marshalSearchInfoChunk()
+			infoOut := make(chan result)
+			w.output <- infoOut
+			infoOut <- result{startOffset: w.uncompWritten, b: w.searchInfoBuf}
+		}
 	}
 
 	for len(buf) > 0 {
@@ -380,50 +403,72 @@ func (w *Writer) EncodeBuffer(buf []byte) (err error) {
 			uncompressed = uncompressed[:w.blockSize]
 		}
 		buf = buf[len(uncompressed):]
-		// Get an output buffer.
-		obuf := w.buffers.Get().([]byte)[:len(uncompressed)+obufHeaderLen]
+
+		// Overlap for search table boundary patterns.
+		var overlap []byte
+		if w.searchCfg != nil && len(buf) > 0 {
+			overlap = buf[:min(len(buf), int(w.searchCfg.matchLen)-1)]
+		}
+
+		// Get output buffer. Front is reserved for search chunk, data starts at searchMaxChunk.
+		smc := w.searchMaxChunk
+		obuf := w.buffers.Get().([]byte)[:smc+len(uncompressed)+obufHeaderLen]
 		output := make(chan result)
-		// Queue output now, so we keep order.
 		w.output <- output
 		res := result{
 			startOffset: w.uncompWritten,
 		}
 		w.uncompWritten += int64(len(uncompressed))
-		go func() {
+		go func(searchCfg *SearchTableConfig, overlap []byte) {
+			dbuf := obuf[smc:]
 			checksum := crc(uncompressed)
 
-			// Set to uncompressed.
 			chunkType := uint8(chunkTypeUncompressedData)
 			chunkLen := 4 + len(uncompressed)
 
-			// Attempt compressing.
-			n := binary.PutUvarint(obuf[obufHeaderLen:], uint64(len(uncompressed)))
-			n2 := w.encodeBlock(obuf[obufHeaderLen+n:], uncompressed)
+			n := binary.PutUvarint(dbuf[obufHeaderLen:], uint64(len(uncompressed)))
+			n2 := w.encodeBlock(dbuf[obufHeaderLen+n:], uncompressed)
 
-			// Check if we should use this, or store as uncompressed instead.
 			if n2 > 0 {
 				chunkType = uint8(chunkTypeMinLZCompressedData)
 				chunkLen = 4 + n + n2
-				obuf = obuf[:obufHeaderLen+n+n2]
+				dbuf = dbuf[:obufHeaderLen+n+n2]
 			} else {
-				// copy uncompressed
-				copy(obuf[obufHeaderLen:], uncompressed)
+				copy(dbuf[obufHeaderLen:], uncompressed)
 			}
 
-			// Fill in the per-chunk header that comes before the body.
-			obuf[0] = chunkType
-			obuf[1] = uint8(chunkLen >> 0)
-			obuf[2] = uint8(chunkLen >> 8)
-			obuf[3] = uint8(chunkLen >> 16)
-			obuf[4] = uint8(checksum >> 0)
-			obuf[5] = uint8(checksum >> 8)
-			obuf[6] = uint8(checksum >> 16)
-			obuf[7] = uint8(checksum >> 24)
+			dbuf[0] = chunkType
+			dbuf[1] = uint8(chunkLen >> 0)
+			dbuf[2] = uint8(chunkLen >> 8)
+			dbuf[3] = uint8(chunkLen >> 16)
+			dbuf[4] = uint8(checksum >> 0)
+			dbuf[5] = uint8(checksum >> 8)
+			dbuf[6] = uint8(checksum >> 16)
+			dbuf[7] = uint8(checksum >> 24)
 
-			// Queue final output.
-			res.b = obuf
+			// Only index compressible blocks.
+			searchLen := 0
+			if searchCfg != nil && n2 > 0 {
+				var stBuf []byte
+				if v := searchTablePool.Get(); v != nil {
+					stBuf = v.([]byte)
+				}
+				table, reductions := searchCfg.buildSearchTable(uncompressed, overlap, stBuf, searchCfg.shouldPack(w.concurrency))
+				if table != nil {
+					searchLen = len(appendSearchTableChunk(obuf[:0], searchCfg, reductions, table))
+				}
+				searchTablePool.Put(table)
+			}
+
+			if searchLen > 0 {
+				start := smc - searchLen
+				copy(obuf[start:], obuf[:searchLen])
+				res.b = obuf[start : smc+len(dbuf)]
+			} else {
+				res.b = dbuf
+			}
 			output <- res
-		}()
+		}(w.searchCfg, overlap)
 	}
 	return nil
 }
@@ -482,6 +527,12 @@ func (w *Writer) write(p []byte) (nRet int, errRet error) {
 			hWriter := make(chan result)
 			w.output <- hWriter
 			hWriter <- result{startOffset: w.uncompWritten, b: makeHeader(w.blockSize)}
+			if w.searchCfg != nil && w.searchInfoBuf == nil {
+				w.searchInfoBuf = w.searchCfg.marshalSearchInfoChunk()
+				infoOut := make(chan result)
+				w.output <- infoOut
+				infoOut <- result{startOffset: w.uncompWritten, b: w.searchInfoBuf}
+			}
 		}
 
 		var uncompressed []byte
@@ -491,59 +542,86 @@ func (w *Writer) write(p []byte) (nRet int, errRet error) {
 			uncompressed, p = p, nil
 		}
 
+		// Overlap for search table from contiguous p (before copying to inbuf).
+		var overlap []byte
+		if w.searchCfg != nil && len(p) > 0 {
+			end := min(len(p), int(w.searchCfg.matchLen)-1)
+			overlap = make([]byte, end)
+			copy(overlap, p[:end])
+		}
+
 		// Copy input.
 		// If the block is incompressible, this is used for the result.
+		smc := w.searchMaxChunk
 		inbuf := w.buffers.Get().([]byte)[:len(uncompressed)+obufHeaderLen]
 		obuf := w.buffers.Get().([]byte)[:w.obufLen]
 		copy(inbuf[obufHeaderLen:], uncompressed)
 		uncompressed = inbuf[obufHeaderLen:]
 
 		output := make(chan result)
-		// Queue output now, so we keep order.
 		w.output <- output
 		res := result{
 			startOffset: w.uncompWritten,
 		}
 		w.uncompWritten += int64(len(uncompressed))
 
-		go func() {
+		go func(searchCfg *SearchTableConfig, overlap []byte) {
+			dbuf := obuf[smc:]
 			checksum := crc(uncompressed)
 
-			// Set to uncompressed.
 			chunkType := uint8(chunkTypeUncompressedData)
 			chunkLen := 4 + len(uncompressed)
 
-			// Attempt compressing.
-			n := binary.PutUvarint(obuf[obufHeaderLen:], uint64(len(uncompressed)))
-			n2 := w.encodeBlock(obuf[obufHeaderLen+n:], uncompressed)
+			n := binary.PutUvarint(dbuf[obufHeaderLen:], uint64(len(uncompressed)))
+			n2 := w.encodeBlock(dbuf[obufHeaderLen+n:], uncompressed)
 
-			// Check if we should use this, or store as uncompressed instead.
 			if n2 > 0 {
 				chunkType = uint8(chunkTypeMinLZCompressedData)
 				chunkLen = 4 + n + n2
-				obuf = obuf[:obufHeaderLen+n+n2]
+				dbuf = dbuf[:obufHeaderLen+n+n2]
 			} else {
-				// Use input as output.
 				obuf, inbuf = inbuf, obuf
+				dbuf = obuf
 			}
 
-			// Fill in the per-chunk header that comes before the body.
-			obuf[0] = chunkType
-			obuf[1] = uint8(chunkLen >> 0)
-			obuf[2] = uint8(chunkLen >> 8)
-			obuf[3] = uint8(chunkLen >> 16)
-			obuf[4] = uint8(checksum >> 0)
-			obuf[5] = uint8(checksum >> 8)
-			obuf[6] = uint8(checksum >> 16)
-			obuf[7] = uint8(checksum >> 24)
+			dbuf[0] = chunkType
+			dbuf[1] = uint8(chunkLen >> 0)
+			dbuf[2] = uint8(chunkLen >> 8)
+			dbuf[3] = uint8(chunkLen >> 16)
+			dbuf[4] = uint8(checksum >> 0)
+			dbuf[5] = uint8(checksum >> 8)
+			dbuf[6] = uint8(checksum >> 16)
+			dbuf[7] = uint8(checksum >> 24)
 
-			// Queue final output.
-			res.b = obuf
+			// Only index compressible blocks.
+			searchLen := 0
+			if searchCfg != nil && n2 > 0 {
+				var stBuf []byte
+				if v := searchTablePool.Get(); v != nil {
+					stBuf = v.([]byte)
+				}
+				table, reductions := searchCfg.buildSearchTable(uncompressed, overlap, stBuf, searchCfg.shouldPack(w.concurrency))
+				if table != nil {
+					// obuf still points to the pool buffer with smc space at front.
+					searchLen = len(appendSearchTableChunk(inbuf[:0], searchCfg, reductions, table))
+				}
+				searchTablePool.Put(table)
+			}
+
+			if searchLen > 0 {
+				// Search chunk in inbuf[:searchLen] (the unused buffer), data in dbuf.
+				// Slide into inbuf since it has capacity.
+				start := smc - searchLen
+				copy(inbuf[start:], inbuf[:searchLen])
+				copy(inbuf[smc:], dbuf)
+				res.b = inbuf[start : smc+len(dbuf)]
+			} else {
+				res.b = dbuf
+			}
 			output <- res
 
-			// Put unused buffer back in pool.
 			w.buffers.Put(inbuf)
-		}()
+		}(w.searchCfg, overlap)
 		nRet += len(uncompressed)
 	}
 	return nRet, nil
@@ -569,58 +647,81 @@ func (w *Writer) writeFull(inbuf []byte) (errRet error) {
 		hWriter := make(chan result)
 		w.output <- hWriter
 		hWriter <- result{startOffset: w.uncompWritten, b: makeHeader(w.blockSize)}
+		if w.searchCfg != nil && w.searchInfoBuf == nil {
+			w.searchInfoBuf = w.searchCfg.marshalSearchInfoChunk()
+			infoOut := make(chan result)
+			w.output <- infoOut
+			infoOut <- result{startOffset: w.uncompWritten, b: w.searchInfoBuf}
+		}
 	}
 
 	// Get an output buffer.
+	smc := w.searchMaxChunk
 	obuf := w.buffers.Get().([]byte)[:w.obufLen]
 	uncompressed := inbuf[obufHeaderLen:]
 
 	output := make(chan result)
-	// Queue output now, so we keep order.
 	w.output <- output
 	res := result{
 		startOffset: w.uncompWritten,
 	}
 	w.uncompWritten += int64(len(uncompressed))
 
-	go func() {
+	go func(searchCfg *SearchTableConfig) {
+		dbuf := obuf[smc:]
 		checksum := crc(uncompressed)
 
-		// Set to uncompressed.
 		chunkType := uint8(chunkTypeUncompressedData)
 		chunkLen := 4 + len(uncompressed)
 
-		// Attempt compressing.
-		n := binary.PutUvarint(obuf[obufHeaderLen:], uint64(len(uncompressed)))
-		n2 := w.encodeBlock(obuf[obufHeaderLen+n:], uncompressed)
+		n := binary.PutUvarint(dbuf[obufHeaderLen:], uint64(len(uncompressed)))
+		n2 := w.encodeBlock(dbuf[obufHeaderLen+n:], uncompressed)
 
-		// Check if we should use this, or store as uncompressed instead.
 		if n2 > 0 {
 			chunkType = uint8(chunkTypeMinLZCompressedData)
 			chunkLen = 4 + n + n2
-			obuf = obuf[:obufHeaderLen+n+n2]
+			dbuf = dbuf[:obufHeaderLen+n+n2]
 		} else {
-			// Use input as output.
 			obuf, inbuf = inbuf, obuf
+			dbuf = obuf
 		}
 
-		// Fill in the per-chunk header that comes before the body.
-		obuf[0] = chunkType
-		obuf[1] = uint8(chunkLen >> 0)
-		obuf[2] = uint8(chunkLen >> 8)
-		obuf[3] = uint8(chunkLen >> 16)
-		obuf[4] = uint8(checksum >> 0)
-		obuf[5] = uint8(checksum >> 8)
-		obuf[6] = uint8(checksum >> 16)
-		obuf[7] = uint8(checksum >> 24)
+		dbuf[0] = chunkType
+		dbuf[1] = uint8(chunkLen >> 0)
+		dbuf[2] = uint8(chunkLen >> 8)
+		dbuf[3] = uint8(chunkLen >> 16)
+		dbuf[4] = uint8(checksum >> 0)
+		dbuf[5] = uint8(checksum >> 8)
+		dbuf[6] = uint8(checksum >> 16)
+		dbuf[7] = uint8(checksum >> 24)
 
-		// Queue final output.
-		res.b = obuf
+		// Only index compressible blocks.
+		searchLen := 0
+		if searchCfg != nil && chunkType != chunkTypeUncompressedData {
+			var stBuf []byte
+			if v := searchTablePool.Get(); v != nil {
+				stBuf = v.([]byte)
+			}
+			table, reductions := searchCfg.buildSearchTable(uncompressed, nil, stBuf, searchCfg.shouldPack(w.concurrency))
+			if table != nil {
+				// Search chunk is in the original obuf (may have been swapped if incompressible,
+				// but we only reach here for compressible blocks so obuf is unchanged).
+				searchLen = len(appendSearchTableChunk(obuf[:0], searchCfg, reductions, table))
+			}
+			searchTablePool.Put(table)
+		}
+
+		if searchLen > 0 {
+			start := smc - searchLen
+			copy(obuf[start:], obuf[:searchLen])
+			res.b = obuf[start : smc+len(dbuf)]
+		} else {
+			res.b = dbuf
+		}
 		output <- res
 
-		// Put unused buffer back in pool.
 		w.buffers.Put(inbuf)
-	}()
+	}(w.searchCfg)
 	return nil
 }
 
@@ -640,6 +741,9 @@ func (w *Writer) writeSync(p []byte) (nRet int, errRet error) {
 			return 0, w.err(io.ErrShortWrite)
 		}
 		w.written += int64(n)
+		if err := w.writeSearchInfoSync(); err != nil {
+			return 0, err
+		}
 	}
 
 	for len(p) > 0 {
@@ -653,11 +757,9 @@ func (w *Writer) writeSync(p []byte) (nRet int, errRet error) {
 		obuf := w.buffers.Get().([]byte)[:w.obufLen]
 		checksum := crc(uncompressed)
 
-		// Set to uncompressed.
 		chunkType := uint8(chunkTypeUncompressedData)
 		chunkLen := 4 + len(uncompressed)
 
-		// Attempt compressing.
 		n := binary.PutUvarint(obuf[obufHeaderLen:], uint64(len(uncompressed)))
 		n2 := w.encodeBlock(obuf[obufHeaderLen+n:], uncompressed)
 
@@ -669,7 +771,6 @@ func (w *Writer) writeSync(p []byte) (nRet int, errRet error) {
 			obuf = obuf[:8]
 		}
 
-		// Fill in the per-chunk header that comes before the body.
 		obuf[0] = chunkType
 		obuf[1] = uint8(chunkLen >> 0)
 		obuf[2] = uint8(chunkLen >> 8)
@@ -678,6 +779,14 @@ func (w *Writer) writeSync(p []byte) (nRet int, errRet error) {
 		obuf[5] = uint8(checksum >> 8)
 		obuf[6] = uint8(checksum >> 16)
 		obuf[7] = uint8(checksum >> 24)
+
+		// Only index compressible blocks, write search table before data chunk.
+		if w.searchCfg != nil && n2 > 0 {
+			overlap := p[:min(len(p), int(w.searchCfg.matchLen)-1)]
+			if err := w.writeSearchTableSync(uncompressed, overlap); err != nil {
+				return 0, err
+			}
+		}
 
 		n, err := w.writer.Write(obuf)
 		if err != nil {
@@ -1032,6 +1141,58 @@ func WriterCreateIndex(b bool) WriterOption {
 		if !w.genIndex && w.appendIndex {
 			return errors.New("WriterCreateIndex: Cannot disable when WriterAddIndex has been requested")
 		}
+		return nil
+	}
+}
+
+func (w *Writer) writeSearchInfoSync() error {
+	if w.searchCfg == nil || w.searchInfoBuf != nil {
+		return nil
+	}
+	w.searchInfoBuf = w.searchCfg.marshalSearchInfoChunk()
+	n, err := w.writer.Write(w.searchInfoBuf)
+	if err != nil {
+		return w.err(err)
+	}
+	if n != len(w.searchInfoBuf) {
+		return w.err(io.ErrShortWrite)
+	}
+	w.written += int64(n)
+	return nil
+}
+
+func (w *Writer) writeSearchTableSync(uncompressed, overlap []byte) error {
+	var stBuf []byte
+	if v := searchTablePool.Get(); v != nil {
+		stBuf = v.([]byte)
+	}
+	table, reductions := w.searchCfg.buildSearchTable(uncompressed, overlap, stBuf, w.searchCfg.shouldPack(1))
+	defer searchTablePool.Put(table)
+	if table == nil {
+		return nil
+	}
+	chunk := marshalSearchTableChunk(w.searchCfg, reductions, table)
+	n, err := w.writer.Write(chunk)
+	if err != nil {
+		return w.err(err)
+	}
+	if n != len(chunk) {
+		return w.err(io.ErrShortWrite)
+	}
+	w.written += int64(n)
+	return nil
+}
+
+// WriterSearchTable enables per-block search table generation.
+// The config controls match length, prefix filtering, and heuristics.
+// Use NewSearchTableConfig to create the config.
+func WriterSearchTable(cfg SearchTableConfig) WriterOption {
+	return func(w *Writer) error {
+		if err := cfg.validate(); err != nil {
+			return err
+		}
+		c := cfg
+		w.searchCfg = &c
 		return nil
 	}
 }
