@@ -5,6 +5,12 @@
 // You may obtain a copy of the License at
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package main
 
@@ -953,7 +959,7 @@ type jsonOp struct {
 	HeaderBytes    uint64        `json:"headerBytes"`
 	AvgOut         float64       `json:"avgOut"`
 	AvgEnc         float64       `json:"avgEnc"`
-	PctOps         float64       `json:"pctOps"`
+	PctOps         float64       `json:"pctOps,omitempty"`
 	PctOut         float64       `json:"pctOut"`
 	PctEnc         float64       `json:"pctEnc"`
 	Saved          int64         `json:"saved"`
@@ -1100,7 +1106,7 @@ func buildJSONFile(rep *fileReport, opts statsOpts) jsonFile {
 		if s.SumLen > 0 {
 			jo.AvgLen = float64(s.SumLen) / float64(s.Count)
 		}
-		if rep.TotalOps > 0 {
+		if rep.TotalOps > 0 && i != opFusedLit {
 			jo.PctOps = float64(s.Count) * 100 / float64(rep.TotalOps)
 		}
 		if rep.TotalOut > 0 {
@@ -1321,7 +1327,6 @@ func renderText(w io.Writer, rep *fileReport, opts statsOpts) {
 		if s.Count == 0 {
 			continue
 		}
-		pctOps := float64(s.Count) * 100 / float64(rep.TotalOps)
 		pctOut := float64(s.OutBytes) * 100 / float64(rep.TotalOut)
 		encTotal := s.HeaderBytes
 		if i == opLiteral || i == opFusedLit {
@@ -1334,8 +1339,14 @@ func renderText(w io.Writer, rep *fileReport, opts statsOpts) {
 		if i != opLiteral && i != opFusedLit {
 			saved = int64(s.OutBytes) - int64(encTotal)
 		}
-		fmt.Fprintf(bw, "%-8s %10d %5.1f%% %12d %5.1f%% %12d %5.1f%% %8.2f %8.2f %12d\n",
-			opNames[i], s.Count, pctOps, s.OutBytes, pctOut, encTotal, pctEnc, avgOut, avgEnc, saved)
+		// FusedLit is a pseudo-op derived from Copy2-F/Copy3-F counts and is
+		// excluded from TotalOps, so a %Ops figure would inflate the column past 100%.
+		pctOpsStr := "      —"
+		if i != opFusedLit {
+			pctOpsStr = fmt.Sprintf("%5.1f%% ", float64(s.Count)*100/float64(rep.TotalOps))
+		}
+		fmt.Fprintf(bw, "%-8s %10d %s %12d %5.1f%% %12d %5.1f%% %8.2f %8.2f %12d\n",
+			opNames[i], s.Count, pctOpsStr, s.OutBytes, pctOut, encTotal, pctEnc, avgOut, avgEnc, saved)
 	}
 
 	// Fused stats

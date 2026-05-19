@@ -64,7 +64,7 @@ func main() {
 		fmt.Fprintf(w, " (cat)    :   %s cat [options] <input>\n", os.Args[0])
 		fmt.Fprintf(w, " (tail)   :   %s tail [options] <input>\n", os.Args[0])
 		fmt.Fprintf(w, "Search:       %s search [options] <pattern> <input>\n", os.Args[0])
-		fmt.Fprintf(w, "Stats:        %s stats [options] <input>\n\n", os.Args[0])
+		fmt.Fprintf(w, "Stats:        %s stats [options] <input...>\n\n", os.Args[0])
 		fmt.Fprintf(w, "Without options 'c' and 'd' can be omitted. Extension decides if decompressing.\n")
 		fmt.Fprintf(w, "Compress file:    %s file.txt\n", os.Args[0])
 		fmt.Fprintf(w, "Compress stdin:   %s -\n", os.Args[0])
