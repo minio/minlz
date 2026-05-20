@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"strings"
 	"testing"
 )
 
@@ -272,11 +273,11 @@ func TestChunkRoundtrip(t *testing.T) {
 		table[0] = 0xff
 		table[31] = 0x01
 		reductions := cfg.baseTableSize - 8
-		chunk := marshalSearchTableChunk(&cfg, reductions, table)
+		chunk := appendSearchTableChunk(nil, &cfg, reductions, table)
 		if chunk[0] != chunkTypeSearchTable {
 			t.Fatalf("expected chunk type 0x45, got 0x%x", chunk[0])
 		}
-		pcfg, pred, ptable, err := parseSearchTable(chunk[4:])
+		pcfg, pred, ptable, err := parseSearchTable(chunk[4:], false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -286,6 +287,51 @@ func TestChunkRoundtrip(t *testing.T) {
 		if !bytes.Equal(ptable, table) {
 			t.Fatal("table data mismatch")
 		}
+	}
+}
+
+func TestSearchTableCRCMismatch(t *testing.T) {
+	cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(4), 12)
+	if err := cfg.validate(); err != nil {
+		t.Fatal(err)
+	}
+	table := make([]byte, 32)
+	table[0] = 0xff
+	table[31] = 0x01
+	reductions := cfg.baseTableSize - 8
+	chunk := appendSearchTableChunk(nil, &cfg, reductions, table)
+
+	if _, _, _, err := parseSearchTable(chunk[4:], false); err != nil {
+		t.Fatalf("clean chunk should parse, got %v", err)
+	}
+
+	// Corrupt a table byte; CRC must catch it.
+	corruptTable := make([]byte, len(chunk))
+	copy(corruptTable, chunk)
+	corruptTable[len(corruptTable)-1] ^= 0x01
+	_, _, _, err := parseSearchTable(corruptTable[4:], false)
+	if err == nil {
+		t.Fatal("expected CRC mismatch error, got nil")
+	}
+	if !strings.Contains(err.Error(), "CRC mismatch") {
+		t.Fatalf("expected CRC mismatch error, got: %v", err)
+	}
+	_, _, _, err = parseSearchTable(corruptTable[4:], true)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	// Corrupt the stored CRC; same outcome.
+	corruptCRC := make([]byte, len(chunk))
+	copy(corruptCRC, chunk)
+	crcOff := 4 + 3 + cfg.prefixSize() + 1
+	corruptCRC[crcOff] ^= 0x01
+	_, _, _, err = parseSearchTable(corruptCRC[4:], false)
+	if err == nil {
+		t.Fatal("expected CRC mismatch error after CRC corruption, got nil")
+	}
+	if !strings.Contains(err.Error(), "CRC mismatch") {
+		t.Fatalf("expected CRC mismatch error, got: %v", err)
 	}
 }
 
@@ -1138,7 +1184,7 @@ func TestBlockTableIndexCorrectness(t *testing.T) {
 				case chunkTypeSearchInfo:
 					pos += chunkLen
 				case chunkTypeSearchTable:
-					cfg, red, tbl, err := parseSearchTable(stream[pos : pos+chunkLen])
+					cfg, red, tbl, err := parseSearchTable(stream[pos:pos+chunkLen], false)
 					if err != nil {
 						t.Fatal(err)
 					}

@@ -93,6 +93,7 @@ type Writer struct {
 
 	searchCfg      *SearchTableConfig
 	searchInfoBuf  []byte // cached 0x44 chunk
+	searchHdrBuf   []byte // scratch 0x45 header (sync path)
 	searchMaxChunk int    // max 0x45 chunk size, 0 if no search
 
 	// wroteStreamHeader is whether we have written the stream header.
@@ -1171,12 +1172,20 @@ func (w *Writer) writeSearchTableSync(uncompressed, overlap []byte) error {
 	if table == nil {
 		return nil
 	}
-	chunk := marshalSearchTableChunk(w.searchCfg, reductions, table)
-	n, err := w.writer.Write(chunk)
+	w.searchHdrBuf = appendSearchTableHeader(w.searchHdrBuf[:0], w.searchCfg, reductions, table)
+	n, err := w.writer.Write(w.searchHdrBuf)
 	if err != nil {
 		return w.err(err)
 	}
-	if n != len(chunk) {
+	if n != len(w.searchHdrBuf) {
+		return w.err(io.ErrShortWrite)
+	}
+	w.written += int64(n)
+	n, err = w.writer.Write(table)
+	if err != nil {
+		return w.err(err)
+	}
+	if n != len(table) {
 		return w.err(io.ErrShortWrite)
 	}
 	w.written += int64(n)

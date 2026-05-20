@@ -126,11 +126,16 @@ func (c *SearchTableConfig) validate() error {
 	return nil
 }
 
+// searchTablePayloadSize returns the 0x45 payload size for the given table length.
+func (c *SearchTableConfig) searchTablePayloadSize(tableLen int) int {
+	// 3 (type+matchLen+baseSize) + prefixSize + 1 (reductions) + 4 (crc) + table
+	return 3 + c.prefixSize() + 1 + 4 + tableLen
+}
+
 // maxChunkSize returns the maximum 0x45 chunk size (header + payload) for this config.
+// Max table = 2^(baseTableSize-3) bytes (0 reductions).
 func (c *SearchTableConfig) maxChunkSize() int {
-	// 4 (chunk header) + 3 (type+matchLen+baseSize) + prefixSize + 1 (reductions) + max table bytes
-	// Max table = 2^(baseTableSize-3) bytes (0 reductions).
-	return 4 + 3 + c.prefixSize() + 1 + (1 << (c.baseTableSize - 3))
+	return 4 + c.searchTablePayloadSize(1<<(c.baseTableSize-3))
 }
 
 func (c *SearchTableConfig) prefixSize() int {
@@ -219,17 +224,19 @@ func (c *SearchTableConfig) marshalSearchInfoChunk() []byte {
 	return c.appendConfig(dst)
 }
 
-// marshalSearchTableChunk produces a complete 0x45 chunk.
-func marshalSearchTableChunk(cfg *SearchTableConfig, reductions uint8, table []byte) []byte {
-	return appendSearchTableChunk(nil, cfg, reductions, table)
-}
-
 // appendSearchTableChunk appends a complete 0x45 chunk to dst.
 func appendSearchTableChunk(dst []byte, cfg *SearchTableConfig, reductions uint8, table []byte) []byte {
-	dst = appendChunkHeader(dst, chunkTypeSearchTable, 3+cfg.prefixSize()+1+len(table))
+	dst = appendSearchTableHeader(dst, cfg, reductions, table)
+	return append(dst, table...)
+}
+
+// appendSearchTableHeader appends everything in the 0x45 chunk before the table bytes:
+// chunk header, config, reductions, and CRC of table.
+func appendSearchTableHeader(dst []byte, cfg *SearchTableConfig, reductions uint8, table []byte) []byte {
+	dst = appendChunkHeader(dst, chunkTypeSearchTable, cfg.searchTablePayloadSize(len(table)))
 	dst = cfg.appendConfig(dst)
 	dst = append(dst, reductions)
-	return append(dst, table...)
+	return binary.LittleEndian.AppendUint32(dst, crc(table))
 }
 
 // parseSearchInfo parses the payload (after chunk header) of a 0x44 chunk.
@@ -273,7 +280,7 @@ func parseSearchInfo(payload []byte) (SearchTableConfig, error) {
 }
 
 // parseSearchTable parses the payload (after chunk header) of a 0x45 chunk.
-func parseSearchTable(payload []byte) (cfg SearchTableConfig, reductions uint8, table []byte, err error) {
+func parseSearchTable(payload []byte, ignoreCRC bool) (cfg SearchTableConfig, reductions uint8, table []byte, err error) {
 	cfg, err = parseSearchInfo(payload)
 	if err != nil {
 		return
@@ -286,11 +293,17 @@ func parseSearchTable(payload []byte) (cfg SearchTableConfig, reductions uint8, 
 	reductions = payload[off]
 	table = payload[off+1:]
 	expectedSize := 1 << (cfg.baseTableSize - reductions - 3)
-	if len(table) < expectedSize {
-		err = fmt.Errorf("minlz: search table data too short: got %d, want %d", len(table), expectedSize)
+	if len(table) < expectedSize+4 {
+		err = fmt.Errorf("minlz: search table data too short: got %d, want %d", len(table), expectedSize+4)
 		return
 	}
+	// Read stored CRC
+	crc32 := binary.LittleEndian.Uint32(table)
+	table = table[4:]
 	table = table[:expectedSize]
+	if !ignoreCRC && crc32 != crc(table) {
+		err = fmt.Errorf("minlz: search table CRC mismatch")
+	}
 	return
 }
 
