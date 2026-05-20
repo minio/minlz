@@ -350,7 +350,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if !s.readFull(s.buf[:chunkLen]) {
 				return s.err
 			}
-			cfg, reductions, table, err := parseSearchTable(s.buf[:chunkLen])
+			cfg, reductions, table, err := parseSearchTable(s.buf[:chunkLen], s.ignoreCRC)
 			if err != nil {
 				return err
 			}

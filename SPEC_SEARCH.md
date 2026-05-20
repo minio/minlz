@@ -49,6 +49,7 @@ The Block Search Table is an optional chunk that will come before a block that r
 | 1          | Base Table Size in log2       |
 | 0/8/32/1+n | Prefix values                 |
 | 1          | Reductions from Base Table    |
+| 4          | CRC32 of table entries        |
 | n          | Table entries. n = 2^(BT-R-3) |
 
 Search pattern length, base table size and prefix values *should* match the values given in chunk type 0x44.
@@ -58,6 +59,9 @@ If no chunk type 0x44 has been seen or the values are different, the decoder *ma
 
 The table entries are bits, where the search pattern resolves to 'x' 
 can be resolved by looking up `table[x>>3] & (1<<(x&7))`.
+
+A CRC32 is calculated of the table entries, similar to the CRC32 of the block data. 
+See section [3. Checksum format](SPEC.md#3-checksum-format).
 
 Note that encoders can decide to omit the Search Table for any block if it is deemed not worth the space, 
 for example, if there are too many collisions for the table to provide any benefit.
