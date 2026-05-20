@@ -11,6 +11,16 @@ checking if a pattern is present in the block.
 This can be used to determine if a block may, or definitely does *not* contain a specific pattern.
 With this information, blocks can be skipped if searching for specific patterns.
 
+### 1.1 Search Index only Streams
+
+A stream can contain search indexes only. This means that blocks are referenced into another stream.
+
+The stream should be valid, but instead of the block data, Remote Block Reference (chunk type 0x47) 
+is inserted for each data block. 
+
+This will allow the index to be stored separately from the data. 
+Alternatively, for indexing an existing stream.
+
 ## 2 New Chunks
 
 ### 2.0 Search Table Information (chunk type 0x44, skippable)
@@ -71,6 +81,79 @@ It is purely up to the decoder to decide which table(s) to use.
 
 If creating an index - as per spec [section 4.12](SPEC.md#412-index-chunk-type-0x40--optional),
 it is recommended to include this chunk as the indexed offset.
+
+### 2.2 Compressed Block Search Table (chunk type 0x46, skippable)
+
+The Compressed Block Search Table is an optional chunk that will come before a block that represents the contents.
+
+| Length     | Code  | Description                    |
+|------------|-------|--------------------------------|
+| 1          |       | Table Type                     |
+| 1          |       | Search pattern length          |
+| 1          |       | Base Table Size in log2        |
+| 0/8/32/1+n |       | Prefix values                  |
+| 1          |       | Reductions from Base Table     |
+| 4          |       | CRC32 of table entries         |
+| 1          | h0_bs | log2 huff0 block size          |
+| 1          | h0_tc | huff0 table count              |
+| ...        |       | huff0 tables                   |
+| 1          | h0_ti | huff0 table index              |
+| 1-3        | bd    | compressed length (uvarint)    |
+| bd         |       | huff0 4X compressed block data |
+| ...        |       | Additional huff0 blocks        |
+
+See Section 2.1 on how to decode table information until the huff0 section.
+
+The index bits are split into huff0 blocks.
+
+The first value (h0_bs) is the log2 of the uncompressed huff0 block size in bytes.
+The bitmap size (n) must be divisible by the huff0 block size.
+The maximum huff0 block size is 128KiB (h0_bs = 17).
+The minimum size is 32 bytes (h0_bs = 5).
+
+Tables for huff0 blocks are stored separately. There can be up to 16 tables per block.
+The encoder is allowed to reuse tables for different huff0 blocks.
+
+The encoded huff0 tables follow. This is similar to zstd, [rfc 8878](https://datatracker.ietf.org/doc/html/rfc8878#section-4.2).
+Table sizes are self-contained, but h0_tc must be read.
+
+The number of blocks can be calculated as `n / (1 << h0_bs)`.
+
+For each block the table index is specified by the h0_ti value and decoded as follows:
+
+| h0_ti value | Meaning                                   |
+|-------------|-------------------------------------------|
+| 0 -> 15     | huff0 table index                         |
+| 16          | Uncompressed block                        |
+| 17          | RLE - Read 1 byte, repeat value for block |
+| 18 -> 255   | Reserved [invalid]                        |  
+
+If h0_ti is <= 15, the compressed size follows as a uvarint - and the compressed data itself.
+Note the compressed streams are always [4 streams interleaved](https://datatracker.ietf.org/doc/html/rfc8878#name-jump_table),
+also named 4X in zstd.
+
+An uncompressed block (h0_ti = 16) and RLE (h0_ti = 17) will not have any size,
+since that can be inferred.
+
+RLE in this context means "single value repeated for the entire block" and can only be used for that.
+
+### 2.3 Remote Block Reference (chunk type 0x47, skippable)
+
+When generating search indexes from an existing stream or you, for
+another reason, want to separate the search index from the data,
+you can use the Remote Block Reference chunk type to indicate a remote block.
+
+| Length  | Description                         |
+|---------|-------------------------------------|
+| UVarInt | Block Offset                        |
+| ...     | [Additional relative block offsets] |
+
+This block replaces a block that and indicates the offset of the block in the stream.
+
+If more values are present, it indicates additional blocks without indexes between.
+These are stored as relative offsets from the current block.
+
+The block offsets must be in strictly ascending order.
 
 ## 3 Table Definition
 
