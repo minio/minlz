@@ -859,8 +859,8 @@ func buildTablePrefixLong(table []byte, data []byte, nPositions int, tableSize, 
 	safeEnd := max(0, len(data)-7)
 	mainEnd := min(n, safeEnd)
 
-	switch {
-	case pl == 1:
+	switch pl {
+	case 1:
 		// Single byte prefix - similar to mask but with one value.
 		p := prefix[0]
 		switch matchLen {

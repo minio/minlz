@@ -20,8 +20,8 @@ type SearchStats struct {
 	BlocksSearched        int     // Blocks decoded and passed to callback
 	CompBytesSkipped      int64   // Compressed bytes skipped
 	UncompBytesSearched   int64   // Uncompressed bytes decoded and searched
-	TablesPresent         int     // Number of 0x45 search table chunks seen
-	TablesBytes           int64   // Total bytes of search table chunks
+	TablesPresent         int     // Number of 0x45 + 0x46 search table chunks seen
+	TablesBytes           int64   // Total wire bytes of search table chunks (0x45 + 0x46)
 	TablesMissing         int     // Data blocks without a preceding search table
 	TablesUnusable        int     // Tables present but incompatible with query
 	TableBitsSum          int     // Sum of effective table bits (for avg: TableBitsSum/TablesPresent)
@@ -33,6 +33,18 @@ type SearchStats struct {
 	TablePopMax           float64 // Max population % across tables seen
 	TablePopSum           float64 // Sum of population % (for computing average)
 	UncompressedSize      int64   // Total uncompressed bytes in stream
+
+	// Compressed search-table (chunk type 0x46) breakdown. These count a
+	// subset of TablesPresent / TablesBytes.
+	TablesCompressed      int   // Number of 0x46 chunks seen
+	TablesCompressedBytes int64 // Total wire bytes of 0x46 chunks (subset of TablesBytes)
+	TableBitmapBytes      int64 // Total uncompressed bitmap bytes across 0x46 chunks
+
+	// huff0 sub-block breakdown for the 0x46 chunks above.
+	Huff0BlocksTotal int // Sum of huff0 sub-blocks across all 0x46 chunks
+	Huff0BlocksRaw   int // Sub-blocks with disposition = raw
+	Huff0BlocksRLE   int // Sub-blocks with disposition = RLE
+	Huff0TablesSum   int // Sum of distinct huff0 tables emitted across all 0x46 chunks
 }
 
 // Fprint writes a human-readable summary of the search stats to w.
@@ -63,6 +75,22 @@ func (st SearchStats) Fprint(w io.Writer) {
 		fmt.Fprintln(w)
 		avg := st.TablePopSum / float64(st.TablesPresent)
 		fmt.Fprintf(w, "Table population: avg %.1f%%, min %.1f%%, max %.1f%%\n", avg, st.TablePopMin, st.TablePopMax)
+		if st.TablesCompressed > 0 {
+			ratio := 100.0
+			if st.TableBitmapBytes > 0 {
+				ratio = float64(st.TablesCompressedBytes) * 100 / float64(st.TableBitmapBytes)
+			}
+			fmt.Fprintf(w, "Compressed tables: %d (%.1f%% of total), %d wire bytes, %d uncompressed bitmap bytes (%.2f%% ratio)\n",
+				st.TablesCompressed, pct(st.TablesCompressed, st.TablesPresent),
+				st.TablesCompressedBytes, st.TableBitmapBytes, ratio)
+			tabled := st.Huff0BlocksTotal - st.Huff0BlocksRaw - st.Huff0BlocksRLE
+			share := 0.0
+			if tabled > 0 {
+				share = float64(st.Huff0TablesSum) / float64(tabled)
+			}
+			fmt.Fprintf(w, "huff0 sub-blocks: %d total (%d tabled, %d raw, %d RLE); %d tables emitted (share=%.2f tables/tabled-block)\n",
+				st.Huff0BlocksTotal, tabled, st.Huff0BlocksRaw, st.Huff0BlocksRLE, st.Huff0TablesSum, share)
+		}
 	}
 }
 
@@ -194,6 +222,7 @@ type BlockSearcher struct {
 	prevLazy     *lazyBlock     // compressed previous block for lazy PrevBlock(); nil if decoded
 	deferred     *deferredMatch // pending ErrSearchForward re-dispatch
 	pending      *pendingBlock  // block deferred pending next table check
+	cstDec       *cstDecoder    // lazy decoder state for 0x46 chunks
 	maxBlock     int
 	readHeader   bool
 	ignoreCRC    bool
@@ -343,6 +372,18 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				return err
 			}
 			s.streamInfo = &cfg
+			// Preallocate the compressed-table bitmap buffer to the stream's
+			// maximum (un-reduced) bitmap size so subsequent 0x46 parses don't
+			// grow it.
+			if cfg.baseTableSize >= 3 {
+				maxBitmap := 1 << (cfg.baseTableSize - 3)
+				if s.cstDec == nil {
+					s.cstDec = newCSTDecoder()
+				}
+				if cap(s.cstDec.bitmapBuf) < maxBitmap {
+					s.cstDec.bitmapBuf = make([]byte, maxBitmap)
+				}
+			}
 			continue
 
 		case chunkTypeSearchTable:
@@ -366,6 +407,53 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if s.collectStats {
 				s.stats.TablesPresent++
 				s.stats.TablesBytes += int64(chunkLen + 4) // +4 for chunk header
+				s.stats.TableBitsSum += int(cfg.baseTableSize - reductions)
+				s.stats.TableReductionsSum += int(reductions)
+				setBits := 0
+				for _, b := range table {
+					setBits += bits.OnesCount8(b)
+				}
+				pop := float64(setBits) * 100 / float64(len(table)*8)
+				s.stats.TablePopSum += pop
+				if s.stats.TablesPresent == 1 || pop < s.stats.TablePopMin {
+					s.stats.TablePopMin = pop
+				}
+				if pop > s.stats.TablePopMax {
+					s.stats.TablePopMax = pop
+				}
+			}
+			continue
+
+		case chunkTypeSearchTableCompressed:
+			s.ensureBuf(chunkLen)
+			if !s.readFull(s.buf[:chunkLen]) {
+				return s.err
+			}
+			if s.cstDec == nil {
+				s.cstDec = newCSTDecoder()
+			}
+			cfg, reductions, table, err := parseSearchTableCompressed(s.buf[:chunkLen], s.cstDec, s.ignoreCRC)
+			if err != nil {
+				return err
+			}
+			s.blockInfo = cfg
+			s.blockReductions = reductions
+			s.blockTable = table
+			if s.pending != nil {
+				if err := s.resolvePending(pattern, fn); err != nil {
+					return err
+				}
+			}
+			if s.collectStats {
+				s.stats.TablesPresent++
+				s.stats.TablesBytes += int64(chunkLen + 4)
+				s.stats.TablesCompressed++
+				s.stats.TablesCompressedBytes += int64(chunkLen + 4)
+				s.stats.TableBitmapBytes += int64(len(table))
+				s.stats.Huff0BlocksTotal += s.cstDec.lastBlocks
+				s.stats.Huff0BlocksRaw += s.cstDec.lastBlocksRaw
+				s.stats.Huff0BlocksRLE += s.cstDec.lastBlocksRLE
+				s.stats.Huff0TablesSum += s.cstDec.lastTables
 				s.stats.TableBitsSum += int(cfg.baseTableSize - reductions)
 				s.stats.TableReductionsSum += int(reductions)
 				setBits := 0

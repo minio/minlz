@@ -41,6 +41,7 @@ type SearchTableConfig struct {
 	longPrefix       []byte
 	maxPopPct        int
 	maxReducedPopPct int
+	compression      *compressedOpts // nil = emit 0x45 only
 }
 
 // NewSearchTableConfig creates a search table config.
@@ -108,6 +109,25 @@ func (c SearchTableConfig) WithMaxPopulation(pct int) SearchTableConfig {
 // reduced table. Reductions stop before exceeding this threshold.
 func (c SearchTableConfig) WithMaxReducedPopulation(pct int) SearchTableConfig {
 	c.maxReducedPopPct = pct
+	return c
+}
+
+// WithCompression enables huff0 compression of per-block search tables.
+// This will reduce search index size on high quality search indexes,
+// with low population count.
+// Search Indexes that can only be marginally compressed are stored uncompressed.
+//
+// With no options, defaults are: 10.0% popcount band, no stats hook,
+// non-forced (emit compressed only when smaller).
+func (c SearchTableConfig) WithCompression(opts ...CompressedSearchOption) SearchTableConfig {
+	co := &compressedOpts{
+		enabled:         true,
+		skipPctTimes100: cstDefaultSkipPctTimes100,
+	}
+	for _, o := range opts {
+		o(co)
+	}
+	c.compression = co
 	return c
 }
 

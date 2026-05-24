@@ -57,6 +57,13 @@ func NewWriter(w io.Writer, opts ...WriterOption) *Writer {
 	w2.obufLen = obufHeaderLen + MaxEncodedLen(w2.blockSize)
 	if w2.searchCfg != nil {
 		w2.searchMaxChunk = w2.searchCfg.maxChunkSize()
+		// 0x46 is only emitted when strictly smaller than 0x45, so on-wire size
+		// is bounded by the 0x45 size. A small headroom covers the worst-case
+		// transient layout (h0_bs + h0_tc + up to 16 disposition bytes + a few
+		// uvarint length prefixes).
+		if w2.searchCfg.compression != nil && w2.searchCfg.compression.enabled {
+			w2.searchMaxChunk += 64
+		}
 		w2.obufLen += w2.searchMaxChunk
 	}
 	w2.paramsOK = true
@@ -456,7 +463,7 @@ func (w *Writer) EncodeBuffer(buf []byte) (err error) {
 				}
 				table, reductions := searchCfg.buildSearchTable(uncompressed, overlap, stBuf, searchCfg.shouldPack(w.concurrency))
 				if table != nil {
-					searchLen = len(appendSearchTableChunk(obuf[:0], searchCfg, reductions, table))
+					searchLen = len(w.appendSearchTableEitherChunk(obuf[:0], reductions, table))
 				}
 				searchTablePool.Put(table)
 			}
@@ -604,7 +611,7 @@ func (w *Writer) write(p []byte) (nRet int, errRet error) {
 				table, reductions := searchCfg.buildSearchTable(uncompressed, overlap, stBuf, searchCfg.shouldPack(w.concurrency))
 				if table != nil {
 					// obuf still points to the pool buffer with smc space at front.
-					searchLen = len(appendSearchTableChunk(inbuf[:0], searchCfg, reductions, table))
+					searchLen = len(w.appendSearchTableEitherChunk(inbuf[:0], reductions, table))
 				}
 				searchTablePool.Put(table)
 			}
@@ -707,7 +714,7 @@ func (w *Writer) writeFull(inbuf []byte) (errRet error) {
 			if table != nil {
 				// Search chunk is in the original obuf (may have been swapped if incompressible,
 				// but we only reach here for compressible blocks so obuf is unchanged).
-				searchLen = len(appendSearchTableChunk(obuf[:0], searchCfg, reductions, table))
+				searchLen = len(w.appendSearchTableEitherChunk(obuf[:0], reductions, table))
 			}
 			searchTablePool.Put(table)
 		}
@@ -1172,6 +1179,25 @@ func (w *Writer) writeSearchTableSync(uncompressed, overlap []byte) error {
 	if table == nil {
 		return nil
 	}
+	// Try compressed form first. When emitted, the chunk is fully serialized
+	// (no large-bitmap separate write).
+	if w.searchCfg.compression != nil && w.searchCfg.compression.enabled {
+		e := cstEncoderPool.Get().(*cstEncoder)
+		out, ok, _ := appendSearchTableCompressedChunk(w.searchHdrBuf[:0], w.searchCfg, reductions, table, e)
+		cstEncoderPool.Put(e)
+		if ok {
+			w.searchHdrBuf = out
+			n, err := w.writer.Write(out)
+			if err != nil {
+				return w.err(err)
+			}
+			if n != len(out) {
+				return w.err(io.ErrShortWrite)
+			}
+			w.written += int64(n)
+			return nil
+		}
+	}
 	w.searchHdrBuf = appendSearchTableHeader(w.searchHdrBuf[:0], w.searchCfg, reductions, table)
 	n, err := w.writer.Write(w.searchHdrBuf)
 	if err != nil {
@@ -1190,6 +1216,21 @@ func (w *Writer) writeSearchTableSync(uncompressed, overlap []byte) error {
 	}
 	w.written += int64(n)
 	return nil
+}
+
+// appendSearchTableEitherChunk dispatches between the compressed (0x46) and
+// uncompressed (0x45) search-table chunk encoders. When compression is
+// disabled or not beneficial, falls back to 0x45.
+func (w *Writer) appendSearchTableEitherChunk(dst []byte, reductions uint8, table []byte) []byte {
+	if w.searchCfg.compression != nil && w.searchCfg.compression.enabled {
+		e := cstEncoderPool.Get().(*cstEncoder)
+		out, ok, _ := appendSearchTableCompressedChunk(dst, w.searchCfg, reductions, table, e)
+		cstEncoderPool.Put(e)
+		if ok {
+			return out
+		}
+	}
+	return appendSearchTableChunk(dst, w.searchCfg, reductions, table)
 }
 
 // WriterSearchTable enables per-block search table generation.
