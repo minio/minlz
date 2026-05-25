@@ -122,6 +122,9 @@ func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats
 	}
 	if opts.verbose {
 		bsOpts = append(bsOpts, minlz.BlockSearchCollectStats())
+		bsOpts = append(bsOpts, minlz.BlockSearchInfoCallback(func(cfg minlz.SearchTableConfig) {
+			fmt.Fprintf(os.Stderr, "%s: search info: %s\n", file, cfg)
+		}))
 	}
 	searcher := minlz.NewBlockSearcher(r, bsOpts...)
 

@@ -240,6 +240,7 @@ type BlockSearcher struct {
 	deferred     *deferredMatch // pending ErrSearchForward re-dispatch
 	pending      *pendingBlock  // block deferred pending next table check
 	cstDec       *cstDecoder    // lazy decoder state for 0x46 chunks
+	infoCallback func(SearchTableConfig)
 	maxBlock     int
 	readHeader   bool
 	ignoreCRC    bool
@@ -258,6 +259,17 @@ type BlockSearchOption func(*BlockSearcher) error
 func BlockSearchBailOnMissing() BlockSearchOption {
 	return func(s *BlockSearcher) error {
 		s.bail = true
+		return nil
+	}
+}
+
+// BlockSearchInfoCallback installs fn to be invoked when a Search Table Info
+// chunk (0x44) is parsed from the stream. The callback receives the parsed
+// SearchTableConfig and is intended for logging / introspection. The callback
+// must not retain references to mutable state inside the config.
+func BlockSearchInfoCallback(fn func(SearchTableConfig)) BlockSearchOption {
+	return func(s *BlockSearcher) error {
+		s.infoCallback = fn
 		return nil
 	}
 }
@@ -389,6 +401,9 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				return err
 			}
 			s.streamInfo = &cfg
+			if s.infoCallback != nil {
+				s.infoCallback(cfg)
+			}
 			// Preallocate the compressed-table bitmap buffer to the stream's
 			// maximum (un-reduced) bitmap size so subsequent 0x46 parses don't
 			// grow it.
