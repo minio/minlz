@@ -1181,8 +1181,11 @@ func (w *Writer) writeSearchTableSync(uncompressed, overlap []byte) error {
 	// (no large-bitmap separate write).
 	if w.searchCfg.compression != nil && w.searchCfg.compression.enabled {
 		e := cstEncoderPool.Get().(*cstEncoder)
-		out, ok, _ := appendSearchTableCompressedChunk(w.searchHdrBuf[:0], w.searchCfg, reductions, table, e)
+		out, ok, err := appendSearchTableCompressedChunk(w.searchHdrBuf[:0], w.searchCfg, reductions, table, e)
 		cstEncoderPool.Put(e)
+		if err != nil {
+			return w.err(err)
+		}
 		if ok {
 			w.searchHdrBuf = out
 			n, err := w.writer.Write(out)
@@ -1218,12 +1221,17 @@ func (w *Writer) writeSearchTableSync(uncompressed, overlap []byte) error {
 
 // appendSearchTableEitherChunk dispatches between the compressed (0x46) and
 // uncompressed (0x45) search-table chunk encoders. When compression is
-// disabled or not beneficial, falls back to 0x45.
+// disabled or not beneficial, falls back to 0x45. An internal encoder error
+// is recorded on the Writer (visible to subsequent operations via w.err) so
+// it isn't silently masked by the 0x45 fallback.
 func (w *Writer) appendSearchTableEitherChunk(dst []byte, reductions uint8, table []byte) []byte {
 	if w.searchCfg.compression != nil && w.searchCfg.compression.enabled {
 		e := cstEncoderPool.Get().(*cstEncoder)
-		out, ok, _ := appendSearchTableCompressedChunk(dst, w.searchCfg, reductions, table, e)
+		out, ok, err := appendSearchTableCompressedChunk(dst, w.searchCfg, reductions, table, e)
 		cstEncoderPool.Put(e)
+		if err != nil {
+			_ = w.err(err)
+		}
 		if ok {
 			return out
 		}

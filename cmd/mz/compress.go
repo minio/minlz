@@ -53,7 +53,7 @@ func mainCompress(args []string) {
 		searchPfx       = fs.String("search.prefixes", "", "Search table prefix bytes (e.g. '=', '=:')")
 		searchPfxString = fs.String("search.prefix", "", "Single value longer prefix, eg 'id:\\\"'")
 		searchMax       = fs.Int("search.max", 75, "Discards search table entries with a population percentage higher than this")
-		searchLim       = fs.Int("search.lim", 50, "Stops reducing search tables if population exceeds this percentage. Divided by 2 with prefix, 3 with compression, 5 with both")
+		searchLim       = fs.Int("search.lim", 50, "Stops reducing search tables if population exceeds this percentage. Divided by 2 when prefix or compression is enabled, by 3 when both are enabled")
 		searchComp      = fs.Bool("search.compress", false, "Compress search tables with huff0 (chunk type 0x46)")
 		searchCompSkip  = fs.Float64("search.compress.skip", 10.0, "Skip search table compression when |popcount - 50%| < this percentage")
 

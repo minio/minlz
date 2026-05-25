@@ -15,7 +15,7 @@ const (
 	cstDispRLE                = 17
 	cstDispSparse             = 18
 	cstMaxHuff0Tables         = 16
-	cstDefaultSkipPctTimes100 = 1000 // 5.00%
+	cstDefaultSkipPctTimes100 = 1000 // 10.00%
 	// Absolute minimum bitmap that 0x46 can wrap (= smallest search table = 32 B).
 	// huff0 may fail to compress at this size, but the RLE / sparse / raw
 	// fallbacks still win against 0x45's table+CRC+config overhead.
