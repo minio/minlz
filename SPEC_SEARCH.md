@@ -130,7 +130,8 @@ For each block the table index is specified by the h0_ti value and decoded as fo
 | 0 -> 15     | huff0 table index                         |
 | 16          | Uncompressed block                        |
 | 17          | RLE - Read 1 byte, repeat value for block |
-| 18 -> 255   | Reserved [invalid]                        |  
+| 18          | Sparse Bit Table                          |
+| 19 -> 255   | Reserved [invalid]                        |  
 
 If h0_ti is <= 15, the compressed size follows as a uvarint - and the compressed data itself.
 Note the compressed streams are always [4 streams interleaved](https://datatracker.ietf.org/doc/html/rfc8878#name-jump_table),
@@ -140,6 +141,22 @@ An uncompressed block (h0_ti = 16) and RLE (h0_ti = 17) will not have any size,
 since that can be inferred.
 
 RLE in this context means "single value repeated for the entire block" and can only be used for that.
+
+#### 2.2.1 Sparse Bit Table
+
+A sparse bit table can be used for very sparsely populated blocks.
+
+Like huff0 block, this starts with a uvarint encoded length in bytes.
+
+The block contains byte-encoded distances between bits.
+
+To decode, read single bytes. Each byte is the distance to the next set bit.
+Bits are counted from the least significant bit.
+
+If the byte is 255, add 255 to the distance and read the following byte.
+
+When the final byte has been read, there are no more bits. 
+The distance is not expected to reach the end of the block. 
 
 ### 2.3 Remote Block Reference (chunk type 0x47, skippable)
 

@@ -205,9 +205,11 @@ func hashValue4(v uint64, ts uint8) uint32 { return (uint32(v) * prime4bytes) >>
 func hashValue5(v uint64, ts uint8) uint32 {
 	return uint32(((v << 24) * prime5bytes) >> (64 - uint64(ts)))
 }
+
 func hashValue6(v uint64, ts uint8) uint32 {
 	return uint32(((v << 16) * prime6bytes) >> (64 - uint64(ts)))
 }
+
 func hashValue7(v uint64, ts uint8) uint32 {
 	return uint32(((v << 8) * prime7bytes) >> (64 - uint64(ts)))
 }

@@ -156,15 +156,23 @@ func TestCompressedPopcountBand(t *testing.T) {
 	}
 }
 
-func TestCompressedSkippedForTinyBitmap(t *testing.T) {
+func TestCompressedTinyBitmapBeats45(t *testing.T) {
+	// A 32-byte all-zero bitmap should be emitted as 0x46 via the RLE path
+	// (≈16 bytes) instead of the ≈44-byte 0x45 form.
 	bitmap := make([]byte, 32)
-	bitmap[0] = 0x01
 	cfg := NewSearchTableConfig().WithMatchLen(4).WithCompression()
 	cfg.baseTableSize = 8
 	e := newCSTEncoder()
-	_, ok, _ := appendSearchTableCompressedChunk(nil, &cfg, 0, bitmap, e)
-	if ok {
-		t.Fatalf("expected size rejection for tiny bitmap")
+	out, ok, err := appendSearchTableCompressedChunk(nil, &cfg, 0, bitmap, e)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected 0x46 emission for tiny sparse bitmap")
+	}
+	chunk45 := 4 + cfg.searchTablePayloadSize(len(bitmap))
+	if len(out) >= chunk45 {
+		t.Fatalf("0x46 chunk (%d) not smaller than 0x45 (%d)", len(out), chunk45)
 	}
 }
 
@@ -215,6 +223,224 @@ func TestCompressedRLEAllOne(t *testing.T) {
 	}
 	if !bytes.Equal(got, bitmap) {
 		t.Fatalf("roundtrip mismatch")
+	}
+}
+
+// TestCompressedGlobalSingleUserWasted constructs a multi-block bitmap where
+// only one huff0 block could plausibly use the global table (the rest are
+// all-zero → RLE). The encoder should reject the global table because a
+// single user is not actually sharing.
+func TestCompressedGlobalSingleUserWasted(t *testing.T) {
+	const sz = 64 << 10 // 2 huff0 blocks of 32 KiB
+	bitmap := make([]byte, sz)
+	rng := rand.New(rand.NewSource(11))
+	// Block 0: skewed random data — Compress4X will succeed.
+	for i := 0; i < 32<<10; i++ {
+		bitmap[i] = byte(rng.Intn(16))
+	}
+	// Block 1: all zeros → forced to RLE.
+
+	cfg := NewSearchTableConfig().WithMatchLen(4)
+	cfg.baseTableSize = 19 // 1<<(19-3) = 64 KiB
+	var seen CompressedSearchStats
+	cfg = cfg.WithCompression(CompressedSearchForce(),
+		CompressedSearchStatsHook(func(s CompressedSearchStats) { seen = s }))
+	e := newCSTEncoder()
+	out, ok, err := appendSearchTableCompressedChunk(nil, &cfg, 0, bitmap, e)
+	if err != nil || !ok {
+		t.Fatalf("append err=%v ok=%v", err, ok)
+	}
+	// Block 1 must be RLE; block 0 picks own or raw — never global, since
+	// global having a single user is treated as wasted.
+	if seen.BlocksGlobalTable != 0 {
+		t.Fatalf("expected 0 global users (single-user is wasted), got %d (own=%d raw=%d RLE=%d sparse=%d)",
+			seen.BlocksGlobalTable, seen.BlocksOwnTable, seen.BlocksRaw, seen.BlocksRLE, seen.BlocksSparse)
+	}
+	// Roundtrip sanity.
+	_, _, got, err := parseSearchTableCompressed(out[4:], newCSTDecoder(), false)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !bytes.Equal(got, bitmap) {
+		t.Fatalf("roundtrip mismatch")
+	}
+}
+
+// TestCompressedGlobalShared constructs a multi-block bitmap where every
+// block has the exact same byte-skewed distribution. The picker should
+// emit one shared global table (rather than four identical own tables) and
+// reduce the embedded-table count from N to 1.
+func TestCompressedGlobalShared(t *testing.T) {
+	const sz = 128 << 10 // 4 huff0 blocks of 32 KiB
+	bitmap := make([]byte, sz)
+	rng := rand.New(rand.NewSource(22))
+	template := make([]byte, 32<<10)
+	for i := range template {
+		switch rng.Intn(4) {
+		case 0:
+			template[i] = 10
+		case 1:
+			template[i] = 20
+		case 2:
+			template[i] = 30
+		default:
+			template[i] = byte(40 + rng.Intn(8))
+		}
+	}
+	for blk := 0; blk < 4; blk++ {
+		copy(bitmap[blk*32<<10:], template)
+	}
+
+	cfg := NewSearchTableConfig().WithMatchLen(4)
+	cfg.baseTableSize = 20
+	var seen CompressedSearchStats
+	cfg = cfg.WithCompression(CompressedSearchForce(),
+		CompressedSearchStatsHook(func(s CompressedSearchStats) { seen = s }))
+	e := newCSTEncoder()
+	out, ok, err := appendSearchTableCompressedChunk(nil, &cfg, 0, bitmap, e)
+	if err != nil || !ok {
+		t.Fatalf("append err=%v ok=%v", err, ok)
+	}
+	if seen.BlocksGlobalTable < 2 {
+		t.Fatalf("expected ≥2 global users (identical-distribution blocks should share), got %d (own=%d raw=%d RLE=%d sparse=%d)",
+			seen.BlocksGlobalTable, seen.BlocksOwnTable, seen.BlocksRaw, seen.BlocksRLE, seen.BlocksSparse)
+	}
+	if seen.Tables > seen.BlocksGlobalTable {
+		t.Fatalf("expected ≤ BlocksGlobalTable tables emitted, got Tables=%d users=%d", seen.Tables, seen.BlocksGlobalTable)
+	}
+	_, _, got, err := parseSearchTableCompressed(out[4:], newCSTDecoder(), false)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !bytes.Equal(got, bitmap) {
+		t.Fatalf("roundtrip mismatch")
+	}
+}
+
+// TestCompressedConcurrentDecode hammers the per-sub-block worker goroutines
+// by parsing the same multi-block 0x46 chunk repeatedly with fresh decoders.
+// Intended to be run under `-race` to catch any cross-goroutine state bug in
+// the decompression workers or shared scratch buffers.
+func TestCompressedConcurrentDecode(t *testing.T) {
+	bitmap := makeBitmap(128<<10, 0.07, 99) // 4 huff0 blocks of 32 KiB
+	cfg := NewSearchTableConfig().WithMatchLen(4)
+	cfg.baseTableSize = 20
+	cfg = cfg.WithCompression(CompressedSearchForce())
+	e := newCSTEncoder()
+	out, ok, err := appendSearchTableCompressedChunk(nil, &cfg, 0, bitmap, e)
+	if err != nil || !ok {
+		t.Fatalf("encode: ok=%v err=%v", ok, err)
+	}
+	payload := out[4:]
+
+	const workers = 8
+	const iters = 32
+	errCh := make(chan error, workers)
+	for w := 0; w < workers; w++ {
+		go func() {
+			for i := 0; i < iters; i++ {
+				dec := newCSTDecoder()
+				_, _, got, err := parseSearchTableCompressed(payload, dec, false)
+				if err != nil {
+					errCh <- err
+					return
+				}
+				if !bytes.Equal(got, bitmap) {
+					errCh <- fmt.Errorf("mismatch")
+					return
+				}
+			}
+			errCh <- nil
+		}()
+	}
+	for w := 0; w < workers; w++ {
+		if err := <-errCh; err != nil {
+			t.Fatalf("worker: %v", err)
+		}
+	}
+}
+
+// TestCompressedReductionsInStats verifies the Reductions field is reported.
+func TestCompressedReductionsInStats(t *testing.T) {
+	bitmap := makeBitmap(8192, 0.10, 33)
+	var got CompressedSearchStats
+	cfg := NewSearchTableConfig().WithMatchLen(4).WithCompression(
+		CompressedSearchForce(),
+		CompressedSearchStatsHook(func(s CompressedSearchStats) { got = s }),
+	)
+	cfg.baseTableSize = 18
+	e := newCSTEncoder()
+	if _, ok, _ := appendSearchTableCompressedChunk(nil, &cfg, 2, bitmap, e); !ok {
+		t.Fatalf("force-emit failed")
+	}
+	if got.Reductions != 2 {
+		t.Fatalf("Reductions=%d, want 2", got.Reductions)
+	}
+}
+
+func TestCompressedSparseBitTableRoundtrip(t *testing.T) {
+	// Direct codec roundtrip for the sparse encoding.
+	cases := [][]byte{
+		make([]byte, 32),                     // all zero -> 0 bytes
+		bytes.Repeat([]byte{0xff}, 32),       // all one  -> 256 set bits, 256 bytes
+		{0x01, 0, 0, 0, 0, 0, 0, 0x80},       // 2 set bits, well separated
+		bytes.Repeat([]byte{0x00, 0x01}, 16), // every 16th bit
+	}
+	// One bit at position 8*1024-1.
+	{
+		b := make([]byte, 1024)
+		b[1023] = 0x80
+		cases = append(cases, b)
+	}
+	for i, in := range cases {
+		popcount := popcountBytes(in)
+		est := sparseBitTableEstimate(len(in), popcount)
+		enc := appendSparseBitTable(nil, in)
+		// Estimate is a tight upper bound on the actual encoded size.
+		if len(enc) > est {
+			t.Fatalf("case %d: actual=%d exceeds estimate=%d", i, len(enc), est)
+		}
+		dec := make([]byte, len(in))
+		if err := decodeSparseBitTable(dec, enc); err != nil {
+			t.Fatalf("case %d: decode: %v", i, err)
+		}
+		if !bytes.Equal(dec, in) {
+			t.Fatalf("case %d: roundtrip mismatch", i)
+		}
+	}
+}
+
+func TestCompressedSparseDispositionSelected(t *testing.T) {
+	// A bitmap with one set bit per 1024 bits: very sparse, sparse should win.
+	const sz = 4096
+	bitmap := make([]byte, sz)
+	for i := 0; i < sz; i += 128 {
+		bitmap[i] = 0x01
+	}
+	cfg := NewSearchTableConfig().WithMatchLen(4)
+	cfg.baseTableSize = 15 // 1<<(15-3) = 4096
+	var seen CompressedSearchStats
+	cfg = cfg.WithCompression(CompressedSearchForce(), CompressedSearchStatsHook(func(s CompressedSearchStats) { seen = s }))
+	e := newCSTEncoder()
+	out, ok, err := appendSearchTableCompressedChunk(nil, &cfg, 0, bitmap, e)
+	if err != nil || !ok {
+		t.Fatalf("append err=%v ok=%v", err, ok)
+	}
+	if seen.BlocksSparse == 0 {
+		t.Fatalf("expected sparse disposition, got own=%d global=%d raw=%d rle=%d sparse=%d",
+			seen.BlocksOwnTable, seen.BlocksGlobalTable, seen.BlocksRaw, seen.BlocksRLE, seen.BlocksSparse)
+	}
+	// Roundtrip.
+	dec := newCSTDecoder()
+	_, _, got, err := parseSearchTableCompressed(out[4:], dec, false)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !bytes.Equal(got, bitmap) {
+		t.Fatalf("bitmap mismatch")
+	}
+	if dec.lastBlocksSparse == 0 {
+		t.Fatalf("decoder did not record any sparse blocks")
 	}
 }
 
@@ -666,6 +892,67 @@ func BenchmarkCompressedSearchDecode(b *testing.B) {
 			b.ResetTimer()
 			for b.Loop() {
 				_, _, _, _ = parseSearchTableCompressed(payload, dec, false)
+			}
+		})
+	}
+}
+
+// BenchmarkCompressedSearchEncodeByPath drives the encoder on bitmaps tuned
+// to force each disposition family, so regressions in any one path show up
+// independently.
+func BenchmarkCompressedSearchEncodeByPath(b *testing.B) {
+	const sz = 64 << 10 // 2 huff0 blocks of 32 KiB
+	rng := rand.New(rand.NewSource(0xBE))
+
+	makeRLE := func() []byte { return make([]byte, sz) }
+	makeSparse := func() []byte {
+		bm := make([]byte, sz)
+		for i := 0; i < sz; i += 1024 {
+			bm[i] = 0x01
+		}
+		return bm
+	}
+	makeOwn := func() []byte {
+		// Skewed per-block (matchable by own table only): each block has its
+		// own set of frequent symbols.
+		bm := make([]byte, sz)
+		for i := 0; i < 32<<10; i++ {
+			bm[i] = byte(rng.Intn(4)) // block 0: symbols 0..3
+		}
+		for i := 32 << 10; i < sz; i++ {
+			bm[i] = byte(200 + rng.Intn(4)) // block 1: symbols 200..203
+		}
+		return bm
+	}
+	makeGlobal := func() []byte {
+		// Same skewed distribution in both blocks: global table wins.
+		bm := make([]byte, sz)
+		for i := range bm {
+			bm[i] = byte(rng.Intn(8))
+		}
+		return bm
+	}
+
+	cases := []struct {
+		name   string
+		bitmap []byte
+	}{
+		{"rle", makeRLE()},
+		{"sparse", makeSparse()},
+		{"own", makeOwn()},
+		{"global", makeGlobal()},
+	}
+
+	for _, c := range cases {
+		b.Run(c.name, func(b *testing.B) {
+			cfg := NewSearchTableConfig().WithMatchLen(4).WithCompression(CompressedSearchForce())
+			cfg.baseTableSize = 19
+			e := newCSTEncoder()
+			b.SetBytes(int64(sz))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_, _, _ = appendSearchTableCompressedChunk(nil, &cfg, 0, c.bitmap, e)
 			}
 		})
 	}

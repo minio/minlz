@@ -56,14 +56,10 @@ func NewWriter(w io.Writer, opts ...WriterOption) *Writer {
 	}
 	w2.obufLen = obufHeaderLen + MaxEncodedLen(w2.blockSize)
 	if w2.searchCfg != nil {
+		// 0x46 is only emitted when strictly smaller than the equivalent
+		// 0x45, so a single reservation of cfg.maxChunkSize() covers both
+		// chunk forms — no headroom needed.
 		w2.searchMaxChunk = w2.searchCfg.maxChunkSize()
-		// 0x46 is only emitted when strictly smaller than 0x45, so on-wire size
-		// is bounded by the 0x45 size. A small headroom covers the worst-case
-		// transient layout (h0_bs + h0_tc + up to 16 disposition bytes + a few
-		// uvarint length prefixes).
-		if w2.searchCfg.compression != nil && w2.searchCfg.compression.enabled {
-			w2.searchMaxChunk += 64
-		}
 		w2.obufLen += w2.searchMaxChunk
 	}
 	w2.paramsOK = true
@@ -118,8 +114,10 @@ type result struct {
 	startOffset int64
 }
 
-var errClosed = errors.New("minlz: Writer is closed")
-var errNilWriter = errors.New("minlz: Writer has not been set")
+var (
+	errClosed    = errors.New("minlz: Writer is closed")
+	errNilWriter = errors.New("minlz: Writer has not been set")
+)
 
 // err returns the previously set error.
 // If no error has been set it is set to err if not nil.
@@ -502,7 +500,7 @@ func (w *Writer) encodeBlock(obuf, uncompressed []byte) int {
 
 	if debugValidateBlocks && n > 0 {
 		fmt.Println("debugValidateBlocks:", len(uncompressed), "->", n)
-		//debug.PrintStack()
+		// debug.PrintStack()
 		src := uncompressed
 		block := obuf[:n]
 		dst := make([]byte, len(src))
@@ -512,9 +510,9 @@ func (w *Writer) encodeBlock(obuf, uncompressed []byte) int {
 			x := crc32.ChecksumIEEE(src)
 			name := fmt.Sprintf("errs/block-%08x-%d", x, ret)
 			fmt.Println(name, "mismatch at pos", n)
-			os.WriteFile(name+"input.bin", src, 0644)
-			os.WriteFile(name+"decoded.bin", dst, 0644)
-			os.WriteFile(name+"compressed.bin", block, 0644)
+			os.WriteFile(name+"input.bin", src, 0o644)
+			os.WriteFile(name+"decoded.bin", dst, 0o644)
+			os.WriteFile(name+"compressed.bin", block, 0o644)
 		}
 	}
 	return n

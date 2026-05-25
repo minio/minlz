@@ -11,11 +11,15 @@ import (
 )
 
 const (
-	cstDispRaw                 = 16
-	cstDispRLE                 = 17
-	cstMaxHuff0Tables          = 16
-	cstDefaultSkipPctTimes100  = 1000 // 5.00%
-	cstMinBitmapForCompression = 64   // huff0.Compress4X requires >= 12 bytes; below this the table overhead dwarfs savings
+	cstDispRaw                = 16
+	cstDispRLE                = 17
+	cstDispSparse             = 18
+	cstMaxHuff0Tables         = 16
+	cstDefaultSkipPctTimes100 = 1000 // 5.00%
+	// Absolute minimum bitmap that 0x46 can wrap (= smallest search table = 32 B).
+	// huff0 may fail to compress at this size, but the RLE / sparse / raw
+	// fallbacks still win against 0x45's table+CRC+config overhead.
+	cstMinBitmapForCompression = 32
 	cstMinHuff0BlockLog2       = 5
 	cstMaxHuff0BlockLog2       = 17
 	// cstOwnTableBias penalizes picking a per-block (non-shared) table so the
@@ -25,11 +29,88 @@ const (
 	cstOwnTableBias = 8
 )
 
+// sparseBitTableEstimate returns an upper bound on the byte count
+// appendSparseBitTable would produce for a bitmap with the given size and
+// popcount. For uniformly distributed bits the estimate is tight (within
+// a byte or two of actual).
+//
+// Derivation: each set bit contributes one final byte to its gap encoding,
+// plus floor(gap/255) "255" bytes. Sum of gaps = position[k-1] - (k-1) ≤
+// N_bits - k. So total ≤ k + (N_bits - k)/255.
+func sparseBitTableEstimate(bitmapBytes, popcount int) int {
+	nBits := bitmapBytes * 8
+	if popcount >= nBits {
+		return popcount
+	}
+	return popcount + (nBits-popcount)/255
+}
+
+// appendSparseBitTable encodes set-bit positions in bitmap as variable-length
+// gaps. Each gap < 255 emits one byte; longer gaps emit 255 bytes for each
+// full 255 and then a final byte < 255 for the remainder. The encoding is
+// terminated implicitly by the chunk's length prefix.
+//
+// bitmap length must be a multiple of 8. Reads 8 bytes at a time as a
+// little-endian uint64 and uses TrailingZeros64 to skip directly between
+// set bits — one inner-loop iteration per set bit, not per bit position.
+func appendSparseBitTable(dst, bitmap []byte) []byte {
+	gap := 0
+	for i := 0; i+8 <= len(bitmap); i += 8 {
+		v := binary.LittleEndian.Uint64(bitmap[i:])
+		if v == 0 {
+			gap += 64
+			continue
+		}
+		pos := 0
+		for v != 0 {
+			tz := bits.TrailingZeros64(v)
+			gap += tz - pos
+			for gap >= 255 {
+				dst = append(dst, 255)
+				gap -= 255
+			}
+			dst = append(dst, byte(gap))
+			gap = 0
+			pos = tz + 1
+			v &= v - 1 // clear lowest set bit
+		}
+		gap += 64 - pos
+	}
+	return dst
+}
+
+// decodeSparseBitTable populates dst (assumed pre-zeroed and sized to the
+// bitmap length) from src using the sparse-bit-table format.
+func decodeSparseBitTable(dst, src []byte) error {
+	totalBits := len(dst) * 8
+	pos := 0
+	gap := 0
+	for _, b := range src {
+		gap += int(b)
+		if b == 255 {
+			continue
+		}
+		pos += gap
+		if pos >= totalBits {
+			return fmt.Errorf("minlz: sparse bit table position %d out of range (max %d)", pos, totalBits-1)
+		}
+		dst[pos>>3] |= 1 << (pos & 7)
+		pos++
+		gap = 0
+	}
+	if gap != 0 {
+		// Trailing 255-bytes without a terminator.
+		return fmt.Errorf("minlz: sparse bit table truncated (pending gap %d)", gap)
+	}
+	return nil
+}
+
 // CompressedSearchStats reports per-bitmap stats produced by the compressed
 // search-table encoder. It is delivered via CompressedSearchStatsHook.
 type CompressedSearchStats struct {
 	BitmapBytes    int
-	Huff0BlockSize int // 1<<h0_bs, or 0 if SkippedBand or below minimum size
+	Reductions     uint8 // reductions applied to the bitmap before encoding
+	Huff0BlockSize int   // 1<<h0_bs, or 0 if SkippedBand or below minimum size
 	Huff0Blocks    int
 	SetBits        int
 	TotalBits      int
@@ -45,6 +126,7 @@ type CompressedSearchStats struct {
 	BlocksGlobalTable int
 	BlocksRaw         int
 	BlocksRLE         int
+	BlocksSparse      int
 
 	// Per-disposition on-wire payload bytes (excludes disposition byte;
 	// includes the uvarint length for table-using blocks).
@@ -52,6 +134,7 @@ type CompressedSearchStats struct {
 	BytesGlobalPayload int
 	BytesRawPayload    int
 	BytesRLEPayload    int
+	BytesSparsePayload int
 
 	// Bytes consumed by serialized table headers (sums over the tables that
 	// were actually embedded in the chunk).
@@ -100,9 +183,10 @@ func CompressedSearchForce() CompressedSearchOption {
 // huff0BlockSize picks the huff0 block partition for a bitmap of the given
 // byte length. Returns (log2(blockSize), nBlocks) with nBlocks ≤ 16.
 // Policy:
-//   bitmap ≤ 32 KiB: single block of size = bitmap.
-//   bitmap ≤ 512 KiB: 32 KiB blocks.
-//   else: 64 KiB blocks (caps at 16 blocks for the 1 MiB max bitmap).
+//
+//	bitmap ≤ 32 KiB: single block of size = bitmap.
+//	bitmap ≤ 512 KiB: 32 KiB blocks.
+//	else: 64 KiB blocks (caps at 16 blocks for the 1 MiB max bitmap).
 func huff0BlockSize(bitmapLen int) (log2bs uint8, nBlocks int) {
 	if bitmapLen <= 32<<10 {
 		return uint8(bits.Len(uint(bitmapLen) - 1)), 1
@@ -177,6 +261,9 @@ type cstEncoder struct {
 	// globalData[i] holds the data compressed using the global table for
 	// block i (filled only for blocks that were assigned the global table).
 	globalData [cstMaxHuff0Tables][]byte
+	// sparseBufs[i] holds the actual sparse-bit-table encoding for block i
+	// (filled only for blocks that were assigned the sparse disposition).
+	sparseBufs [cstMaxHuff0Tables][]byte
 	// scratch byte slice used while emitting the final chunk.
 	chunkBuf []byte
 }
@@ -189,6 +276,7 @@ func (e *cstEncoder) reset(n int) {
 		e.outTable[i] = e.outTable[i][:0]
 		e.outData[i] = e.outData[i][:0]
 		e.globalData[i] = e.globalData[i][:0]
+		e.sparseBufs[i] = e.sparseBufs[i][:0]
 	}
 	e.globalTableBytes = e.globalTableBytes[:0]
 	e.chunkBuf = e.chunkBuf[:0]
@@ -213,6 +301,7 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 
 	stats := CompressedSearchStats{
 		BitmapBytes:   len(bitmap),
+		Reductions:    reductions,
 		SetBits:       setBits,
 		TotalBits:     totalBits,
 		Chunk0x45Size: chunk45Size,
@@ -334,6 +423,9 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 		// For "with global" decision:
 		globalEst     int // estimated compressed bytes; -1 if cannot use
 		globalPayload int // 1 + uvarint(est) + est ; -1 if cannot use
+		// Sparse bit table (no shared state, no decoder setup).
+		sparseLen     int // bytes the sparse encoding would produce
+		sparsePayload int // 1 + uvarint(sparseLen) + sparseLen
 	}
 	costs := make([]blockCost, nBlocks)
 	rleAble := func(h *[256]uint32) (byte, bool) {
@@ -365,6 +457,12 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 		} else {
 			c.ownPayload = -1
 		}
+		// Sparse size estimate from popcount only (O(N/8) via 64-bit popcount).
+		// The exact byte count is computed at emission time, at which point
+		// the chunk header is patched to reflect actuals.
+		popcount := popcountBytes(bitmap[i*bsize : (i+1)*bsize])
+		c.sparseLen = sparseBitTableEstimate(bsize, popcount)
+		c.sparsePayload = 1 + uvarintLen(c.sparseLen) + c.sparseLen
 		if globalAvailable && e.globalSc.CanUseTable(&e.hist[i]) {
 			c.globalEst = e.globalSc.EstimateSize(&e.hist[i])
 			c.globalPayload = 1 + uvarintLen(c.globalEst) + c.globalEst
@@ -393,6 +491,13 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 		if c.rlePayload > 0 && c.rlePayload < bestEff {
 			best = pick{kind: cstDispRLE, size: c.rlePayload}
 			bestEff = c.rlePayload
+		}
+		// Sparse: no shared state, no table header; check after RLE so an
+		// all-zero / all-one bitmap (which fits both) prefers RLE's simpler
+		// decode.
+		if c.sparsePayload < bestEff {
+			best = pick{kind: cstDispSparse, size: c.sparsePayload}
+			bestEff = c.sparsePayload
 		}
 		if c.ownPayload > 0 {
 			// Bias non-shared tables so they only win when they save more than
@@ -565,6 +670,16 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 		}
 	}
 
+	// Pre-emit sparse blocks so we know the actual byte count (selection used
+	// an O(1) upper-bound estimate; emission needs the exact length).
+	for i := 0; i < nBlocks; i++ {
+		if finalPicks[i].kind == cstDispSparse {
+			e.sparseBufs[i] = appendSparseBitTable(e.sparseBufs[i][:0], bitmap[i*bsize:(i+1)*bsize])
+			actual := len(e.sparseBufs[i])
+			finalPicks[i].size = 1 + uvarintLen(actual) + actual
+		}
+	}
+
 	// Compute final payload size & compare to 0x45.
 	tablesSize := 0
 	for _, t := range tableList {
@@ -597,6 +712,9 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 		case cstDispRLE:
 			stats.BlocksRLE++
 			stats.BytesRLEPayload++ // 1-byte RLE symbol
+		case cstDispSparse:
+			stats.BlocksSparse++
+			stats.BytesSparsePayload += payload
 		}
 	}
 	for _, t := range tableList {
@@ -642,6 +760,10 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 			dst = append(dst, bitmap[i*bsize:(i+1)*bsize]...)
 		case cstDispRLE:
 			dst = append(dst, cstDispRLE, costs[i].rleSym)
+		case cstDispSparse:
+			dst = append(dst, cstDispSparse)
+			dst = binary.AppendUvarint(dst, uint64(len(e.sparseBufs[i])))
+			dst = append(dst, e.sparseBufs[i]...)
 		}
 	}
 
@@ -658,10 +780,16 @@ type cstDecoder struct {
 	// caller via parseSearchTableCompressed; the next call re-slices it.
 	bitmapBuf []byte
 	// last parse stats (populated by parseSearchTableCompressed)
-	lastTables    int // number of huff0 tables emitted in the chunk
-	lastBlocks    int // number of huff0 sub-blocks
-	lastBlocksRaw int // sub-blocks with disposition = raw
-	lastBlocksRLE int // sub-blocks with disposition = RLE
+	lastTables           int // number of huff0 tables emitted in the chunk
+	lastBlocks           int // number of huff0 sub-blocks
+	lastBlocksRaw        int // sub-blocks with disposition = raw
+	lastBlocksRLE        int // sub-blocks with disposition = RLE
+	lastBlocksSparse     int // sub-blocks with disposition = sparse bit table
+	lastBytesTabled      int // sum of (uvarint + data) bytes for tabled blocks
+	lastBytesRaw         int // sum of raw payload bytes
+	lastBytesRLE         int // sum of RLE payload bytes (1 per block)
+	lastBytesSparse      int // sum of (uvarint + data) bytes for sparse blocks
+	lastBytesTableHeader int // sum of serialized huff0 table-header bytes
 }
 
 func newCSTDecoder() *cstDecoder { return &cstDecoder{} }
@@ -717,13 +845,16 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 		dec = newCSTDecoder()
 	}
 	rem := payload[off:]
+	dec.lastBytesTableHeader = 0
 	for i := 0; i < tc; i++ {
 		dec.tableSc[i].Out = dec.tableSc[i].Out[:0]
+		before := len(rem)
 		_, after, err2 := huff0.ReadTable(rem, &dec.tableSc[i])
 		if err2 != nil {
 			err = fmt.Errorf("minlz: huff0 ReadTable[%d]: %w", i, err2)
 			return
 		}
+		dec.lastBytesTableHeader += before - len(after)
 		dec.tableValid[i] = true
 		dec.decoders[i] = dec.tableSc[i].Decoder()
 		rem = after
@@ -751,6 +882,11 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 	dec.lastBlocks = nBlocks
 	dec.lastBlocksRaw = 0
 	dec.lastBlocksRLE = 0
+	dec.lastBlocksSparse = 0
+	dec.lastBytesTabled = 0
+	dec.lastBytesRaw = 0
+	dec.lastBytesRLE = 0
+	dec.lastBytesSparse = 0
 	for i := 0; i < nBlocks; i++ {
 		if len(rem) < 1 {
 			err = fmt.Errorf("minlz: truncated chunk at block %d disposition", i)
@@ -777,6 +913,7 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 			nInt := int(n)
 			jobs[i] = job{dst: dst, src: rem[nl : nl+nInt], ti: ti}
 			rem = rem[nl+nInt:]
+			dec.lastBytesTabled += nl + nInt
 		case ti == cstDispRaw:
 			if len(rem) < blockSize {
 				err = fmt.Errorf("minlz: block %d raw payload truncated", i)
@@ -785,6 +922,7 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 			jobs[i] = job{dst: dst, src: rem[:blockSize], ti: ti}
 			rem = rem[blockSize:]
 			dec.lastBlocksRaw++
+			dec.lastBytesRaw += blockSize
 		case ti == cstDispRLE:
 			if len(rem) < 1 {
 				err = fmt.Errorf("minlz: block %d RLE payload truncated", i)
@@ -793,6 +931,18 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 			jobs[i] = job{dst: dst, ti: ti, rle: rem[0]}
 			rem = rem[1:]
 			dec.lastBlocksRLE++
+			dec.lastBytesRLE++
+		case ti == cstDispSparse:
+			n, nl := binary.Uvarint(rem)
+			if nl <= 0 || nl > len(rem) || n > uint64(len(rem)-nl) {
+				err = fmt.Errorf("minlz: block %d invalid sparse length", i)
+				return
+			}
+			nInt := int(n)
+			jobs[i] = job{dst: dst, src: rem[nl : nl+nInt], ti: ti}
+			rem = rem[nl+nInt:]
+			dec.lastBlocksSparse++
+			dec.lastBytesSparse += nl + nInt
 		default:
 			err = fmt.Errorf("minlz: invalid disposition %d", ti)
 			return
@@ -818,6 +968,16 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 		case j.ti == cstDispRLE:
 			for k := range j.dst {
 				j.dst[k] = j.rle
+			}
+		case j.ti == cstDispSparse:
+			// dst is a slice of the (already-zeroed) bitmapBuf; decodeSparseBitTable
+			// will OR in the set bits. The slice has cap == len so reuse-from-prior
+			// chunk is safe — the slice's window is exclusive to this huff0 block.
+			for k := range j.dst {
+				j.dst[k] = 0
+			}
+			if e := decodeSparseBitTable(j.dst, j.src); e != nil {
+				return e
 			}
 		}
 		return nil
