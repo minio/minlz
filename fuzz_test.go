@@ -117,7 +117,7 @@ func FuzzEncodingBlocks(f *testing.F) {
 	})
 }
 
-func FuzzDecode(f *testing.F) {
+func FuzzDecodeBlock(f *testing.F) {
 	enc := NewWriter(nil, WriterBlockSize(8<<10))
 	addCompressed := func(b []byte) {
 		if b2, err := Encode(nil, b, LevelBalanced); err == nil {

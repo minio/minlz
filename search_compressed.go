@@ -319,7 +319,9 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 	}
 	// Popcount band: skip when |setBits/totalBits - 0.5| < skipPct/100.
 	// Equivalent: |2*setBits - totalBits| * 5000 < skipPctTimes100 * totalBits.
-	if absInt(2*setBits-totalBits)*5000 < co.skipPctTimes100*totalBits {
+	// Computed in int64 — totalBits can be up to 8 MiB so the int32-product
+	// would overflow on 32-bit GOARCH.
+	if int64(absInt(2*setBits-totalBits))*5000 < int64(co.skipPctTimes100)*int64(totalBits) {
 		stats.SkippedBand = true
 		emitStats()
 		return nil, false, nil
