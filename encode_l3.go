@@ -272,7 +272,7 @@ func encodeBlockBest(dst, src []byte, dict *dict) (d int) {
 				}
 				m.score = score(m)
 				if debug && m.length > 0 && m.length < 3 {
-					fmt.Println("repeat", m.length, "offset", m.offset, "s", m.s, "score", m.score, "first", first, "mask", mask, "src", src[m.offset:m.offset+m.length], "src", src[m.s:m.s+m.length])
+					fmt.Println("repeat", m.length, "offset", m.offset, "s", m.s, "score", m.score, "first", first, "mask", mask, "src", string(src[m.offset:m.offset+m.length]), "src", string(src[m.s:m.s+m.length]))
 				}
 				return m
 			}

@@ -147,4 +147,5 @@ func ExampleSearchStats_Fprint() {
 	// Table bits/byte: 0.0430, log2: 8.0, avg reductions: 5.0
 	// Table total: 88 bytes, avg 44 bytes/table, 0.54% of 16384 uncompressed
 	// Table population: avg 2.7%, min 1.6%, max 3.9%
+	// Table types: 2 uncompressed (0x45), 0 compressed (0x46)
 }

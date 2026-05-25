@@ -85,6 +85,48 @@ single digits because 4-byte digit sequences are ubiquitous.
 cfg := minlz.NewSearchTableConfig().WithMatchLen(5)
 ```
 
+### Table Reduction Limit
+
+Once a base table is built, it can be reduced — folded in half by OR-ing the
+upper half into the lower half. Each reduction halves the size of the table
+on the wire and doubles the population density (because two slots' worth of
+1-bits are merged into one). Reductions keep going until the projected
+population exceeds this limit; whatever is left is what the stream
+carries.
+
+The trade-off is direct:
+
+- **Smaller table** = fewer bytes per block stored alongside the data, but
+  more **false positives** at search time (two distinct hash values can now
+  share a slot, so a "maybe" answer is more often wrong → more blocks
+  decoded unnecessarily).
+- **Larger table** = more bytes on the wire, but **fewer collisions** —
+  blocks that don't contain the pattern are skipped more often.
+
+A useful intuition: every reduction roughly doubles the collision rate.
+A 25 % populated reduced table will spuriously match ~25 % of the time
+*per window check*. With a long pattern this multiplies down (each window
+check is independent), so even a moderately populated table filters
+aggressively for patterns longer than `matchLen`. Short patterns (close to
+`matchLen` bytes) get all their filtering from a single window and benefit
+most from a sparser table.
+
+Defaults:
+
+- Library default: 25 %.
+- `mz` CLI default: 50 %, automatically tightened (halved with prefix or
+  compression, divided by 3 with both) since [prefixed tables](#prefixes)
+  and [compressed tables](#compressed-search-tables-opt-in) both want
+  sparser bitmaps.
+
+```go
+cfg := minlz.NewSearchTableConfig().WithMaxReducedPopulation(30)
+```
+
+When compression is on, lower limits (<20 %) has much less of an impact on
+stream size than the default because the extra bytes spent on a larger bitmap
+are recovered by the huff0 / sparse encoding.
+
 ### Table Max Population Size
 
 Maximum percentage of bits that may be set in the base table before it is discarded
@@ -102,21 +144,57 @@ with higher false-positive rates.
 cfg := minlz.NewSearchTableConfig().WithMaxPopulation(50)
 ```
 
-### Table Reduction Limit
+### Compressed Search Tables (opt-in)
 
-Maximum population percentage of the *reduced* table. Library default: 25%.
-The `mz` CLI defaults to 50% without prefix and 25% with prefix.
+Search-table bitmaps can optionally be stored compressed. This is a stream-
+level opt-in: the encoder shrinks each per-block bitmap when doing so saves
+bytes, and the decoder unpacks it on the fly during search.
 
-After the base table is built, it is iteratively halved by folding (OR-ing) the upper
-half into the lower half. Each reduction halves the table size but increases the
-population density. Reductions stop before this threshold is exceeded.
+When it helps most:
 
-Lower values produce smaller tables (fewer bytes per block in the compressed stream) but
-with more false positives. Higher values keep larger, sparser tables that skip more blocks.
+- **High-Quality tables**. This will reduce the impact of having a low
+  reduction limit and therefore less collisions.
+- **Sparse search tables** (small prefix matchLen, structured data with a
+  selective prefix). Often shrinks the table by 5×–50× on the wire.
+- **Very dense tables** where the same byte value repeats (especially
+  all-zero or all-one bitmaps that compress to a few bytes regardless of
+  size).
+
+When it makes little difference:
+
+- Tables with ~50% population: byte entropy is already maximal, so there's
+  nothing to compress. The encoder detects this and skips the compressed
+  form by default.
+
+Enable it via `WithCompression` on the search table config:
 
 ```go
-cfg := minlz.NewSearchTableConfig().WithMaxReducedPopulation(30)
+// Defaults: 10 % popcount band, no stats hook.
+cfg := minlz.NewSearchTableConfig().WithCompression()
+w := minlz.NewWriter(out, minlz.WriterSearchTable(cfg))
 ```
+
+Tuning options (all optional):
+
+| Option                                   | Description                                                                                       |
+|------------------------------------------|---------------------------------------------------------------------------------------------------|
+| `CompressedSearchSkipPct(pct float64)`   | Skip compression when popcount % is within ±pct of 50 (default 10 %).                             |
+| `CompressedSearchStatsHook(fn)`          | Per-bitmap callback with disposition counts and on-wire sizes — useful for tuning.                |
+| `CompressedSearchForce()`                | Emit the compressed chunk even when larger than the uncompressed form. Benchmarking only.         |
+
+When compression is enabled, the recommended `MaxReducedPopulation` is
+lower than the default — leaving tables sparser pays off because the bytes
+shrink so much. The `mz` CLI does this automatically; for library use,
+call `.WithMaxReducedPopulation(15)` (or pass `-search.lim` to `mz`).
+
+Decoding is transparent: a `BlockSearcher` over a stream that mixes
+compressed and uncompressed search tables handles both with no caller
+opt-in. The per-bitmap unpack runs in parallel for large bitmaps, so
+search throughput is unchanged in practice.
+
+For format details see `SPEC_SEARCH.md` §2.2 / §2.2.1.
+
+Some decoders may not support compressed search tables.
 
 ### Prefixes
 
@@ -177,7 +255,14 @@ mz c -search -search.prefixes='":'  file.log       # byte prefixes " and :
 mz c -search -search.prefix='id:"' file.log        # long prefix
 mz c -search -search.max=50 -search.lim=30 file.log # custom population limits
 mz c -bs=1MB -search file.log                       # 1MB blocks (more granular skipping)
+mz c -search -search.compress file.log              # also compress the search tables
+mz c -search -search.compress -search.compress.skip=5 file.log # tighter popcount band
 ```
+
+When `-search.compress` is set, `-search.lim` is automatically tightened
+(divided by 2 with a prefix or compression, by 3 with both) so the encoder
+keeps larger, sparser bitmaps that compress better. Override `-search.lim`
+to taste — lower values produce sparser, more compressible tables.
 
 **Searching compressed files:**
 ```
@@ -273,15 +358,25 @@ Return values from the callback:
 
 Searcher options:
 
-| Option                       | Description                                                           |
-|------------------------------|-----------------------------------------------------------------------|
-| `BlockSearchBailOnMissing()` | Return `ErrSearchTablesUnusable` if tables are absent or incompatible |
-| `BlockSearchIgnoreCRC()`     | Skip CRC validation during search                                     |
-| `BlockSearchMaxBlockSize(n)` | Limit maximum decoded block size                                      |
+| Option                              | Description                                                                                                  |
+|-------------------------------------|--------------------------------------------------------------------------------------------------------------|
+| `BlockSearchBailOnMissing()`        | Return `ErrSearchTablesUnusable` if tables are absent or incompatible                                        |
+| `BlockSearchIgnoreCRC()`            | Skip CRC validation during search                                                                            |
+| `BlockSearchMaxBlockSize(n)`        | Limit maximum decoded block size                                                                             |
+| `BlockSearchCollectStats()`         | Populate `SearchStats` during the search                                                                     |
+| `BlockSearchInfoCallback(fn)`       | Invoke `fn(SearchTableConfig)` when the stream's Search Info chunk is parsed — useful for logging/inspection |
 
 After `Search` returns, call `Stats()` for a `SearchStats` struct with block counts,
-skip rates, table population metrics, and byte-level statistics. Use
-`stats.Fprint(os.Stderr)` for a human-readable summary.
+skip rates, table population metrics, and byte-level statistics. When the
+stream uses compressed search tables, the stats also report:
+
+- counts of 0x45 (uncompressed) vs 0x46 (compressed) search-table chunks,
+- a per-disposition breakdown of huff0 sub-blocks (raw / RLE / sparse / tabled),
+- on-wire payload bytes for each disposition.
+
+Use `stats.Fprint(os.Stderr)` for a human-readable summary. The `mz search -v`
+command also prints the parsed Search Info config the first time it's seen
+in the stream.
 
 Note that the maximum backreference on matches is limited by the block size. 
-So a match right after a block boundary will only have the previous block's data available. 
+So a match right after a block boundary will only have the previous block's data available.

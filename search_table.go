@@ -41,6 +41,43 @@ type SearchTableConfig struct {
 	longPrefix       []byte
 	maxPopPct        int
 	maxReducedPopPct int
+	compression      *compressedOpts // nil = emit 0x45 only
+}
+
+// String returns a one-line, human-readable summary of the search table
+// configuration. Useful for logging the contents of an 0x44 chunk.
+func (c SearchTableConfig) String() string {
+	var prefix string
+	switch c.tableType {
+	case searchTableTypeNoPrefix:
+		prefix = "no-prefix"
+	case searchTableTypeBytePrefix:
+		// Compact the prefixBytes array — duplicates are encoder-internal padding.
+		seen := make(map[byte]struct{}, 8)
+		var unique []byte
+		for _, b := range c.prefixBytes {
+			if _, ok := seen[b]; ok {
+				continue
+			}
+			seen[b] = struct{}{}
+			unique = append(unique, b)
+		}
+		prefix = fmt.Sprintf("byte-prefix=%q", string(unique))
+	case searchTableTypeMaskPrefix:
+		n := 0
+		for i := range 256 {
+			if c.prefixMask[i>>3]&(1<<(i&7)) != 0 {
+				n++
+			}
+		}
+		prefix = fmt.Sprintf("mask-prefix (%d bytes)", n)
+	case searchTableTypeLongPrefix:
+		prefix = fmt.Sprintf("long-prefix=%q", string(c.longPrefix))
+	default:
+		prefix = fmt.Sprintf("type=%d", c.tableType)
+	}
+	return fmt.Sprintf("matchLen=%d baseTableSize=%d (%d entries) %s",
+		c.matchLen, c.baseTableSize, 1<<c.baseTableSize, prefix)
 }
 
 // NewSearchTableConfig creates a search table config.
@@ -108,6 +145,25 @@ func (c SearchTableConfig) WithMaxPopulation(pct int) SearchTableConfig {
 // reduced table. Reductions stop before exceeding this threshold.
 func (c SearchTableConfig) WithMaxReducedPopulation(pct int) SearchTableConfig {
 	c.maxReducedPopPct = pct
+	return c
+}
+
+// WithCompression enables huff0 compression of per-block search tables.
+// This will reduce search index size on high quality search indexes,
+// with low population count.
+// Search Indexes that can only be marginally compressed are stored uncompressed.
+//
+// With no options, defaults are: 10.0% popcount band, no stats hook,
+// non-forced (emit compressed only when smaller).
+func (c SearchTableConfig) WithCompression(opts ...CompressedSearchOption) SearchTableConfig {
+	co := &compressedOpts{
+		enabled:         true,
+		skipPctTimes100: cstDefaultSkipPctTimes100,
+	}
+	for _, o := range opts {
+		o(co)
+	}
+	c.compression = co
 	return c
 }
 
@@ -185,9 +241,11 @@ func hashValue4(v uint64, ts uint8) uint32 { return (uint32(v) * prime4bytes) >>
 func hashValue5(v uint64, ts uint8) uint32 {
 	return uint32(((v << 24) * prime5bytes) >> (64 - uint64(ts)))
 }
+
 func hashValue6(v uint64, ts uint8) uint32 {
 	return uint32(((v << 16) * prime6bytes) >> (64 - uint64(ts)))
 }
+
 func hashValue7(v uint64, ts uint8) uint32 {
 	return uint32(((v << 8) * prime7bytes) >> (64 - uint64(ts)))
 }

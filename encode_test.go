@@ -150,8 +150,7 @@ func TestEmitters(t *testing.T) {
 			}
 			for ml := 4; ml <= 1<<24; ml = int(float64(ml)*lFactor + 1) {
 				//t.Run(fmt.Sprintf("len%d-o%d-lits%d", l, off, len(lits)), func(t *testing.T) {
-				var n int
-				n = emitCopy(tmp[:], off, ml)
+				var n int = emitCopy(tmp[:], off, ml)
 				in := tmp[:n]
 				s := 0
 
@@ -203,8 +202,7 @@ func TestEmitters(t *testing.T) {
 				}
 				for l := 4; l <= 11; l++ {
 					//t.Run(fmt.Sprintf("len%d-o%d-lits%d", l, off, len(lits)), func(t *testing.T) {
-					var n int
-					n = emitCopyLits2(tmp[:], lits, off, l)
+					var n int = emitCopyLits2(tmp[:], lits, off, l)
 					in := tmp[:n]
 
 					gotTag, wantTag := in[0]&3, byte(tagCopy2Fused)

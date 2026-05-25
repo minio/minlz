@@ -715,11 +715,12 @@ func TestWriterSearchTable(t *testing.T) {
 		case chunkTypeSearchTable:
 			hasTable = true
 		}
-		if chunkType == ChunkTypeStreamIdentifier {
+		switch chunkType {
+		case ChunkTypeStreamIdentifier:
 			pos += 4 + magicBodyLen
-		} else if chunkType == chunkTypeUncompressedData || chunkType == chunkTypeMinLZCompressedData || chunkType == chunkTypeMinLZCompressedDataCompCRC {
+		case chunkTypeUncompressedData, chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC:
 			pos += 4 + chunkLen
-		} else {
+		default:
 			pos += 4 + chunkLen
 		}
 	}

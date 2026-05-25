@@ -566,7 +566,7 @@ func (i *Index) JSON() []byte {
 		EstBlockUncomp:    i.estBlockUncomp,
 	}
 	for _, v := range i.Offsets {
-		x.Offsets = append(x.Offsets, offset{CompressedOffset: v.CompressedOffset, UncompressedOffset: v.UncompressedOffset})
+		x.Offsets = append(x.Offsets, offset(v))
 	}
 	b, _ := json.MarshalIndent(x, "", "  ")
 	return b

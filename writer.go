@@ -56,6 +56,9 @@ func NewWriter(w io.Writer, opts ...WriterOption) *Writer {
 	}
 	w2.obufLen = obufHeaderLen + MaxEncodedLen(w2.blockSize)
 	if w2.searchCfg != nil {
+		// 0x46 is only emitted when strictly smaller than the equivalent
+		// 0x45, so a single reservation of cfg.maxChunkSize() covers both
+		// chunk forms — no headroom needed.
 		w2.searchMaxChunk = w2.searchCfg.maxChunkSize()
 		w2.obufLen += w2.searchMaxChunk
 	}
@@ -111,8 +114,10 @@ type result struct {
 	startOffset int64
 }
 
-var errClosed = errors.New("minlz: Writer is closed")
-var errNilWriter = errors.New("minlz: Writer has not been set")
+var (
+	errClosed    = errors.New("minlz: Writer is closed")
+	errNilWriter = errors.New("minlz: Writer has not been set")
+)
 
 // err returns the previously set error.
 // If no error has been set it is set to err if not nil.
@@ -456,7 +461,7 @@ func (w *Writer) EncodeBuffer(buf []byte) (err error) {
 				}
 				table, reductions := searchCfg.buildSearchTable(uncompressed, overlap, stBuf, searchCfg.shouldPack(w.concurrency))
 				if table != nil {
-					searchLen = len(appendSearchTableChunk(obuf[:0], searchCfg, reductions, table))
+					searchLen = len(w.appendSearchTableEitherChunk(obuf[:0], reductions, table))
 				}
 				searchTablePool.Put(table)
 			}
@@ -495,7 +500,7 @@ func (w *Writer) encodeBlock(obuf, uncompressed []byte) int {
 
 	if debugValidateBlocks && n > 0 {
 		fmt.Println("debugValidateBlocks:", len(uncompressed), "->", n)
-		//debug.PrintStack()
+		// debug.PrintStack()
 		src := uncompressed
 		block := obuf[:n]
 		dst := make([]byte, len(src))
@@ -505,9 +510,9 @@ func (w *Writer) encodeBlock(obuf, uncompressed []byte) int {
 			x := crc32.ChecksumIEEE(src)
 			name := fmt.Sprintf("errs/block-%08x-%d", x, ret)
 			fmt.Println(name, "mismatch at pos", n)
-			os.WriteFile(name+"input.bin", src, 0644)
-			os.WriteFile(name+"decoded.bin", dst, 0644)
-			os.WriteFile(name+"compressed.bin", block, 0644)
+			os.WriteFile(name+"input.bin", src, 0o644)
+			os.WriteFile(name+"decoded.bin", dst, 0o644)
+			os.WriteFile(name+"compressed.bin", block, 0o644)
 		}
 	}
 	return n
@@ -604,7 +609,7 @@ func (w *Writer) write(p []byte) (nRet int, errRet error) {
 				table, reductions := searchCfg.buildSearchTable(uncompressed, overlap, stBuf, searchCfg.shouldPack(w.concurrency))
 				if table != nil {
 					// obuf still points to the pool buffer with smc space at front.
-					searchLen = len(appendSearchTableChunk(inbuf[:0], searchCfg, reductions, table))
+					searchLen = len(w.appendSearchTableEitherChunk(inbuf[:0], reductions, table))
 				}
 				searchTablePool.Put(table)
 			}
@@ -707,7 +712,7 @@ func (w *Writer) writeFull(inbuf []byte) (errRet error) {
 			if table != nil {
 				// Search chunk is in the original obuf (may have been swapped if incompressible,
 				// but we only reach here for compressible blocks so obuf is unchanged).
-				searchLen = len(appendSearchTableChunk(obuf[:0], searchCfg, reductions, table))
+				searchLen = len(w.appendSearchTableEitherChunk(obuf[:0], reductions, table))
 			}
 			searchTablePool.Put(table)
 		}
@@ -1172,6 +1177,28 @@ func (w *Writer) writeSearchTableSync(uncompressed, overlap []byte) error {
 	if table == nil {
 		return nil
 	}
+	// Try compressed form first. When emitted, the chunk is fully serialized
+	// (no large-bitmap separate write).
+	if w.searchCfg.compression != nil && w.searchCfg.compression.enabled {
+		e := cstEncoderPool.Get().(*cstEncoder)
+		out, ok, err := appendSearchTableCompressedChunk(w.searchHdrBuf[:0], w.searchCfg, reductions, table, e)
+		cstEncoderPool.Put(e)
+		if err != nil {
+			return w.err(err)
+		}
+		if ok {
+			w.searchHdrBuf = out
+			n, err := w.writer.Write(out)
+			if err != nil {
+				return w.err(err)
+			}
+			if n != len(out) {
+				return w.err(io.ErrShortWrite)
+			}
+			w.written += int64(n)
+			return nil
+		}
+	}
 	w.searchHdrBuf = appendSearchTableHeader(w.searchHdrBuf[:0], w.searchCfg, reductions, table)
 	n, err := w.writer.Write(w.searchHdrBuf)
 	if err != nil {
@@ -1190,6 +1217,26 @@ func (w *Writer) writeSearchTableSync(uncompressed, overlap []byte) error {
 	}
 	w.written += int64(n)
 	return nil
+}
+
+// appendSearchTableEitherChunk dispatches between the compressed (0x46) and
+// uncompressed (0x45) search-table chunk encoders. When compression is
+// disabled or not beneficial, falls back to 0x45. An internal encoder error
+// is recorded on the Writer (visible to subsequent operations via w.err) so
+// it isn't silently masked by the 0x45 fallback.
+func (w *Writer) appendSearchTableEitherChunk(dst []byte, reductions uint8, table []byte) []byte {
+	if w.searchCfg.compression != nil && w.searchCfg.compression.enabled {
+		e := cstEncoderPool.Get().(*cstEncoder)
+		out, ok, err := appendSearchTableCompressedChunk(dst, w.searchCfg, reductions, table, e)
+		cstEncoderPool.Put(e)
+		if err != nil {
+			_ = w.err(err)
+		}
+		if ok {
+			return out
+		}
+	}
+	return appendSearchTableChunk(dst, w.searchCfg, reductions, table)
 }
 
 // WriterSearchTable enables per-block search table generation.
