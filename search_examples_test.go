@@ -144,7 +144,7 @@ func ExampleSearchStats_Fprint() {
 	// Blocks searched: 1 (50.0%), false positive: 0 (0.0%)
 	// Bytes skipped: <N> compressed, searched: 8192 uncompressed
 	// Tables: 2 present, 0 missing, 0 unusable
-	// Table bits/byte: 0.0391, log2: 8.0, avg reductions: 5.0
-	// Table total: 80 bytes, avg 40 bytes/table, 0.49% of 16384 uncompressed
+	// Table bits/byte: 0.0430, log2: 8.0, avg reductions: 5.0
+	// Table total: 88 bytes, avg 44 bytes/table, 0.54% of 16384 uncompressed
 	// Table population: avg 2.7%, min 1.6%, max 3.9%
 }
