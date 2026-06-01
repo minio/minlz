@@ -242,6 +242,144 @@ Pick bytes that immediately precede the values you'll search for:
 - **Key=value formats:** `=` precedes values.
 - **Log lines with fields:** space, tab, `=`, or `:`.
 
+## Sidecar Streams
+
+Search tables normally live *inside* the compressed stream — one per block,
+right in front of the corresponding data. A **sidecar stream** instead puts
+every search table into a *separate* file, leaving the main `.mz` stream as
+plain compressed data. Searching then takes two inputs: the sidecar (read
+once, top-to-bottom) and the main stream (random-access via `io.ReaderAt`,
+typically a regular file).
+
+### Why?
+
+- **You can't (or don't want to) re-encode the data.** Maybe the `.mz` was
+  written long ago, or it lives on read-only storage. `BuildSidecar` decodes
+  each block, builds fresh tables, and writes the sidecar — the original
+  `.mz` is never touched.
+- **You want to store the index separately.** Indexes can be regenerated;
+  data often can't. Putting them on different storage tiers (or even
+  different hosts) is a clean way to express that.
+- **You want to drop the indexes from an existing indexed stream.** If you
+  compressed with `-search` but later want to slim the main file without
+  losing search, extract the index to a sidecar and strip the main.
+- **You want multiple search configurations for the same data.** The inline
+  writer only carries one config; a sidecar can carry many (for example one
+  tuned for short patterns and one tuned for JSON keys).
+
+The main stream and the sidecar are **both valid MinLZ streams on their
+own**. A regular `NewReader` over a sidecar produces zero data bytes (only
+skippable chunks); over a stripped main stream it produces the original
+payload.
+
+Sidecar files conventionally use the `.mzs` extension (sits next to `.mz`),
+but they are ordinary MinLZ streams and can have any filename.
+
+### Three ways to produce a sidecar
+
+#### 1. While compressing — `WriterSidecar`
+
+The main writer behaves normally; the search-table chunks are diverted to a
+second `io.Writer`:
+
+```go
+mainF, _ := os.Create("foo.mz")
+sideF, _ := os.Create("foo.mz.mzs")
+cfg := minlz.NewSearchTableConfig().WithMatchLen(6)
+w := minlz.NewWriter(mainF,
+    minlz.WriterSearchTable(cfg),
+    minlz.WriterSidecar(sideF),
+)
+w.Write(data)
+w.Close()
+```
+
+#### 2. From an existing stream that has no indexes — `BuildSidecar`
+
+Reads the source once, decompresses each block, builds fresh tables, and
+writes the sidecar. The source is not modified:
+
+```go
+src, _ := os.Open("foo.mz")
+side, _ := os.Create("foo.mz.mzs")
+err := minlz.BuildSidecar(side, src,
+    minlz.SidecarSearchTable(minlz.NewSearchTableConfig().WithMatchLen(6)),
+)
+```
+
+Pass `SidecarSearchTable` multiple times to embed several configs in one
+sidecar. At search time a block is skipped if **any** embedded table proves
+the pattern absent; tables that don't apply to the query are ignored.
+
+#### 3. From an existing indexed stream — `ExtractSidecar`
+
+Copies the existing `0x44`/`0x45`/`0x46` chunks verbatim into a sidecar. No
+decoding required. Two modes:
+
+```go
+// (a) No stripping. Sidecar offsets reference src's original layout, so
+//     the original file must be kept and searched against.
+minlz.ExtractSidecar(sideOut, nil, src)
+
+// (b) With stripping. Re-emits src to newMainOut without the search chunks;
+//     sidecar offsets reference the new layout. A fresh seek index is
+//     appended to newMainOut so it remains seekable on its own.
+minlz.ExtractSidecar(sideOut, newMainOut, src)
+```
+
+### Searching with a sidecar
+
+```go
+mainF, _ := os.Open("foo.mz")        // io.ReaderAt
+sideF, _ := os.Open("foo.mz.mzs")    // io.Reader
+
+searcher := minlz.NewSidecarSearcher(mainF, sideF)
+searcher.Search([]byte("pattern"), func(r minlz.SearchResult) error {
+    fmt.Printf("match at stream offset %d\n", r.StreamOffset)
+    return nil
+})
+```
+
+The searcher walks the sidecar once and only touches the main stream for
+blocks that aren't proven absent. Adjacent must-decode blocks are coalesced
+into a single `ReadAt`; skipped blocks issue no I/O against the main stream
+until the caller invokes `result.PrevBlock()` for boundary context (then
+they are fetched and decoded on demand).
+
+`SidecarSearcher` accepts the same `BlockSearchOption`s as `BlockSearcher`
+(`BlockSearchBailOnMissing`, `BlockSearchCollectStats`,
+`BlockSearchIgnoreCRC`, …). Multiple goroutines may run independent
+`SidecarSearcher`s against the same main file concurrently — each owns its
+own sidecar `io.Reader` and the underlying `ReadAt` is shared safely.
+
+### Commandline
+
+```
+mz sidecar build   [-search.lens=4,6] [-search.compress] foo.mz   # -> foo.mz.mzs
+mz sidecar extract [-newstream stripped.mz]              foo.mz   # -> foo.mz.mzs (+ stripped.mz)
+mz search --sidecar foo.mz.mzs  "pattern"  foo.mz                 # search via sidecar
+```
+
+`mz sidecar build` accepts most of the same `-search.*` flags as
+`mz c -search` (match length, prefixes, compression, population limits).
+The `-search.lens` flag is comma-separated to request multiple configs in
+one sidecar.
+
+### Sidecar format at a glance
+
+A sidecar stream contains, in order:
+
+1. Stream identifier (`0xff`) — same maximum block size as the main stream.
+2. One or more **Search Table Info** chunks (`0x44`) — one per embedded config.
+3. For each data block in the main stream:
+   - Zero or more **Search Table** chunks (`0x45`/`0x46`) — one per config
+     that produced a usable table for that block.
+   - One **Remote Block Reference** chunk (`0x47`) carrying the block's
+     offset in the main stream and its uncompressed size.
+4. EOF chunk (`0x20`).
+
+For format details see [SPEC_SEARCH.md §1.1 / §2.3](SPEC_SEARCH.md).
+
 ## Commandline
 
 The `mz` tool supports search table generation during compression and pattern search

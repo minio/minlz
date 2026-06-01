@@ -54,6 +54,13 @@ func NewWriter(w io.Writer, opts ...WriterOption) *Writer {
 			return &w2
 		}
 	}
+	if w2.sidecar != nil {
+		if w2.searchCfg == nil {
+			w2.errState = errors.New("minlz: WriterSidecar requires WriterSearchTable")
+			return &w2
+		}
+		w2.sidecarMaxBlock = w2.blockSize
+	}
 	w2.obufLen = obufHeaderLen + MaxEncodedLen(w2.blockSize)
 	if w2.searchCfg != nil {
 		// 0x46 is only emitted when strictly smaller than the equivalent
@@ -99,6 +106,18 @@ type Writer struct {
 	searchHdrBuf   []byte // scratch 0x45 header (sync path)
 	searchMaxChunk int    // max 0x45 chunk size, 0 if no search
 
+	// sidecar holds the optional sidecar destination. When non-nil, the
+	// 0x44/0x45/0x46 chunks and a 0x47 remote-block-reference per data
+	// block are written to sidecar; the main writer receives only the
+	// stream header, data chunks, EOF, and (optionally) the seek index.
+	sidecar io.Writer
+	// sidecarHeaderWritten tracks whether the sidecar stream header and
+	// 0x44 info chunk have been emitted.
+	sidecarHeaderWritten bool
+	// sidecarMaxBlockMinus encodes (max - actual) for the 0x47 chunks;
+	// derived from w.blockSize at first emit.
+	sidecarMaxBlock int
+
 	// wroteStreamHeader is whether we have written the stream header.
 	wroteStreamHeader bool
 	paramsOK          bool
@@ -112,6 +131,17 @@ type result struct {
 	b []byte
 	// Uncompressed start offset
 	startOffset int64
+
+	// Sidecar fields (only populated when Writer.sidecar != nil).
+	// sidecarPre holds the 0x45/0x46 search-table chunk to write to the
+	// sidecar immediately before the corresponding 0x47 reference. It may
+	// be nil if no search table was produced for this block.
+	sidecarPre []byte
+	// uncompSize is the block's uncompressed size, used to encode the
+	// 0x47 chunk's (maxUncompressed - actualUncompressed) field. A value
+	// of 0 signals "no sidecar emission for this result" — for example
+	// when the result represents the stream header or a flush sentinel.
+	uncompSize int
 }
 
 var (
@@ -154,6 +184,7 @@ func (w *Writer) Reset(writer io.Writer) {
 	w.written = 0
 	w.writer = writer
 	w.uncompWritten = 0
+	w.sidecarHeaderWritten = false
 	w.index.reset(w.blockSize)
 
 	// If we didn't get a writer, stop here.
@@ -179,6 +210,10 @@ func (w *Writer) Reset(writer io.Writer) {
 			// Wait for the data to be available.
 			input := <-write
 			in := input.b
+			// Record the main offset where this block's data will land, BEFORE
+			// the main Write advances w.written. The sidecar's 0x47 chunk
+			// uses this offset.
+			mainBlockOffset := w.written
 			if len(in) > 0 {
 				if w.err(nil) == nil {
 					// Don't expose data from previous buffers.
@@ -191,6 +226,21 @@ func (w *Writer) Reset(writer io.Writer) {
 					_ = w.err(err)
 					w.err(w.index.add(w.written, input.startOffset))
 					w.written += int64(n)
+				}
+			}
+			// Sidecar emission for data blocks. uncompSize > 0 indicates the
+			// result represents a data block (not the stream header or a
+			// flush sentinel).
+			if w.sidecar != nil && input.uncompSize > 0 && w.err(nil) == nil {
+				if err := w.writeSidecarStartIfNeeded(); err == nil {
+					if len(input.sidecarPre) > 0 {
+						if _, err := w.sidecar.Write(input.sidecarPre); err != nil {
+							_ = w.err(err)
+						}
+					}
+					if w.err(nil) == nil {
+						_ = w.writeSidecarRemoteRef(mainBlockOffset, input.uncompSize)
+					}
 				}
 			}
 			if cap(in) >= w.obufLen {
@@ -466,7 +516,16 @@ func (w *Writer) EncodeBuffer(buf []byte) (err error) {
 				searchTablePool.Put(table)
 			}
 
-			if searchLen > 0 {
+			if w.sidecar != nil {
+				// Sidecar mode: data chunk stays in main; the search chunk
+				// (if any) plus a 0x47 ref go to the sidecar. We copy the
+				// search chunk out of obuf so obuf can be safely recycled.
+				if searchLen > 0 {
+					res.sidecarPre = append([]byte(nil), obuf[:searchLen]...)
+				}
+				res.uncompSize = len(uncompressed)
+				res.b = dbuf
+			} else if searchLen > 0 {
 				start := smc - searchLen
 				copy(obuf[start:], obuf[:searchLen])
 				res.b = obuf[start : smc+len(dbuf)]
@@ -533,7 +592,9 @@ func (w *Writer) write(p []byte) (nRet int, errRet error) {
 			hWriter := make(chan result)
 			w.output <- hWriter
 			hWriter <- result{startOffset: w.uncompWritten, b: makeHeader(w.blockSize)}
-			if w.searchCfg != nil && w.searchInfoBuf == nil {
+			// In sidecar mode, the 0x44 info chunk goes on the sidecar
+			// (emitted lazily on first block); skip the inline emit.
+			if w.sidecar == nil && w.searchCfg != nil && w.searchInfoBuf == nil {
 				w.searchInfoBuf = w.searchCfg.marshalSearchInfoChunk()
 				infoOut := make(chan result)
 				w.output <- infoOut
@@ -614,7 +675,14 @@ func (w *Writer) write(p []byte) (nRet int, errRet error) {
 				searchTablePool.Put(table)
 			}
 
-			if searchLen > 0 {
+			if w.sidecar != nil {
+				// Sidecar mode: data chunk to main; search chunk + 0x47 to sidecar.
+				if searchLen > 0 {
+					res.sidecarPre = append([]byte(nil), inbuf[:searchLen]...)
+				}
+				res.uncompSize = len(uncompressed)
+				res.b = dbuf
+			} else if searchLen > 0 {
 				// Search chunk in inbuf[:searchLen] (the unused buffer), data in dbuf.
 				// Slide into inbuf since it has capacity.
 				start := smc - searchLen
@@ -653,7 +721,9 @@ func (w *Writer) writeFull(inbuf []byte) (errRet error) {
 		hWriter := make(chan result)
 		w.output <- hWriter
 		hWriter <- result{startOffset: w.uncompWritten, b: makeHeader(w.blockSize)}
-		if w.searchCfg != nil && w.searchInfoBuf == nil {
+		// In sidecar mode, the 0x44 info chunk goes on the sidecar
+		// (emitted lazily on first block); skip the inline emit.
+		if w.sidecar == nil && w.searchCfg != nil && w.searchInfoBuf == nil {
 			w.searchInfoBuf = w.searchCfg.marshalSearchInfoChunk()
 			infoOut := make(chan result)
 			w.output <- infoOut
@@ -717,7 +787,14 @@ func (w *Writer) writeFull(inbuf []byte) (errRet error) {
 			searchTablePool.Put(table)
 		}
 
-		if searchLen > 0 {
+		if w.sidecar != nil {
+			// Sidecar mode: data chunk to main; search chunk + 0x47 to sidecar.
+			if searchLen > 0 {
+				res.sidecarPre = append([]byte(nil), obuf[:searchLen]...)
+			}
+			res.uncompSize = len(uncompressed)
+			res.b = dbuf
+		} else if searchLen > 0 {
 			start := smc - searchLen
 			copy(obuf[start:], obuf[:searchLen])
 			res.b = obuf[start : smc+len(dbuf)]
@@ -786,8 +863,24 @@ func (w *Writer) writeSync(p []byte) (nRet int, errRet error) {
 		obuf[6] = uint8(checksum >> 16)
 		obuf[7] = uint8(checksum >> 24)
 
-		// Only index compressible blocks, write search table before data chunk.
-		if w.searchCfg != nil && n2 > 0 {
+		// In sidecar mode, emit the sidecar header lazily before the first
+		// block, then write the search table (if any) + 0x47 ref to sidecar.
+		// Otherwise, the search table is written inline before the data chunk.
+		mainBlockOffset := w.written
+		if w.sidecar != nil {
+			if err := w.writeSidecarStartIfNeeded(); err != nil {
+				return 0, err
+			}
+			if w.searchCfg != nil && n2 > 0 {
+				overlap := p[:min(len(p), int(w.searchCfg.matchLen)-1)]
+				if err := w.writeSearchTableSync(uncompressed, overlap); err != nil {
+					return 0, err
+				}
+			}
+			if err := w.writeSidecarRemoteRef(mainBlockOffset, len(uncompressed)); err != nil {
+				return 0, err
+			}
+		} else if w.searchCfg != nil && n2 > 0 {
 			overlap := p[:min(len(p), int(w.searchCfg.matchLen)-1)]
 			if err := w.writeSearchTableSync(uncompressed, overlap); err != nil {
 				return 0, err
@@ -912,6 +1005,11 @@ func (w *Writer) closeIndex(idx bool) ([]byte, error) {
 		_, err := w.writer.Write(tmp[:n])
 		_ = w.err(err)
 		w.written += int64(n)
+	}
+	// Write the sidecar EOF (also writes the sidecar stream header lazily
+	// if no blocks were ever emitted, so the sidecar is a valid empty stream).
+	if w.err(err) == nil && w.sidecar != nil {
+		_ = w.writeSidecarEOF()
 	}
 	var index []byte
 	if w.err(err) == nil && w.writer != nil {
@@ -1155,6 +1253,11 @@ func (w *Writer) writeSearchInfoSync() error {
 	if w.searchCfg == nil || w.searchInfoBuf != nil {
 		return nil
 	}
+	// In sidecar mode, the 0x44 info chunk lives on the sidecar instead
+	// of the main stream; it is emitted lazily via writeSidecarStartIfNeeded.
+	if w.sidecar != nil {
+		return nil
+	}
 	w.searchInfoBuf = w.searchCfg.marshalSearchInfoChunk()
 	n, err := w.writer.Write(w.searchInfoBuf)
 	if err != nil {
@@ -1167,6 +1270,9 @@ func (w *Writer) writeSearchInfoSync() error {
 	return nil
 }
 
+// dstWriter selects the destination for the search-table chunk in sync mode.
+// In sidecar mode the chunk goes to the sidecar; otherwise it is inlined in
+// the main stream and counts towards w.written.
 func (w *Writer) writeSearchTableSync(uncompressed, overlap []byte) error {
 	var stBuf []byte
 	if v := searchTablePool.Get(); v != nil {
@@ -1176,6 +1282,13 @@ func (w *Writer) writeSearchTableSync(uncompressed, overlap []byte) error {
 	defer searchTablePool.Put(table)
 	if table == nil {
 		return nil
+	}
+	// Pick destination. The sidecar's writes do NOT advance w.written.
+	dst := w.writer
+	countWritten := true
+	if w.sidecar != nil {
+		dst = w.sidecar
+		countWritten = false
 	}
 	// Try compressed form first. When emitted, the chunk is fully serialized
 	// (no large-bitmap separate write).
@@ -1188,34 +1301,89 @@ func (w *Writer) writeSearchTableSync(uncompressed, overlap []byte) error {
 		}
 		if ok {
 			w.searchHdrBuf = out
-			n, err := w.writer.Write(out)
+			n, err := dst.Write(out)
 			if err != nil {
 				return w.err(err)
 			}
 			if n != len(out) {
 				return w.err(io.ErrShortWrite)
 			}
-			w.written += int64(n)
+			if countWritten {
+				w.written += int64(n)
+			}
 			return nil
 		}
 	}
 	w.searchHdrBuf = appendSearchTableHeader(w.searchHdrBuf[:0], w.searchCfg, reductions, table)
-	n, err := w.writer.Write(w.searchHdrBuf)
+	n, err := dst.Write(w.searchHdrBuf)
 	if err != nil {
 		return w.err(err)
 	}
 	if n != len(w.searchHdrBuf) {
 		return w.err(io.ErrShortWrite)
 	}
-	w.written += int64(n)
-	n, err = w.writer.Write(table)
+	if countWritten {
+		w.written += int64(n)
+	}
+	n, err = dst.Write(table)
 	if err != nil {
 		return w.err(err)
 	}
 	if n != len(table) {
 		return w.err(io.ErrShortWrite)
 	}
-	w.written += int64(n)
+	if countWritten {
+		w.written += int64(n)
+	}
+	return nil
+}
+
+// writeSidecarStartIfNeeded writes the sidecar's stream header and 0x44 info
+// chunk on first use. Idempotent. Must only be called while w.sidecar != nil.
+func (w *Writer) writeSidecarStartIfNeeded() error {
+	if w.sidecarHeaderWritten {
+		return nil
+	}
+	if _, err := w.sidecar.Write(makeHeader(w.blockSize)); err != nil {
+		return w.err(err)
+	}
+	info := w.searchCfg.marshalSearchInfoChunk()
+	if _, err := w.sidecar.Write(info); err != nil {
+		return w.err(err)
+	}
+	w.sidecarHeaderWritten = true
+	return nil
+}
+
+// writeSidecarRemoteRef writes a single-block 0x47 Remote Block Reference
+// pointing at mainOffset in the main stream with the given uncompressed
+// block size. Must only be called while w.sidecar != nil.
+func (w *Writer) writeSidecarRemoteRef(mainOffset int64, uncompSize int) error {
+	var rb [4 + binary.MaxVarintLen64*2]byte
+	chunk := appendRemoteBlockRef(rb[:0], mainOffset, w.sidecarMaxBlock-uncompSize)
+	if _, err := w.sidecar.Write(chunk); err != nil {
+		return w.err(err)
+	}
+	return nil
+}
+
+// writeSidecarEOF writes the sidecar's EOF chunk. Called once during Close.
+// Safe to call when w.sidecar == nil (no-op).
+func (w *Writer) writeSidecarEOF() error {
+	if w.sidecar == nil {
+		return nil
+	}
+	if err := w.writeSidecarStartIfNeeded(); err != nil {
+		return err
+	}
+	var tmp [4 + binary.MaxVarintLen64]byte
+	tmp[0] = chunkTypeEOF
+	// Sidecar carries no uncompressed payload — encode 0.
+	n := binary.PutUvarint(tmp[4:], 0)
+	tmp[1] = uint8(n)
+	if _, err := w.sidecar.Write(tmp[:4+n]); err != nil {
+		return w.err(err)
+	}
 	return nil
 }
 
@@ -1251,6 +1419,51 @@ func WriterSearchTable(cfg SearchTableConfig) WriterOption {
 		w.searchCfg = &c
 		return nil
 	}
+}
+
+// WriterSidecar redirects search-index chunks (0x44/0x45/0x46) to a separate
+// sidecar writer rather than embedding them in the main stream. For each
+// data block written to the main stream a 0x47 Remote Block Reference is
+// appended to the sidecar that points at the block's offset in the main
+// stream.
+//
+// WriterSearchTable must also be supplied. Both the main stream and the
+// sidecar are valid MinLZ streams on their own; the sidecar can be searched
+// using NewSidecarSearcher with the main stream as the data source.
+func WriterSidecar(sidecar io.Writer) WriterOption {
+	return func(w *Writer) error {
+		if sidecar == nil {
+			return errors.New("minlz: WriterSidecar requires a non-nil writer")
+		}
+		w.sidecar = sidecar
+		return nil
+	}
+}
+
+// SetSidecar configures or replaces the sidecar destination for subsequent
+// blocks. Pass nil to disable sidecar mode. Must be called before any data
+// is written for the current stream (i.e., immediately after NewWriter or
+// after Reset, before the first Write/EncodeBuffer/ReadFrom). The Writer
+// must have been constructed with WriterSearchTable.
+//
+// This is primarily intended for tools that reuse a single Writer across
+// many files and want to direct each file's index to a separate sidecar.
+func (w *Writer) SetSidecar(sidecar io.Writer) error {
+	if !w.paramsOK {
+		return errClosed
+	}
+	if w.wroteStreamHeader {
+		return errors.New("minlz: SetSidecar must be called before the first write")
+	}
+	if sidecar != nil && w.searchCfg == nil {
+		return errors.New("minlz: SetSidecar requires WriterSearchTable")
+	}
+	w.sidecar = sidecar
+	w.sidecarHeaderWritten = false
+	if sidecar != nil {
+		w.sidecarMaxBlock = w.blockSize
+	}
+	return nil
 }
 
 func makeHeader(blockSize int) []byte {

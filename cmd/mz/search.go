@@ -24,7 +24,9 @@ func mainSearch(args []string) {
 		quiet   = fs.Bool("q", false, "Quiet: only set exit code (0=found, 1=not found)")
 		lines   = fs.Bool("l", true, "Print matching lines instead of whole blocks")
 		verbose = fs.Bool("v", false, "Print data")
-		help    = fs.Bool("help", false, "Display help")
+		sidecar   = fs.String("sidecar", "", "Search using the given sidecar (.mzs) file; the input must support random access. If empty, <input>"+minlzSidecarExt+" is auto-detected when present.")
+		noSidecar = fs.Bool("no-sidecar", false, "Disable sidecar auto-detection; force inline search")
+		help      = fs.Bool("help", false, "Display help")
 	)
 	fs.Usage = func() {
 		w := fs.Output()
@@ -65,13 +67,15 @@ Options:`)
 		for _, file := range matches {
 			start := time.Now()
 			found, stats, err := searchFile(file, pattern, searchOpts{
-				count:     *count,
-				lineNums:  *lineN,
-				bail:      *bail,
-				quiet:     *quiet,
-				lines:     *lines,
-				verbose:   *verbose,
-				multiFile: multiFile,
+				count:      *count,
+				lineNums:   *lineN,
+				bail:       *bail,
+				quiet:      *quiet,
+				lines:      *lines,
+				verbose:    *verbose,
+				multiFile:  multiFile,
+				sidecar:    *sidecar,
+				noSidecar:  *noSidecar,
 			})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s: %v\n", file, err)
@@ -101,19 +105,21 @@ type searchOpts struct {
 	lines     bool
 	verbose   bool
 	multiFile bool
+	sidecar   string
+	noSidecar bool
 }
 
 func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats minlz.SearchStats, err error) {
-	var r io.Reader
-	if file == "-" {
-		r = os.Stdin
-	} else {
-		f, err := os.Open(file)
-		if err != nil {
-			return false, stats, err
+	// Auto-detect a sidecar at <file>.mzs unless one was explicitly given
+	// or auto-detection was disabled.
+	if opts.sidecar == "" && !opts.noSidecar && file != "-" {
+		candidate := file + minlzSidecarExt
+		if st, serr := os.Stat(candidate); serr == nil && !st.IsDir() {
+			opts.sidecar = candidate
+			if opts.verbose {
+				fmt.Fprintf(os.Stderr, "%s: using sidecar %s\n", file, candidate)
+			}
 		}
-		defer f.Close()
-		r = f
 	}
 
 	var bsOpts []minlz.BlockSearchOption
@@ -126,7 +132,43 @@ func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats
 			fmt.Fprintf(os.Stderr, "%s: search info: %s\n", file, cfg)
 		}))
 	}
-	searcher := minlz.NewBlockSearcher(r, bsOpts...)
+
+	type genericSearcher interface {
+		Search(pattern []byte, fn func(minlz.SearchResult) error) error
+		Stats() minlz.SearchStats
+	}
+	var searcher genericSearcher
+
+	if opts.sidecar != "" {
+		// Sidecar search: main must support io.ReaderAt.
+		if file == "-" {
+			return false, stats, fmt.Errorf("sidecar search requires a seekable input, not stdin")
+		}
+		mainF, err := os.Open(file)
+		if err != nil {
+			return false, stats, err
+		}
+		defer mainF.Close()
+		sideF, err := os.Open(opts.sidecar)
+		if err != nil {
+			return false, stats, err
+		}
+		defer sideF.Close()
+		searcher = minlz.NewSidecarSearcher(mainF, sideF, bsOpts...)
+	} else {
+		var r io.Reader
+		if file == "-" {
+			r = os.Stdin
+		} else {
+			f, err := os.Open(file)
+			if err != nil {
+				return false, stats, err
+			}
+			defer f.Close()
+			r = f
+		}
+		searcher = minlz.NewBlockSearcher(r, bsOpts...)
+	}
 
 	matchCount := 0
 	lineOffset := int64(1)

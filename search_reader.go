@@ -155,11 +155,23 @@ func (r SearchResult) PrevBlock() []byte {
 	return nil
 }
 
-// lazyBlock holds compressed block data for on-demand decompression.
+// lazyBlock holds compressed block data for on-demand decompression. It
+// has two modes:
+//   - in-memory: chunkData holds the chunk payload (checksum + body).
+//     Used by BlockSearcher for inline streams.
+//   - remote: main + mainOffset point at the chunk header in an io.ReaderAt.
+//     Used by SidecarSearcher.
 type lazyBlock struct {
-	chunkData []byte // chunk payload: checksum + compressed/uncompressed data
-	chunkType byte
-	decompLen int    // decompressed size (from varint); avoids decode to get length
+	chunkData []byte // in-memory: chunk payload: checksum + compressed/uncompressed data
+	chunkType byte   // in-memory mode only
+
+	// Remote mode (sidecar): when main is non-nil, decode() fetches and
+	// decodes the chunk at mainOffset via ReadAt.
+	main       io.ReaderAt
+	mainOffset int64
+	maxBlock   int
+
+	decompLen int    // decompressed size; avoids decode to get length
 	decoded   []byte // cached result; nil until first decode
 	ignoreCRC bool
 }
@@ -167,6 +179,14 @@ type lazyBlock struct {
 func (lb *lazyBlock) decode() []byte {
 	if lb.decoded != nil {
 		return lb.decoded
+	}
+	if lb.main != nil {
+		d, err := readAndDecodeMainBlock(lb.main, lb.mainOffset, lb.decompLen, lb.maxBlock, lb.ignoreCRC)
+		if err != nil {
+			return nil
+		}
+		lb.decoded = d
+		return d
 	}
 	buf := lb.chunkData
 	if len(buf) < checksumSize {

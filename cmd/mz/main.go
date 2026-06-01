@@ -38,10 +38,11 @@ var (
 )
 
 const (
-	minlzExt      = ".mz"
-	s2Ext         = ".s2"
-	snappyExt     = ".sz" // https://github.com/google/snappy/blob/main/framing_format.txt#L34
-	minlzBlockExt = ".mzb"
+	minlzExt        = ".mz"
+	s2Ext           = ".s2"
+	snappyExt       = ".sz" // https://github.com/google/snappy/blob/main/framing_format.txt#L34
+	minlzBlockExt   = ".mzb"
+	minlzSidecarExt = ".mzs" // sidecar search-index stream
 )
 
 var debugErrs bool
@@ -64,6 +65,7 @@ func main() {
 		fmt.Fprintf(w, " (cat)    :   %s cat [options] <input>\n", os.Args[0])
 		fmt.Fprintf(w, " (tail)   :   %s tail [options] <input>\n", os.Args[0])
 		fmt.Fprintf(w, "Search:       %s search [options] <pattern> <input>\n", os.Args[0])
+		fmt.Fprintf(w, "Sidecar:      %s sidecar build|extract [options] <input>\n", os.Args[0])
 		fmt.Fprintf(w, "Stats:        %s stats [options] <input...>\n\n", os.Args[0])
 		fmt.Fprintf(w, "Without options 'c' and 'd' can be omitted. Extension decides if decompressing.\n")
 		fmt.Fprintf(w, "Compress file:    %s file.txt\n", os.Args[0])
@@ -113,6 +115,8 @@ func main() {
 		mainSearch(flag.Args()[1:])
 	case "stats":
 		mainStats(flag.Args()[1:])
+	case "sidecar":
+		mainSidecar(flag.Args()[1:])
 	default:
 		if len(flag.Args()) > 0 {
 			cmp := strings.ToLower(flag.Arg(0))

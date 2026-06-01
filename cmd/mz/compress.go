@@ -56,6 +56,7 @@ func mainCompress(args []string) {
 		searchLim       = fs.Int("search.lim", 50, "Stops reducing search tables if population exceeds this percentage. Divided by 2 when prefix or compression is enabled, by 3 when both are enabled")
 		searchComp      = fs.Bool("search.compress", false, "Compress search tables with huff0 (chunk type 0x46)")
 		searchCompSkip  = fs.Float64("search.compress.skip", 10.0, "Skip search table compression when |popcount - 50%| < this percentage")
+		searchSidecar   = fs.Bool("search.sidecar", false, "Emit search index to a sidecar file (<output>"+minlzSidecarExt+") instead of inline in the main stream")
 
 		// Shared
 		block  = fs.Bool("block", false, "Use as a single block. Will load content into memory. Max 8MB.")
@@ -152,6 +153,16 @@ Options:`)
 			cfg = cfg.WithCompression(minlz.CompressedSearchSkipPct(*searchCompSkip))
 		}
 		opts = append(opts, minlz.WriterSearchTable(cfg))
+	} else if *searchSidecar {
+		exitErr(errors.New("-search.sidecar requires -search"))
+	}
+	if *searchSidecar {
+		if *stdout {
+			exitErr(errors.New("-search.sidecar is incompatible with -c (stdout): nowhere to put the sidecar"))
+		}
+		if *bench > 0 {
+			exitErr(errors.New("-search.sidecar is incompatible with -bench"))
+		}
 	}
 	wr := minlz.NewWriter(nil, opts...)
 
@@ -161,6 +172,9 @@ Options:`)
 		// os.Stdin will return EOF, so we should be able to get everything.
 		signal.Notify(make(chan os.Signal, 1), os.Interrupt)
 		if len(*out) == 0 {
+			if *searchSidecar {
+				exitErr(errors.New("-search.sidecar requires -o when reading stdin"))
+			}
 			wr.Reset(os.Stdout)
 		} else {
 			if *safe {
@@ -175,6 +189,20 @@ Options:`)
 			bw := bufio.NewWriterSize(dstFile, int(sz*2))
 			defer bw.Flush()
 			wr.Reset(bw)
+			if *searchSidecar {
+				sideName := *out + minlzSidecarExt
+				if *safe {
+					if _, err := os.Stat(sideName); !os.IsNotExist(err) {
+						exitErr(fmt.Errorf("sidecar destination %s exists", sideName))
+					}
+				}
+				sideFile, err := os.OpenFile(sideName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
+				exitErr(err)
+				defer sideFile.Close()
+				sbw := bufio.NewWriterSize(sideFile, 64<<10)
+				defer sbw.Flush()
+				exitErr(wr.SetSidecar(sbw))
+			}
 		}
 		_, err = wr.ReadFrom(os.Stdin)
 		printErr(err)
@@ -208,19 +236,50 @@ Options:`)
 	if *out != "" && len(files) > 1 {
 		exitErr(errors.New("-out parameter can only be used with one input"))
 	}
+	streamOpts := streamCompressOpts{
+		recomp:        *recomp,
+		ext:           ext,
+		outFile:       *out,
+		quiet:         *quiet,
+		stdout:        *stdout,
+		remove:        *remove,
+		cpu:           *cpu,
+		safe:          *safe,
+		blockSize:     sz,
+		verify:        *verify,
+		searchSidecar: *searchSidecar,
+		wr:            wr,
+	}
 	for _, filename := range files {
 		if *block {
 			processBlock(recomp, filename, ext, out, quiet, err, stdout, safe, level, verify, remove)
 		} else {
-			processStream(filename, recomp, ext, out, quiet, stdout, remove, err, cpu, safe, sz, verify, wr)
+			processStream(filename, streamOpts)
 		}
 	}
 }
 
-func processStream(filename string, recomp *bool, ext string, outFile *string, quiet *bool, stdout *bool, remove *bool, err error, cpu *int, safe *bool, sz int64, verify *bool, wr *minlz.Writer) {
+// streamCompressOpts is the configuration for processStream — fields are
+// populated once in mainCompress from CLI flags.
+type streamCompressOpts struct {
+	recomp        bool
+	ext           string
+	outFile       string
+	quiet         bool
+	stdout        bool
+	remove        bool
+	cpu           int
+	safe          bool
+	blockSize     int64
+	verify        bool
+	searchSidecar bool
+	wr            *minlz.Writer
+}
+
+func processStream(filename string, o streamCompressOpts) {
 	var closeOnce sync.Once
 	outFileBase := filename
-	if *recomp {
+	if o.recomp {
 		switch {
 		case strings.HasSuffix(outFileBase, minlzExt):
 			outFileBase = strings.TrimSuffix(outFileBase, minlzExt)
@@ -232,20 +291,20 @@ func processStream(filename string, recomp *bool, ext string, outFile *string, q
 			outFileBase = strings.TrimSuffix(outFileBase, ".snappy")
 		}
 	}
-	dstFilename := cleanFileName(fmt.Sprintf("%s%s", outFileBase, ext))
-	if *outFile != "" {
-		dstFilename = *outFile
+	dstFilename := cleanFileName(fmt.Sprintf("%s%s", outFileBase, o.ext))
+	if o.outFile != "" {
+		dstFilename = o.outFile
 	}
-	if !*quiet {
+	if !o.quiet {
 		fmt.Print("Compressing ", filename, " -> ", dstFilename)
 	}
 
-	if dstFilename == filename && !*stdout {
-		if *remove {
+	if dstFilename == filename && !o.stdout {
+		if o.remove {
 			exitErr(errors.New("cannot remove when input = output"))
 		}
 		renameDst := dstFilename
-		dstFilename = fmt.Sprintf(".tmp-%s%s", time.Now().Format("2006-01-02T15-04-05Z07"), ext)
+		dstFilename = fmt.Sprintf(".tmp-%s%s", time.Now().Format("2006-01-02T15-04-05Z07"), o.ext)
 		defer func() {
 			exitErr(os.Rename(dstFilename, renameDst))
 		}()
@@ -253,23 +312,22 @@ func processStream(filename string, recomp *bool, ext string, outFile *string, q
 
 	// Input file.
 	file, _, mode := openFile(filename, false)
-	exitErr(err)
 	defer closeOnce.Do(func() { file.Close() })
-	src, err := readahead.NewReaderSize(file, *cpu+1, 1<<20)
+	src, err := readahead.NewReaderSize(file, o.cpu+1, 1<<20)
 	exitErr(err)
 	defer src.Close()
 	var rc = &rCounter{
 		in: src,
 	}
-	if !*quiet {
+	if !o.quiet {
 		// We only need to count for printing
 		src = rc
 	}
-	if *recomp {
+	if o.recomp {
 		dec := minlz.NewReader(src)
 		pr, pw := io.Pipe()
 		go func() {
-			_, err := dec.DecodeConcurrent(pw, *cpu)
+			_, err := dec.DecodeConcurrent(pw, o.cpu)
 			pw.CloseWithError(err)
 		}()
 		src = pr
@@ -277,10 +335,10 @@ func processStream(filename string, recomp *bool, ext string, outFile *string, q
 
 	var out io.Writer
 	switch {
-	case *stdout:
+	case o.stdout:
 		out = os.Stdout
 	default:
-		if *safe {
+		if o.safe {
 			_, err := os.Stat(dstFilename)
 			if !os.IsNotExist(err) {
 				exitErr(errors.New("destination file exists"))
@@ -289,33 +347,57 @@ func processStream(filename string, recomp *bool, ext string, outFile *string, q
 		dstFile, err := os.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 		exitErr(err)
 		defer dstFile.Close()
-		bw := bufio.NewWriterSize(dstFile, int(sz)*2)
+		bw := bufio.NewWriterSize(dstFile, int(o.blockSize)*2)
 		defer bw.Flush()
 		out = bw
 	}
-	out, errFn := verifyTo(out, *verify, *quiet, *cpu)
+	out, errFn := verifyTo(out, o.verify, o.quiet, o.cpu)
 	wc := wCounter{out: out}
 	start := time.Now()
-	wr.Reset(&wc)
-	defer wr.Close()
-	_, err = wr.ReadFrom(src)
+	o.wr.Reset(&wc)
+	defer o.wr.Close()
+	var sideName string
+	var sideCount *wCounter
+	if o.searchSidecar {
+		sideName = dstFilename + minlzSidecarExt
+		if o.safe {
+			if _, err := os.Stat(sideName); !os.IsNotExist(err) {
+				exitErr(fmt.Errorf("sidecar destination %s exists", sideName))
+			}
+		}
+		sideFile, err := os.OpenFile(sideName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+		exitErr(err)
+		defer sideFile.Close()
+		sbw := bufio.NewWriterSize(sideFile, 64<<10)
+		defer sbw.Flush()
+		sideCount = &wCounter{out: sbw}
+		exitErr(o.wr.SetSidecar(sideCount))
+	} else {
+		// Clear any sidecar from a previous file in batch mode.
+		exitErr(o.wr.SetSidecar(nil))
+	}
+	_, err = o.wr.ReadFrom(src)
 	exitErr(err)
-	err = wr.Close()
+	err = o.wr.Close()
 
 	exitErr(err)
-	if !*quiet {
+	if !o.quiet {
 		input := rc.n
 		elapsed := time.Since(start)
 		mbpersec := (float64(input) / 1e6) / (float64(elapsed) / (float64(time.Second)))
 		pct := float64(wc.n) * 100 / float64(input)
 		ratio := float64(input) / float64(wc.n)
 		fmt.Printf(" %d -> %d [%.02f%% %.03f:1]; %.01fMB/s\n", input, wc.n, pct, ratio, mbpersec)
+		if sideCount != nil {
+			sidePct := float64(sideCount.n) * 100 / float64(input)
+			fmt.Printf("Sidecar: %s %d bytes [%.03f%% of input]\n", sideName, sideCount.n, sidePct)
+		}
 	}
 	exitErr(errFn())
-	if *remove {
+	if o.remove {
 		closeOnce.Do(func() {
 			file.Close()
-			if !*quiet {
+			if !o.quiet {
 				fmt.Println("Removing", filename)
 			}
 			err := os.Remove(filename)

@@ -115,6 +115,158 @@ func ExampleBlockSearcher_bail() {
 	// minlz: search tables cannot be used for this pattern
 }
 
+func ExampleWriterSidecar() {
+	// Compress to one writer while diverting search-index chunks to a
+	// second writer. The main output contains only the compressed data; the
+	// sidecar contains 0x44/0x45/0x46 + 0x47 remote block references.
+	var main, side bytes.Buffer
+
+	cfg := minlz.NewSearchTableConfig().WithMatchLen(6)
+	w := minlz.NewWriter(&main,
+		minlz.WriterBlockSize(4096),
+		minlz.WriterConcurrency(1),
+		minlz.WriterSearchTable(cfg),
+		minlz.WriterSidecar(&side),
+	)
+	w.Write(bytes.Repeat([]byte("compressed log line, log line, log line\n"), 200))
+	w.Close()
+
+	// The main stream decompresses normally.
+	decoded, _ := io.ReadAll(minlz.NewReader(bytes.NewReader(main.Bytes())))
+	fmt.Printf("decoded: %d bytes\n", len(decoded))
+
+	// The sidecar is also a valid MinLZ stream that produces zero data bytes
+	// (all chunks in it are skippable).
+	sideDecoded, _ := io.ReadAll(minlz.NewReader(bytes.NewReader(side.Bytes())))
+	fmt.Printf("sidecar data bytes: %d\n", len(sideDecoded))
+
+	fmt.Printf("both streams non-empty: %v\n", main.Len() > 0 && side.Len() > 0)
+	// Output:
+	// decoded: 8000 bytes
+	// sidecar data bytes: 0
+	// both streams non-empty: true
+}
+
+func ExampleBuildSidecar() {
+	// 1) Compress without any inline search tables.
+	var main bytes.Buffer
+	w := minlz.NewWriter(&main,
+		minlz.WriterBlockSize(4096),
+		minlz.WriterConcurrency(1),
+	)
+	data := make([]byte, 8192)
+	copy(data[:4096], bytes.Repeat([]byte("aaaa"), 1024))
+	copy(data[4096:], bytes.Repeat([]byte("bbbb"), 1024))
+	copy(data[4096+200:], []byte("NEEDLE_PATTERN"))
+	w.Write(data)
+	w.Close()
+
+	// 2) Build a sidecar against that pre-existing main stream. The source
+	//    is read once and not modified.
+	var side bytes.Buffer
+	cfg := minlz.NewSearchTableConfig().WithMatchLen(4)
+	if err := minlz.BuildSidecar(&side, bytes.NewReader(main.Bytes()),
+		minlz.SidecarSearchTable(cfg),
+	); err != nil {
+		fmt.Println("build:", err)
+		return
+	}
+
+	// 3) Search via the sidecar against the original main.
+	ss := minlz.NewSidecarSearcher(
+		bytes.NewReader(main.Bytes()),
+		bytes.NewReader(side.Bytes()),
+		minlz.BlockSearchCollectStats(),
+	)
+	ss.Search([]byte("NEEDLE_PATTERN"), func(r minlz.SearchResult) error {
+		fmt.Printf("found at stream offset %d\n", r.StreamOffset)
+		return nil
+	})
+	stats := ss.Stats()
+	fmt.Printf("blocks: %d total, %d skipped\n", stats.BlocksTotal, stats.BlocksSkipped)
+	// Output:
+	// found at stream offset 4296
+	// blocks: 2 total, 1 skipped
+}
+
+func ExampleExtractSidecar() {
+	// 1) Compress WITH inline search tables.
+	var orig bytes.Buffer
+	cfg := minlz.NewSearchTableConfig().WithMatchLen(4)
+	w := minlz.NewWriter(&orig,
+		minlz.WriterBlockSize(4096),
+		minlz.WriterConcurrency(1),
+		minlz.WriterSearchTable(cfg),
+	)
+	data := make([]byte, 8192)
+	copy(data[:4096], bytes.Repeat([]byte("aaaa"), 1024))
+	copy(data[4096:], bytes.Repeat([]byte("bbbb"), 1024))
+	copy(data[4096+200:], []byte("NEEDLE_PATTERN"))
+	w.Write(data)
+	w.Close()
+
+	// 2) Pull the existing search-index chunks out into a sidecar and also
+	//    write a stripped main containing only the data chunks. The seek
+	//    index in the stripped stream is rebuilt automatically.
+	var side, stripped bytes.Buffer
+	if err := minlz.ExtractSidecar(&side, &stripped, bytes.NewReader(orig.Bytes())); err != nil {
+		fmt.Println("extract:", err)
+		return
+	}
+
+	// The stripped main is smaller and still round-trips to the same data.
+	fmt.Printf("stripped smaller than orig: %v\n", stripped.Len() < orig.Len())
+
+	got, _ := io.ReadAll(minlz.NewReader(bytes.NewReader(stripped.Bytes())))
+	fmt.Printf("round-trip: %v\n", bytes.Equal(got, data))
+
+	// Searching via sidecar against the stripped main returns the same match.
+	ss := minlz.NewSidecarSearcher(bytes.NewReader(stripped.Bytes()), bytes.NewReader(side.Bytes()))
+	ss.Search([]byte("NEEDLE_PATTERN"), func(r minlz.SearchResult) error {
+		fmt.Printf("found at stream offset %d\n", r.StreamOffset)
+		return nil
+	})
+	// Output:
+	// stripped smaller than orig: true
+	// round-trip: true
+	// found at stream offset 4296
+}
+
+func ExampleSidecarSearcher() {
+	// Build a small stream + sidecar in one go via WriterSidecar.
+	var main, side bytes.Buffer
+	cfg := minlz.NewSearchTableConfig().WithMatchLen(4)
+	w := minlz.NewWriter(&main,
+		minlz.WriterBlockSize(4096),
+		minlz.WriterConcurrency(1),
+		minlz.WriterSearchTable(cfg),
+		minlz.WriterSidecar(&side),
+	)
+	data := make([]byte, 8192)
+	copy(data[:4096], bytes.Repeat([]byte("aaaa"), 1024))
+	copy(data[4096:], bytes.Repeat([]byte("bbbb"), 1024))
+	copy(data[4096+200:], []byte("NEEDLE_PATTERN"))
+	w.Write(data)
+	w.Close()
+
+	// The main reader must support io.ReaderAt — a *bytes.Reader or *os.File
+	// works. Each NewSidecarSearcher reads its own sidecar from start to end.
+	ss := minlz.NewSidecarSearcher(
+		bytes.NewReader(main.Bytes()),
+		bytes.NewReader(side.Bytes()),
+		minlz.BlockSearchCollectStats(),
+	)
+	ss.Search([]byte("NEEDLE_PATTERN"), func(r minlz.SearchResult) error {
+		fmt.Printf("found at stream offset %d\n", r.StreamOffset)
+		return nil
+	})
+	stats := ss.Stats()
+	fmt.Printf("blocks: %d total, %d skipped\n", stats.BlocksTotal, stats.BlocksSkipped)
+	// Output:
+	// found at stream offset 4296
+	// blocks: 2 total, 1 skipped
+}
+
 func ExampleSearchStats_Fprint() {
 	// Create and search a stream to show stats output.
 	data := make([]byte, 16384)
