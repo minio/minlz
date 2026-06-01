@@ -17,13 +17,13 @@ func mainSearch(args []string) {
 	var (
 		fs = flag.NewFlagSet("search", flag.ExitOnError)
 
-		count   = fs.Bool("c", false, "Only print count of matching blocks/lines")
-		noColor = fs.Bool("no-color", false, "Disable colored output")
-		lineN   = fs.Bool("n", false, "Print match line numbers")
-		bail    = fs.Bool("bail", false, "Return error if search tables cannot be used")
-		quiet   = fs.Bool("q", false, "Quiet: only set exit code (0=found, 1=not found)")
-		lines   = fs.Bool("l", true, "Print matching lines instead of whole blocks")
-		verbose = fs.Bool("v", false, "Print data")
+		count     = fs.Bool("c", false, "Only print count of matching blocks/lines")
+		noColor   = fs.Bool("no-color", false, "Disable colored output")
+		lineN     = fs.Bool("n", false, "Print match line numbers")
+		bail      = fs.Bool("bail", false, "Return error if search tables cannot be used")
+		quiet     = fs.Bool("q", false, "Quiet: only set exit code (0=found, 1=not found)")
+		lines     = fs.Bool("l", true, "Print matching lines instead of whole blocks")
+		verbose   = fs.Bool("v", false, "Print data")
 		sidecar   = fs.String("sidecar", "", "Search using the given sidecar (.mzs) file; the input must support random access. If empty, <input>"+minlzSidecarExt+" is auto-detected when present.")
 		noSidecar = fs.Bool("no-sidecar", false, "Disable sidecar auto-detection; force inline search")
 		help      = fs.Bool("help", false, "Display help")
@@ -67,15 +67,15 @@ Options:`)
 		for _, file := range matches {
 			start := time.Now()
 			found, stats, err := searchFile(file, pattern, searchOpts{
-				count:      *count,
-				lineNums:   *lineN,
-				bail:       *bail,
-				quiet:      *quiet,
-				lines:      *lines,
-				verbose:    *verbose,
-				multiFile:  multiFile,
-				sidecar:    *sidecar,
-				noSidecar:  *noSidecar,
+				count:     *count,
+				lineNums:  *lineN,
+				bail:      *bail,
+				quiet:     *quiet,
+				lines:     *lines,
+				verbose:   *verbose,
+				multiFile: multiFile,
+				sidecar:   *sidecar,
+				noSidecar: *noSidecar,
 			})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s: %v\n", file, err)

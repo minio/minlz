@@ -755,11 +755,12 @@ func TestExtractSidecar_ConcatenatedStreams(t *testing.T) {
 }
 
 // TestSidecarSearcher_StatsFullyPopulated guards against two regressions:
-//   (1) SearchStats.UncompressedSize was zero because s.blockStart was reset
-//       on chunkTypeEOF; it should equal the sum of decoded block sizes.
-//   (2) huff0 sub-block stats (Huff0BlocksTotal, raw/RLE/sparse breakdown,
-//       table headers, payload bytes) were not accumulated from cstDecoder
-//       after parsing each 0x46 chunk — they all came out as zero.
+//
+//	(1) SearchStats.UncompressedSize was zero because s.blockStart was reset
+//	    on chunkTypeEOF; it should equal the sum of decoded block sizes.
+//	(2) huff0 sub-block stats (Huff0BlocksTotal, raw/RLE/sparse breakdown,
+//	    table headers, payload bytes) were not accumulated from cstDecoder
+//	    after parsing each 0x46 chunk — they all came out as zero.
 func TestSidecarSearcher_StatsFullyPopulated(t *testing.T) {
 	// Compressed search tables (0x46) are only emitted when -search.compress
 	// is set AND the table actually compresses; build data that produces them.

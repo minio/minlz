@@ -94,6 +94,17 @@ Options:`)
 	exitErr(err)
 	pad, err := toSize(*padding)
 	exitErr(err)
+	// Bound-check sz/pad before any int(...) narrowing — toSize returns
+	// int64 from strconv.ParseInt; on 32-bit platforms an unchecked
+	// conversion would silently overflow. MinLZ caps both at MaxBlockSize.
+	if sz < 0 || sz > minlz.MaxBlockSize {
+		exitErr(fmt.Errorf("-bs out of range: must be 1B..%dB", minlz.MaxBlockSize))
+	}
+	if pad < 0 || pad > minlz.MaxBlockSize {
+		exitErr(fmt.Errorf("-pad out of range: must be 0..%dB", minlz.MaxBlockSize))
+	}
+	blockSizeInt := int(sz)
+	padInt := int(pad)
 	if *help {
 		fs.Usage()
 		os.Exit(0)
@@ -115,7 +126,7 @@ Options:`)
 	if *nocomp {
 		level = minlz.LevelUncompressed
 	}
-	opts := []minlz.WriterOption{minlz.WriterBlockSize(int(sz)), minlz.WriterConcurrency(*cpu), minlz.WriterPadding(int(pad)), minlz.WriterLevel(level), minlz.WriterAddIndex(*index)}
+	opts := []minlz.WriterOption{minlz.WriterBlockSize(blockSizeInt), minlz.WriterConcurrency(*cpu), minlz.WriterPadding(padInt), minlz.WriterLevel(level), minlz.WriterAddIndex(*index)}
 	if *searchTable {
 		if len(*searchPfxString) > 0 && len(*searchPfx) > 0 {
 			exitErr(fmt.Errorf("cannot use both -search.prefix and -search.prefixes"))
@@ -186,7 +197,7 @@ Options:`)
 			dstFile, err := os.OpenFile(*out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
 			exitErr(err)
 			defer dstFile.Close()
-			bw := bufio.NewWriterSize(dstFile, int(sz*2))
+			bw := bufio.NewWriterSize(dstFile, blockSizeInt*2)
 			defer bw.Flush()
 			wr.Reset(bw)
 			if *searchSidecar {
@@ -245,7 +256,7 @@ Options:`)
 		remove:        *remove,
 		cpu:           *cpu,
 		safe:          *safe,
-		blockSize:     sz,
+		blockSize:     blockSizeInt,
 		verify:        *verify,
 		searchSidecar: *searchSidecar,
 		wr:            wr,
@@ -260,7 +271,8 @@ Options:`)
 }
 
 // streamCompressOpts is the configuration for processStream — fields are
-// populated once in mainCompress from CLI flags.
+// populated once in mainCompress from CLI flags. blockSize is the
+// already-bound-checked max block size in bytes (≤ minlz.MaxBlockSize).
 type streamCompressOpts struct {
 	recomp        bool
 	ext           string
@@ -270,7 +282,7 @@ type streamCompressOpts struct {
 	remove        bool
 	cpu           int
 	safe          bool
-	blockSize     int64
+	blockSize     int
 	verify        bool
 	searchSidecar bool
 	wr            *minlz.Writer
@@ -347,7 +359,7 @@ func processStream(filename string, o streamCompressOpts) {
 		dstFile, err := os.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 		exitErr(err)
 		defer dstFile.Close()
-		bw := bufio.NewWriterSize(dstFile, int(o.blockSize)*2)
+		bw := bufio.NewWriterSize(dstFile, o.blockSize*2)
 		defer bw.Flush()
 		out = bw
 	}
