@@ -11,15 +11,17 @@ checking if a pattern is present in the block.
 This can be used to determine if a block may, or definitely does *not* contain a specific pattern.
 With this information, blocks can be skipped if searching for specific patterns.
 
-### 1.1 Search Index only Streams
+### 1.1 Sidecar Search Index Streams
 
 A stream can contain search indexes only. This means that blocks are referenced into another stream.
 
 The stream should be valid, but instead of the block data, Remote Block Reference (chunk type 0x47) 
-is inserted for each data block. 
+is inserted for each data block.
+
+All other chunks should remain as they would be on the original stream,
+including the search index, which should reference the original stream.
 
 This will allow the index to be stored separately from the data. 
-Alternatively, for indexing an existing stream.
 
 ## 2 New Chunks
 
@@ -164,12 +166,21 @@ When generating search indexes from an existing stream or you, for
 another reason, want to separate the search index from the data,
 you can use the Remote Block Reference chunk type to indicate a remote block.
 
-| Length  | Description                         |
-|---------|-------------------------------------|
-| UVarInt | Block Offset                        |
-| ...     | [Additional relative block offsets] |
+| Length  | Description                          |
+|---------|--------------------------------------|
+| 1       | Chunk ID                             |
+| 3       | Chunk Size                           |
+| UVarInt | Block Offset                         |
+| UVarInt | Max Uncompressed - Actual Block Size |
+| ...     | <Additional blocks...>               |
 
 This block replaces a block that and indicates the offset of the block in the stream.
+
+The Chunk ID and Block Size are the same as specified on the [stream chunks](SPEC.md#1-general-structure).
+This means Chunk Size does also not include the 4-byte header. 
+
+The uncompressed size is the [maximum block size](SPEC.md#411-max-block-size) as
+indicated by the header minus the actual block size.
 
 If more values are present, it indicates additional blocks without indexes between.
 These are stored as relative offsets from the current block.

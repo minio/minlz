@@ -911,10 +911,11 @@ If you are interested in porting MinLZ to another language, open a discussion to
 
 If you do a port, feel free to send in a PR for this table:
 
-| Language | Repository Link                                                                         | License    | Block Read | Block Write | Stream Read | Stream Write | Index | Snappy Fallback |
-|----------|-----------------------------------------------------------------------------------------|------------|------------|-------------|-------------|--------------|-------|-----------------|
-| Go       | [github.com/minio/minlz](https://github.com/minio/minlz)                                | Apache 2.0 | ✅          | ✅           | ✅           | ✅            | ✅     | ✅               |  
-| C        | [Experimental GIST](https://gist.github.com/klauspost/5796a5aa116a15eb7341ffa8427bbe7a) | CC0        | ✅          | ✅           |             |              |       |                 |                                                                                                                 
+| Language | Repository Link                                                                         | License    | Block Read | Block Write | Stream Read | Stream Write | Index | Search | Snappy Fallback |
+|----------|-----------------------------------------------------------------------------------------|------------|------------|-------------|-------------|--------------|-------|--------|-----------------|
+| Go       | [github.com/minio/minlz](https://github.com/minio/minlz)                                | Apache 2.0 | ✅          | ✅           | ✅           | ✅            | ✅     | ✅      | ✅               |  
+| Rust     | [github.com/minio/minlz-rs](https://github.com/minio/minlz-rs)                          | Apache 2.0 | ✅          | ✅           | ✅           | ✅            | ✅     |        |                 |  
+| C        | [Experimental GIST](https://gist.github.com/klauspost/5796a5aa116a15eb7341ffa8427bbe7a) | CC0        | ✅          | ✅           |             |              |       |        |                 |                                                                                                                 
 
 
 Indicated features must support all parts of each feature as described in the specification.
