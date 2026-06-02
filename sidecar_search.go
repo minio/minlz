@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/bits"
 )
 
@@ -592,14 +593,15 @@ func (s *SidecarSearcher) decodeBatch(batch []pendingDecode, pattern []byte, fn 
 	rangeEnd := last.offset + int64(lastMaxLen)
 	rangeStart := first.offset
 	rangeLen := rangeEnd - rangeStart
-	if rangeLen <= 0 {
+	if rangeLen <= 0 || rangeLen > math.MaxInt {
 		return errors.New("minlz: sidecar: invalid batch range")
 	}
+	rangeLenI := int(rangeLen)
 	// Make the buffer.
-	if cap(s.scratch) < int(rangeLen) {
-		s.scratch = make([]byte, rangeLen)
+	if cap(s.scratch) < rangeLenI {
+		s.scratch = make([]byte, rangeLenI)
 	}
-	buf := s.scratch[:rangeLen]
+	buf := s.scratch[:rangeLenI]
 	n, err := s.main.ReadAt(buf, rangeStart)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return err

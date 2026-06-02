@@ -454,7 +454,9 @@ func (w *Writer) EncodeBuffer(buf []byte) (err error) {
 		hWriter := make(chan result)
 		w.output <- hWriter
 		hWriter <- result{startOffset: w.uncompWritten, b: makeHeader(w.blockSize)}
-		if w.searchCfg != nil && w.searchInfoBuf == nil {
+		// In sidecar mode, the 0x44 info chunk goes on the sidecar
+		// (emitted lazily on first block); skip the inline emit.
+		if w.sidecar == nil && w.searchCfg != nil && w.searchInfoBuf == nil {
 			w.searchInfoBuf = w.searchCfg.marshalSearchInfoChunk()
 			infoOut := make(chan result)
 			w.output <- infoOut
