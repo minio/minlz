@@ -131,6 +131,12 @@ type Writer struct {
 
 type result struct {
 	b []byte
+	// pooled is the underlying w.buffers buffer that b is sliced from
+	// (b's cap may be reduced by front-padding for search chunks). The
+	// writer goroutine returns this to w.buffers after writing b. Nil for
+	// results whose b is not pool-owned (stream headers, search-info
+	// chunk, flush sentinels).
+	pooled []byte
 	// Uncompressed start offset
 	startOffset int64
 
@@ -245,7 +251,9 @@ func (w *Writer) Reset(writer io.Writer) {
 					}
 				}
 			}
-			if cap(in) >= w.obufLen {
+			if input.pooled != nil {
+				w.buffers.Put(input.pooled)
+			} else if cap(in) >= w.obufLen {
 				w.buffers.Put(in)
 			}
 			// close the incoming write request.
@@ -534,6 +542,7 @@ func (w *Writer) EncodeBuffer(buf []byte) (err error) {
 			} else {
 				res.b = dbuf
 			}
+			res.pooled = obuf
 			output <- res
 		}(w.searchCfg, overlap)
 	}
@@ -684,6 +693,7 @@ func (w *Writer) write(p []byte) (nRet int, errRet error) {
 				}
 				res.uncompSize = len(uncompressed)
 				res.b = dbuf
+				res.pooled = obuf
 			} else if searchLen > 0 {
 				// Search chunk in inbuf[:searchLen] (the unused buffer), data in dbuf.
 				// Slide into inbuf since it has capacity.
@@ -691,8 +701,11 @@ func (w *Writer) write(p []byte) (nRet int, errRet error) {
 				copy(inbuf[start:], inbuf[:searchLen])
 				copy(inbuf[smc:], dbuf)
 				res.b = inbuf[start : smc+len(dbuf)]
+				res.pooled = inbuf
+				obuf, inbuf = inbuf, obuf
 			} else {
 				res.b = dbuf
+				res.pooled = obuf
 			}
 			output <- res
 

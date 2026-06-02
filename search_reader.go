@@ -253,10 +253,15 @@ type BlockSearcher struct {
 	blockReductions uint8
 	blockInfo       SearchTableConfig
 
-	decoded      [2][]byte      // alternating decode buffers
-	decIdx       int            // which buffer was last used (0 or 1)
-	prevBlock    []byte         // points into decoded[(decIdx+1)&1], nil if skipped
-	prevLazy     *lazyBlock     // compressed previous block for lazy PrevBlock(); nil if decoded
+	decoded   [2][]byte // alternating decode buffers
+	decIdx    int       // which buffer was last used (0 or 1)
+	prevBlock []byte    // points into decoded[(decIdx+1)&1], nil if skipped
+	// prevLazy is *lazyBlock so it can carry a nil sentinel meaning "no
+	// lazy prev." When set by bufferSkippedBlock / resolvePending, it
+	// always points at &prevLazyStore — the backing storage is reused
+	// across iterations to avoid a per-skipped-block heap alloc.
+	prevLazy      *lazyBlock
+	prevLazyStore lazyBlock
 	deferred     *deferredMatch // pending ErrSearchForward re-dispatch
 	pending      *pendingBlock  // block deferred pending next table check
 	cstDec       *cstDecoder    // lazy decoder state for 0x46 chunks
@@ -1057,7 +1062,8 @@ func (s *BlockSearcher) resolvePending(pattern []byte, fn func(SearchResult) err
 				return err
 			}
 		}
-		s.prevLazy = &p.lazy
+		s.prevLazyStore = p.lazy
+		s.prevLazy = &s.prevLazyStore
 		s.prevBlock = nil
 		return nil
 	}
@@ -1109,12 +1115,13 @@ func (s *BlockSearcher) bufferSkippedBlock(chunkType byte, chunkLen int) (decomp
 	if s.prevLazy != nil {
 		reclaimed = s.prevLazy.chunkData
 	}
-	s.prevLazy = &lazyBlock{
+	s.prevLazyStore = lazyBlock{
 		chunkData: s.buf[:chunkLen],
 		chunkType: chunkType,
 		decompLen: decompLen,
 		ignoreCRC: s.ignoreCRC,
 	}
+	s.prevLazy = &s.prevLazyStore
 	if reclaimed != nil {
 		s.buf = reclaimed[:0]
 	} else {

@@ -773,11 +773,23 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 	return dst, true, nil
 }
 
+// cstJob describes a single huff0 sub-block to decode/copy/expand.
+type cstJob struct {
+	dst []byte
+	src []byte
+	ti  uint8
+	rle byte
+}
+
 // cstDecoder holds reusable state for decoding 0x46 chunks.
 type cstDecoder struct {
 	tableSc    [cstMaxHuff0Tables]huff0.Scratch
 	tableValid [cstMaxHuff0Tables]bool
 	decoders   [cstMaxHuff0Tables]*huff0.Decoder
+	// jobs is the per-sub-block work list, pre-allocated up to the max of
+	// cstMaxHuff0Tables blocks so parseSearchTableCompressed doesn't
+	// allocate on every call.
+	jobs [cstMaxHuff0Tables]cstJob
 	// bitmapBuf is the reusable decoded-bitmap output. Returned to the
 	// caller via parseSearchTableCompressed; the next call re-slices it.
 	bitmapBuf []byte
@@ -795,6 +807,39 @@ type cstDecoder struct {
 }
 
 func newCSTDecoder() *cstDecoder { return &cstDecoder{} }
+
+// runJob executes a single cstJob (decode/copy/RLE/sparse). Kept as a method
+// rather than a closure so parseSearchTableCompressed doesn't allocate a
+// closure on the heap when goroutines capture it.
+func (dec *cstDecoder) runJob(j cstJob) error {
+	switch {
+	case j.ti <= 15:
+		out, derr := dec.decoders[j.ti].Decompress4X(j.dst[:0], j.src)
+		if derr != nil {
+			return derr
+		}
+		if len(out) != len(j.dst) {
+			return fmt.Errorf("minlz: decompressed length %d != expected %d", len(out), len(j.dst))
+		}
+	case j.ti == cstDispRaw:
+		copy(j.dst, j.src)
+	case j.ti == cstDispRLE:
+		for k := range j.dst {
+			j.dst[k] = j.rle
+		}
+	case j.ti == cstDispSparse:
+		// dst is a slice of the (already-zeroed) bitmapBuf; decodeSparseBitTable
+		// will OR in the set bits. The slice has cap == len so reuse-from-prior
+		// chunk is safe — the slice's window is exclusive to this huff0 block.
+		for k := range j.dst {
+			j.dst[k] = 0
+		}
+		if e := decodeSparseBitTable(j.dst, j.src); e != nil {
+			return e
+		}
+	}
+	return nil
+}
 
 // parseSearchTableCompressed parses a 0x46 chunk payload (the bytes after the
 // 4-byte chunk header) and reconstructs the uncompressed bitmap. The returned
@@ -868,17 +913,11 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 	}
 
 	// Parse per-block records (sequentially) and decompress (concurrently).
-	type job struct {
-		dst []byte
-		src []byte
-		ti  uint8
-		rle byte
-	}
 	if cap(dec.bitmapBuf) < expectedSize {
 		dec.bitmapBuf = make([]byte, expectedSize)
 	}
 	table = dec.bitmapBuf[:expectedSize]
-	jobs := make([]job, nBlocks)
+	jobs := dec.jobs[:nBlocks]
 	// Reset per-parse stats.
 	dec.lastTables = tc
 	dec.lastBlocks = nBlocks
@@ -913,7 +952,7 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 				return
 			}
 			nInt := int(n)
-			jobs[i] = job{dst: dst, src: rem[nl : nl+nInt], ti: ti}
+			jobs[i] = cstJob{dst: dst, src: rem[nl : nl+nInt], ti: ti}
 			rem = rem[nl+nInt:]
 			dec.lastBytesTabled += nl + nInt
 		case ti == cstDispRaw:
@@ -921,7 +960,7 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 				err = fmt.Errorf("minlz: block %d raw payload truncated", i)
 				return
 			}
-			jobs[i] = job{dst: dst, src: rem[:blockSize], ti: ti}
+			jobs[i] = cstJob{dst: dst, src: rem[:blockSize], ti: ti}
 			rem = rem[blockSize:]
 			dec.lastBlocksRaw++
 			dec.lastBytesRaw += blockSize
@@ -930,7 +969,7 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 				err = fmt.Errorf("minlz: block %d RLE payload truncated", i)
 				return
 			}
-			jobs[i] = job{dst: dst, ti: ti, rle: rem[0]}
+			jobs[i] = cstJob{dst: dst, ti: ti, rle: rem[0]}
 			rem = rem[1:]
 			dec.lastBlocksRLE++
 			dec.lastBytesRLE++
@@ -941,7 +980,7 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 				return
 			}
 			nInt := int(n)
-			jobs[i] = job{dst: dst, src: rem[nl : nl+nInt], ti: ti}
+			jobs[i] = cstJob{dst: dst, src: rem[nl : nl+nInt], ti: ti}
 			rem = rem[nl+nInt:]
 			dec.lastBlocksSparse++
 			dec.lastBytesSparse += nl + nInt
@@ -955,38 +994,8 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 		return
 	}
 
-	doJob := func(j job) error {
-		switch {
-		case j.ti <= 15:
-			out, derr := dec.decoders[j.ti].Decompress4X(j.dst[:0], j.src)
-			if derr != nil {
-				return derr
-			}
-			if len(out) != len(j.dst) {
-				return fmt.Errorf("minlz: decompressed length %d != expected %d", len(out), len(j.dst))
-			}
-		case j.ti == cstDispRaw:
-			copy(j.dst, j.src)
-		case j.ti == cstDispRLE:
-			for k := range j.dst {
-				j.dst[k] = j.rle
-			}
-		case j.ti == cstDispSparse:
-			// dst is a slice of the (already-zeroed) bitmapBuf; decodeSparseBitTable
-			// will OR in the set bits. The slice has cap == len so reuse-from-prior
-			// chunk is safe — the slice's window is exclusive to this huff0 block.
-			for k := range j.dst {
-				j.dst[k] = 0
-			}
-			if e := decodeSparseBitTable(j.dst, j.src); e != nil {
-				return e
-			}
-		}
-		return nil
-	}
-
 	if nBlocks == 1 {
-		if derr := doJob(jobs[0]); derr != nil {
+		if derr := dec.runJob(jobs[0]); derr != nil {
 			err = derr
 			return
 		}
@@ -996,9 +1005,9 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 		var derr error
 		for _, j := range jobs {
 			wg.Add(1)
-			go func(j job) {
+			go func(j cstJob) {
 				defer wg.Done()
-				if e := doJob(j); e != nil {
+				if e := dec.runJob(j); e != nil {
 					derrMu.Lock()
 					if derr == nil {
 						derr = e
