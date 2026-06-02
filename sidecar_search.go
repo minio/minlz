@@ -175,6 +175,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 	s.sideMaxBlk = mb
 	if s.maxBlock > mb {
 		// Cap to sidecar's max block size (matches the main stream's).
+		s.maxBlock = mb
 	}
 
 	// Pending decode batch — list of refs whose pending tables don't prove
@@ -584,8 +585,12 @@ func (s *SidecarSearcher) decodeBatch(batch []pendingDecode, pattern []byte, fn 
 		if end > len(buf) {
 			// Fall back to a per-block ReadAt for this oversize block.
 			full := make([]byte, 4+cl)
-			if _, e := s.main.ReadAt(full, pd.ref.offset); e != nil && !errors.Is(e, io.EOF) {
+			n, e := s.main.ReadAt(full, pd.ref.offset)
+			if e != nil && !errors.Is(e, io.EOF) {
 				return e
+			}
+			if n != len(full) {
+				return io.ErrUnexpectedEOF
 			}
 			if err := s.processBlock(ct, cl, full[4:], pd, pattern, fn); err != nil {
 				return err
@@ -857,8 +862,12 @@ func readAndDecodeMainBlock(main io.ReaderAt, offset int64, uncomp, maxBlock int
 	if 4+cl > len(buf) {
 		// Read more.
 		extra := make([]byte, 4+cl)
-		if _, err := main.ReadAt(extra, offset); err != nil && !errors.Is(err, io.EOF) {
+		n, err := main.ReadAt(extra, offset)
+		if err != nil && !errors.Is(err, io.EOF) {
 			return nil, err
+		}
+		if n != len(extra) {
+			return nil, io.ErrUnexpectedEOF
 		}
 		buf = extra
 	}

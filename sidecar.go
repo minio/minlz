@@ -548,7 +548,7 @@ func BuildSidecar(dst io.Writer, src io.Reader, opts ...SidecarOption) error {
 // If newStreamDst is non-nil, src is also re-emitted to it WITHOUT the
 // search-table chunks; sidecar offsets reference the new layout. The seek
 // index (chunk 0x40) in src is dropped and a fresh one is appended to
-// newStreamDst before EOF.
+// newStreamDst after the EOF chunk (mirroring Writer.closeIndex).
 //
 // If newStreamDst is nil, sidecar offsets reference src's original layout
 // and src must be the stream used for subsequent searches.

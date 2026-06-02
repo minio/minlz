@@ -42,7 +42,8 @@ func makeTestData(n int) []byte {
 	return buf.Bytes()[:n]
 }
 
-// countOccurrences counts non-overlapping occurrences of pattern in data.
+// countOccurrences counts overlapping occurrences of pattern in data
+// (advances by 1 each match, matching the searcher's semantics).
 func countOccurrences(data, pattern []byte) int {
 	n := 0
 	off := 0

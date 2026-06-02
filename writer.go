@@ -115,8 +115,9 @@ type Writer struct {
 	// sidecarHeaderWritten tracks whether the sidecar stream header and
 	// 0x44 info chunk have been emitted.
 	sidecarHeaderWritten bool
-	// sidecarMaxBlockMinus encodes (max - actual) for the 0x47 chunks;
-	// derived from w.blockSize at first emit.
+	// sidecarMaxBlock is the stream's max block size; used to compute the
+	// (max - actual) field encoded in 0x47 chunks. Derived from w.blockSize
+	// at first emit.
 	sidecarMaxBlock int
 
 	// wroteStreamHeader is whether we have written the stream header.
@@ -1345,12 +1346,21 @@ func (w *Writer) writeSidecarStartIfNeeded() error {
 	if w.sidecarHeaderWritten {
 		return nil
 	}
-	if _, err := w.sidecar.Write(makeHeader(w.blockSize)); err != nil {
+	hdr := makeHeader(w.blockSize)
+	n, err := w.sidecar.Write(hdr)
+	if err != nil {
 		return w.err(err)
 	}
+	if n != len(hdr) {
+		return w.err(io.ErrShortWrite)
+	}
 	info := w.searchCfg.marshalSearchInfoChunk()
-	if _, err := w.sidecar.Write(info); err != nil {
+	n, err = w.sidecar.Write(info)
+	if err != nil {
 		return w.err(err)
+	}
+	if n != len(info) {
+		return w.err(io.ErrShortWrite)
 	}
 	w.sidecarHeaderWritten = true
 	return nil
@@ -1362,8 +1372,12 @@ func (w *Writer) writeSidecarStartIfNeeded() error {
 func (w *Writer) writeSidecarRemoteRef(mainOffset int64, uncompSize int) error {
 	var rb [4 + binary.MaxVarintLen64*2]byte
 	chunk := appendRemoteBlockRef(rb[:0], mainOffset, w.sidecarMaxBlock-uncompSize)
-	if _, err := w.sidecar.Write(chunk); err != nil {
+	n, err := w.sidecar.Write(chunk)
+	if err != nil {
 		return w.err(err)
+	}
+	if n != len(chunk) {
+		return w.err(io.ErrShortWrite)
 	}
 	return nil
 }
@@ -1382,8 +1396,13 @@ func (w *Writer) writeSidecarEOF() error {
 	// Sidecar carries no uncompressed payload — encode 0.
 	n := binary.PutUvarint(tmp[4:], 0)
 	tmp[1] = uint8(n)
-	if _, err := w.sidecar.Write(tmp[:4+n]); err != nil {
+	buf := tmp[:4+n]
+	wn, err := w.sidecar.Write(buf)
+	if err != nil {
 		return w.err(err)
+	}
+	if wn != len(buf) {
+		return w.err(io.ErrShortWrite)
 	}
 	return nil
 }
