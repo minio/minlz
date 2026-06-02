@@ -33,15 +33,16 @@ const (
 // SearchTableConfig configures search table generation for a Writer.
 // Use NewSearchTableConfig to create, then chain With* methods to customize.
 type SearchTableConfig struct {
-	matchLen         uint8
-	tableType        uint8
-	baseTableSize    uint8 // log2, computed at writer init from block size
-	prefixBytes      [8]byte
-	prefixMask       [32]byte
-	longPrefix       []byte
-	maxPopPct        int
-	maxReducedPopPct int
-	compression      *compressedOpts // nil = emit 0x45 only
+	matchLen            uint8
+	tableType           uint8
+	baseTableSize       uint8 // log2, computed at writer init from block size
+	prefixBytes         [8]byte
+	prefixMask          [32]byte
+	longPrefix          []byte
+	maxPopPct           int
+	maxReducedPopPct    int
+	maxReducedPopPctSet bool            // true once WithMaxReducedPopulation has been called
+	compression         *compressedOpts // nil = emit 0x45 only
 }
 
 // String returns a one-line, human-readable summary of the search table
@@ -81,13 +82,19 @@ func (c SearchTableConfig) String() string {
 }
 
 // NewSearchTableConfig creates a search table config.
-// Defaults: matchLen=6, no prefix (type 1), auto table size, 70% max population, 25% max conflicts.
+// Defaults: matchLen=6, no prefix (type 1), auto table size, 70% max
+// population, 25% max reduced population (auto-tightened to 10% when a prefix
+// is configured), compression on.
 func NewSearchTableConfig() SearchTableConfig {
 	return SearchTableConfig{
 		matchLen:         6,
 		tableType:        searchTableTypeNoPrefix,
 		maxPopPct:        defaultMaxPopPct,
 		maxReducedPopPct: defaultMaxReducedPopPct,
+		compression: &compressedOpts{
+			enabled:         true,
+			skipPctTimes100: cstDefaultSkipPctTimes100,
+		},
 	}
 }
 
@@ -143,15 +150,21 @@ func (c SearchTableConfig) WithMaxPopulation(pct int) SearchTableConfig {
 
 // WithMaxReducedPopulation sets the max population percentage (0-100) for the
 // reduced table. Reductions stop before exceeding this threshold.
+//
+// Default is 25%, automatically tightened to 10% when a prefix is configured
+// (byte/mask/long). Calling this method disables that auto-tightening — the
+// supplied value is used regardless of prefix.
 func (c SearchTableConfig) WithMaxReducedPopulation(pct int) SearchTableConfig {
 	c.maxReducedPopPct = pct
+	c.maxReducedPopPctSet = true
 	return c
 }
 
-// WithCompression enables huff0 compression of per-block search tables.
-// This will reduce search index size on high quality search indexes,
-// with low population count.
-// Search Indexes that can only be marginally compressed are stored uncompressed.
+// WithCompression enables huff0 compression of per-block search tables and
+// optionally tunes it. Compression is on by default — call this only to pass
+// non-default options.
+//
+// Search indexes that can only be marginally compressed are stored uncompressed.
 //
 // With no options, defaults are: 10.0% popcount band, no stats hook,
 // non-forced (emit compressed only when smaller).
@@ -165,6 +178,24 @@ func (c SearchTableConfig) WithCompression(opts ...CompressedSearchOption) Searc
 	}
 	c.compression = co
 	return c
+}
+
+// WithoutCompression disables the per-block search-table compression that is
+// on by default. The stream will emit only 0x45 chunks; readers that don't
+// implement 0x46 can read it.
+func (c SearchTableConfig) WithoutCompression() SearchTableConfig {
+	c.compression = nil
+	return c
+}
+
+// resolveDefaults applies context-dependent defaults that were not set
+// explicitly by the caller. Currently: tightens maxReducedPopPct to 10 when a
+// prefix is configured and WithMaxReducedPopulation was not called.
+// Must be called once the tableType is final.
+func (c *SearchTableConfig) resolveDefaults() {
+	if !c.maxReducedPopPctSet && c.tableType != searchTableTypeNoPrefix {
+		c.maxReducedPopPct = 10
+	}
 }
 
 func (c *SearchTableConfig) validate() error {

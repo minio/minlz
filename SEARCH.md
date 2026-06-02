@@ -113,19 +113,18 @@ most from a sparser table.
 
 Defaults:
 
-- Library default: 25 %.
-- `mz` CLI default: 50 %, automatically tightened (halved with prefix or
-  compression, divided by 3 with both) since [prefixed tables](#prefixes)
-  and [compressed tables](#compressed-search-tables-opt-in) both want
-  sparser bitmaps.
+- Library and `mz` CLI default: 25 %, automatically tightened to 10 % when a
+  prefix is configured (byte/mask/long). Calling
+  `WithMaxReducedPopulation` (library) or `-search.lim` (CLI) overrides the
+  auto-tightening with the supplied value.
 
 ```go
 cfg := minlz.NewSearchTableConfig().WithMaxReducedPopulation(30)
 ```
 
-When compression is on, lower limits (<20 %) has much less of an impact on
-stream size than the default because the extra bytes spent on a larger bitmap
-are recovered by the huff0 / sparse encoding.
+Compression is on by default; the extra bytes spent on a larger bitmap are
+recovered by the huff0 / sparse encoding, so lower limits (<20 %) hardly
+affect stream size compared to the default.
 
 ### Table Max Population Size
 
@@ -144,11 +143,11 @@ with higher false-positive rates.
 cfg := minlz.NewSearchTableConfig().WithMaxPopulation(50)
 ```
 
-### Compressed Search Tables (opt-in)
+### Compressed Search Tables
 
-Search-table bitmaps can optionally be stored compressed. This is a stream-
-level opt-in: the encoder shrinks each per-block bitmap when doing so saves
-bytes, and the decoder unpacks it on the fly during search.
+Search-table bitmaps are stored compressed by default: the encoder shrinks
+each per-block bitmap when doing so saves bytes, and the decoder unpacks it
+on the fly during search.
 
 When it helps most:
 
@@ -166,15 +165,16 @@ When it makes little difference:
   nothing to compress. The encoder detects this and skips the compressed
   form by default.
 
-Enable it via `WithCompression` on the search table config:
+To turn it off:
 
 ```go
-// Defaults: 10 % popcount band, no stats hook.
-cfg := minlz.NewSearchTableConfig().WithCompression()
+cfg := minlz.NewSearchTableConfig().WithoutCompression()
 w := minlz.NewWriter(out, minlz.WriterSearchTable(cfg))
 ```
 
-Tuning options (all optional):
+…or from the CLI: `mz c -search -search.uncompressed file.log`.
+
+Tuning options (all optional, pass to `WithCompression(...)`):
 
 | Option                                   | Description                                                                                       |
 |------------------------------------------|---------------------------------------------------------------------------------------------------|
@@ -182,10 +182,9 @@ Tuning options (all optional):
 | `CompressedSearchStatsHook(fn)`          | Per-bitmap callback with disposition counts and on-wire sizes — useful for tuning.                |
 | `CompressedSearchForce()`                | Emit the compressed chunk even when larger than the uncompressed form. Benchmarking only.         |
 
-When compression is enabled, the recommended `MaxReducedPopulation` is
-lower than the default — leaving tables sparser pays off because the bytes
-shrink so much. The `mz` CLI does this automatically; for library use,
-call `.WithMaxReducedPopulation(15)` (or pass `-search.lim` to `mz`).
+The library auto-tightens `MaxReducedPopulation` to 10 when a prefix is
+configured (see [Table Reduction Limit](#table-reduction-limit)) — sparser
+tables compress better.
 
 Decoding is transparent: a `BlockSearcher` over a stream that mixes
 compressed and uncompressed search tables handles both with no caller
@@ -194,7 +193,9 @@ search throughput is unchanged in practice.
 
 For format details see `SPEC_SEARCH.md` §2.2 / §2.2.1.
 
-Some decoders may not support compressed search tables.
+Some decoders may not support compressed search tables — use
+`WithoutCompression()` (or `-search.uncompressed`) if you need to interoperate
+with them.
 
 ### Prefixes
 
@@ -387,20 +388,19 @@ on compressed files.
 
 **Compression with search tables:**
 ```
-mz c -search file.log                              # default matchLen=6, no prefix
+mz c -search file.log                              # default matchLen=6, no prefix, compressed tables
 mz c -search -search.len=4 file.log                # matchLen=4
 mz c -search -search.prefixes='":'  file.log       # byte prefixes " and :
 mz c -search -search.prefix='id:"' file.log        # long prefix
 mz c -search -search.max=50 -search.lim=30 file.log # custom population limits
 mz c -bs=1MB -search file.log                       # 1MB blocks (more granular skipping)
-mz c -search -search.compress file.log              # also compress the search tables
-mz c -search -search.compress -search.compress.skip=5 file.log # tighter popcount band
+mz c -search -search.uncompressed file.log          # disable per-block table compression
+mz c -search -search.compress.skip=5 file.log       # tighter popcount band around 50%
 ```
 
-When `-search.compress` is set, `-search.lim` is automatically tightened
-(divided by 2 with a prefix or compression, by 3 with both) so the encoder
-keeps larger, sparser bitmaps that compress better. Override `-search.lim`
-to taste — lower values produce sparser, more compressible tables.
+`-search.lim` defaults to 25 %, auto-tightened to 10 % when a prefix is set.
+Pass the flag explicitly to override (lower = sparser tables, more
+compressible).
 
 **Searching compressed files:**
 ```
@@ -448,15 +448,17 @@ serialization automatically.
 
 Configuration methods:
 
-| Method                          | Description                                         |
-|---------------------------------|-----------------------------------------------------|
-| `NewSearchTableConfig()`        | Create config with defaults (matchLen=6, no prefix) |
-| `WithMatchLen(n)`               | Set match length 1–8                                |
-| `WithBytePrefix(b...)`          | Set 1–8 prefix bytes (>8 auto-promotes to bitmask)  |
-| `WithMaskPrefix(mask)`          | Set a 256-bit prefix bitmask                        |
-| `WithLongPrefix(p)`             | Set a multi-byte prefix (1–256 bytes)               |
-| `WithMaxPopulation(pct)`        | Discard tables above this population % (default 70) |
-| `WithMaxReducedPopulation(pct)` | Stop reducing above this population % (default 25)  |
+| Method                          | Description                                                    |
+|---------------------------------|----------------------------------------------------------------|
+| `NewSearchTableConfig()`        | Create config with defaults (matchLen=6, no prefix, compressed)|
+| `WithMatchLen(n)`               | Set match length 1–8                                           |
+| `WithBytePrefix(b...)`          | Set 1–8 prefix bytes (>8 auto-promotes to bitmask)             |
+| `WithMaskPrefix(mask)`          | Set a 256-bit prefix bitmask                                   |
+| `WithLongPrefix(p)`             | Set a multi-byte prefix (1–256 bytes)                          |
+| `WithMaxPopulation(pct)`        | Discard tables above this population % (default 70)            |
+| `WithMaxReducedPopulation(pct)` | Stop reducing above this population % (default 25, 10 w/prefix)|
+| `WithCompression(opts...)`      | Tune the per-block table compression (on by default)           |
+| `WithoutCompression()`          | Disable per-block table compression (emit 0x45 only)           |
 
 Decompressing the stream will ignore the search tables.
 

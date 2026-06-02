@@ -339,6 +339,7 @@ func BuildSidecar(dst io.Writer, src io.Reader, opts ...SidecarOption) error {
 		if o.cfgs[i].baseTableSize < searchTableMinLog2 {
 			return fmt.Errorf("minlz: block size %d too small for search tables", maxBlock)
 		}
+		o.cfgs[i].resolveDefaults()
 	}
 
 	// Compute the largest matchLen across configs — we need (matchLen-1)
@@ -512,6 +513,7 @@ func BuildSidecar(dst io.Writer, src io.Reader, opts ...SidecarOption) error {
 				if o.cfgs[i].baseTableSize < searchTableMinLog2 {
 					return fmt.Errorf("minlz: block size %d too small for search tables", newBs)
 				}
+				o.cfgs[i].resolveDefaults()
 			}
 			if _, err := dst.Write(makeHeader(newBs)); err != nil {
 				return err

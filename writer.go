@@ -53,6 +53,7 @@ func NewWriter(w io.Writer, opts ...WriterOption) *Writer {
 				w2.blockSize, 1<<searchTableMinLog2)
 			return &w2
 		}
+		w2.searchCfg.resolveDefaults()
 	}
 	if w2.sidecar != nil {
 		if w2.searchCfg == nil {

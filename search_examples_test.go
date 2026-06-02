@@ -296,8 +296,11 @@ func ExampleSearchStats_Fprint() {
 	// Blocks searched: 1 (50.0%), false positive: 0 (0.0%)
 	// Bytes skipped: <N> compressed, searched: 8192 uncompressed
 	// Tables: 2 present, 0 missing, 0 unusable
-	// Table bits/byte: 0.0430, log2: 8.0, avg reductions: 5.0
-	// Table total: 88 bytes, avg 44 bytes/table, 0.54% of 16384 uncompressed
+	// Table bits/byte: 0.0225, log2: 8.0, avg reductions: 5.0
+	// Table total: 46 bytes, avg 23 bytes/table, 0.28% of 16384 uncompressed
 	// Table population: avg 2.7%, min 1.6%, max 3.9%
-	// Table types: 2 uncompressed (0x45), 0 compressed (0x46)
+	// Table types: 0 uncompressed (0x45), 2 compressed (0x46)
+	// Compressed tables: 2 (100.0% of total), 46 wire bytes, 64 uncompressed bitmap bytes (71.88% ratio)
+	// huff0 sub-blocks: 2 total (0 tabled, 0 raw, 0 RLE, 2 sparse); 0 tables emitted (share=0.00 tables/tabled-block)
+	//   payload bytes: tabled=0 raw=0 RLE=0 sparse=16; table-header bytes=0
 }

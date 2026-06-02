@@ -48,15 +48,15 @@ func mainCompress(args []string) {
 		blockSize       = fs.String("bs", "8M", "Max block size. Examples: 64K, 256K, 1M, 8M. Must be power of two and <= 8MB")
 		index           = fs.Bool("index", true, "Add seek index")
 		padding         = fs.String("pad", "1", "Pad size to a multiple of this value, Examples: 500, 64K, 256K, 1M, 4M, etc")
-		searchTable     = fs.Bool("search", false, "Add search table")
-		searchLen       = fs.Int("search.len", 6, "Add search tables with given match length (1-8)")
-		searchPfx       = fs.String("search.prefixes", "", "Search table prefix bytes (e.g. '=', '=:')")
-		searchPfxString = fs.String("search.prefix", "", "Single value longer prefix, eg 'id:\\\"'")
-		searchMax       = fs.Int("search.max", 75, "Discards search table entries with a population percentage higher than this")
-		searchLim       = fs.Int("search.lim", 50, "Stops reducing search tables if population exceeds this percentage. Divided by 2 when prefix or compression is enabled, by 3 when both are enabled")
-		searchComp      = fs.Bool("search.compress", false, "Compress search tables with huff0 (chunk type 0x46)")
-		searchCompSkip  = fs.Float64("search.compress.skip", 10.0, "Skip search table compression when |popcount - 50%| < this percentage")
-		searchSidecar   = fs.Bool("search.sidecar", false, "Emit search index to a sidecar file (<output>"+minlzSidecarExt+") instead of inline in the main stream")
+		searchTable        = fs.Bool("search", false, "Add search table")
+		searchLen          = fs.Int("search.len", 6, "Add search tables with given match length (1-8)")
+		searchPfx          = fs.String("search.prefixes", "", "Search table prefix bytes (e.g. '=', '=:')")
+		searchPfxString    = fs.String("search.prefix", "", "Single value longer prefix, eg 'id:\\\"'")
+		searchMax          = fs.Int("search.max", 75, "Discards search table entries with a population percentage higher than this")
+		searchLim          = fs.Int("search.lim", 25, "Stops reducing search tables when reduced population exceeds this percentage. Auto-tightened to 10 when a prefix is set, unless explicitly overridden.")
+		searchUncompressed = fs.Bool("search.uncompressed", false, "Disable per-block search-table compression (default emits 0x46 chunks)")
+		searchCompSkip     = fs.Float64("search.compress.skip", 10.0, "Skip search table compression when |popcount - 50%| < this percentage")
+		searchSidecar      = fs.Bool("search.sidecar", false, "Emit search index to a sidecar file (<output>"+minlzSidecarExt+") instead of inline in the main stream")
 
 		// Shared
 		block  = fs.Bool("block", false, "Use as a single block. Will load content into memory. Max 8MB.")
@@ -140,27 +140,33 @@ Options:`)
 		if *searchLim < 1 || *searchLim > 100 {
 			exitErr(fmt.Errorf("search limit must be between 1 and 100"))
 		}
-		cfg := minlz.NewSearchTableConfig().WithMatchLen(*searchLen)
-		hasPrefix := false
+		cfg := minlz.NewSearchTableConfig().WithMatchLen(*searchLen).WithMaxPopulation(*searchMax)
 		if len(*searchPfxString) == 1 {
 			cfg = cfg.WithBytePrefix((*searchPfxString)[0])
-			hasPrefix = true
 		} else if len(*searchPfxString) > 1 {
 			cfg = cfg.WithLongPrefix([]byte(*searchPfxString))
-			hasPrefix = true
 		} else if len(*searchPfx) > 0 {
 			cfg = cfg.WithBytePrefix([]byte(*searchPfx)...)
-			hasPrefix = true
 		}
-		div := 1
+		searchLimSet := false
+		searchCompSkipSet := false
+		fs.Visit(func(f *flag.Flag) {
+			switch f.Name {
+			case "search.lim":
+				searchLimSet = true
+			case "search.compress.skip":
+				searchCompSkipSet = true
+			}
+		})
+		if searchLimSet {
+			cfg = cfg.WithMaxReducedPopulation(*searchLim)
+		}
 		switch {
-		case *searchComp && hasPrefix:
-			div = 3
-		case hasPrefix || *searchComp:
-			div = 2
-		}
-		cfg = cfg.WithMaxReducedPopulation(*searchLim / div)
-		if *searchComp {
+		case *searchUncompressed && searchCompSkipSet:
+			exitErr(errors.New("-search.uncompressed conflicts with -search.compress.skip"))
+		case *searchUncompressed:
+			cfg = cfg.WithoutCompression()
+		case searchCompSkipSet:
 			cfg = cfg.WithCompression(minlz.CompressedSearchSkipPct(*searchCompSkip))
 		}
 		opts = append(opts, minlz.WriterSearchTable(cfg))

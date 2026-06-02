@@ -712,7 +712,7 @@ func TestWriterSearchTable(t *testing.T) {
 		switch chunkType {
 		case chunkTypeSearchInfo:
 			hasInfo = true
-		case chunkTypeSearchTable:
+		case chunkTypeSearchTable, chunkTypeSearchTableCompressed:
 			hasTable = true
 		}
 		switch chunkType {
@@ -728,7 +728,7 @@ func TestWriterSearchTable(t *testing.T) {
 		t.Error("no 0x44 search info chunk found in output")
 	}
 	if !hasTable {
-		t.Error("no 0x45 search table chunk found in output")
+		t.Error("no 0x45/0x46 search table chunk found in output")
 	}
 
 	// Verify the stream is still decodable by the regular reader.
@@ -1186,6 +1186,13 @@ func TestBlockTableIndexCorrectness(t *testing.T) {
 					pos += chunkLen
 				case chunkTypeSearchTable:
 					cfg, red, tbl, err := parseSearchTable(stream[pos:pos+chunkLen], false)
+					if err != nil {
+						t.Fatal(err)
+					}
+					pendingTable = &blockTable{cfg: cfg, reductions: red, table: tbl}
+					pos += chunkLen
+				case chunkTypeSearchTableCompressed:
+					cfg, red, tbl, err := parseSearchTableCompressed(stream[pos:pos+chunkLen], newCSTDecoder(), false)
 					if err != nil {
 						t.Fatal(err)
 					}

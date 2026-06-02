@@ -65,16 +65,16 @@ func mainSidecarBuild(args []string) {
 	var (
 		fs = flag.NewFlagSet("sidecar build", flag.ExitOnError)
 
-		outFile       = fs.String("o", "", "Sidecar output filename (default: <input>"+minlzSidecarExt+")")
-		searchLens    = fs.String("search.lens", "6", "Comma-separated list of match lengths (1-8); one config per length")
-		searchPfx     = fs.String("search.prefixes", "", "Search prefix bytes (e.g. ':,\"')")
-		searchPfxLong = fs.String("search.prefix", "", "Single longer prefix string (e.g. 'id\":\"')")
-		searchMax     = fs.Int("search.max", 75, "Discard search-table entries with population % > this")
-		searchLim     = fs.Int("search.lim", 50, "Stop reducing search tables when reduced population exceeds this %")
-		searchComp    = fs.Bool("search.compress", false, "Compress search tables with huff0 (chunk type 0x46)")
-		safe          = fs.Bool("safe", false, "Do not overwrite an existing sidecar")
-		quiet         = fs.Bool("q", false, "Quiet")
-		help          = fs.Bool("help", false, "Display help")
+		outFile            = fs.String("o", "", "Sidecar output filename (default: <input>"+minlzSidecarExt+")")
+		searchLens         = fs.String("search.lens", "6", "Comma-separated list of match lengths (1-8); one config per length")
+		searchPfx          = fs.String("search.prefixes", "", "Search prefix bytes (e.g. ':,\"')")
+		searchPfxLong      = fs.String("search.prefix", "", "Single longer prefix string (e.g. 'id\":\"')")
+		searchMax          = fs.Int("search.max", 75, "Discard search-table entries with population % > this")
+		searchLim          = fs.Int("search.lim", 25, "Stop reducing search tables when reduced population exceeds this %. Auto-tightened to 10 when a prefix is set, unless explicitly overridden.")
+		searchUncompressed = fs.Bool("search.uncompressed", false, "Disable per-block search-table compression (default emits 0x46 chunks)")
+		safe               = fs.Bool("safe", false, "Do not overwrite an existing sidecar")
+		quiet              = fs.Bool("q", false, "Quiet")
+		help               = fs.Bool("help", false, "Display help")
 	)
 	fs.Usage = func() {
 		w := fs.Output()
@@ -111,10 +111,15 @@ Options:`)
 	if len(lens) == 0 {
 		exitErr(errors.New("at least one --search.lens value required"))
 	}
-	hasPrefix := len(*searchPfx) > 0 || len(*searchPfxLong) > 0
-	if hasPrefix && len(*searchPfx) > 0 && len(*searchPfxLong) > 0 {
+	if len(*searchPfx) > 0 && len(*searchPfxLong) > 0 {
 		exitErr(errors.New("cannot use both --search.prefix and --search.prefixes"))
 	}
+	searchLimSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "search.lim" {
+			searchLimSet = true
+		}
+	})
 	var opts []minlz.SidecarOption
 	for _, ls := range lens {
 		ls = strings.TrimSpace(ls)
@@ -128,7 +133,7 @@ Options:`)
 		if n < 1 || n > 8 {
 			exitErr(fmt.Errorf("--search.lens %d out of range (1-8)", n))
 		}
-		cfg := minlz.NewSearchTableConfig().WithMatchLen(n)
+		cfg := minlz.NewSearchTableConfig().WithMatchLen(n).WithMaxPopulation(*searchMax)
 		if len(*searchPfxLong) == 1 {
 			cfg = cfg.WithBytePrefix((*searchPfxLong)[0])
 		} else if len(*searchPfxLong) > 1 {
@@ -136,16 +141,11 @@ Options:`)
 		} else if len(*searchPfx) > 0 {
 			cfg = cfg.WithBytePrefix([]byte(*searchPfx)...)
 		}
-		div := 1
-		switch {
-		case *searchComp && hasPrefix:
-			div = 3
-		case hasPrefix || *searchComp:
-			div = 2
+		if searchLimSet {
+			cfg = cfg.WithMaxReducedPopulation(*searchLim)
 		}
-		cfg = cfg.WithMaxPopulation(*searchMax).WithMaxReducedPopulation(*searchLim / div)
-		if *searchComp {
-			cfg = cfg.WithCompression()
+		if *searchUncompressed {
+			cfg = cfg.WithoutCompression()
 		}
 		opts = append(opts, minlz.SidecarSearchTable(cfg))
 	}
