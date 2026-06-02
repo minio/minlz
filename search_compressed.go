@@ -811,7 +811,7 @@ func newCSTDecoder() *cstDecoder { return &cstDecoder{} }
 // runJob executes a single cstJob (decode/copy/RLE/sparse). Kept as a method
 // rather than a closure so parseSearchTableCompressed doesn't allocate a
 // closure on the heap when goroutines capture it.
-func (dec *cstDecoder) runJob(j cstJob) error {
+func (dec *cstDecoder) runJob(j *cstJob) error {
 	switch {
 	case j.ti <= 15:
 		out, derr := dec.decoders[j.ti].Decompress4X(j.dst[:0], j.src)
@@ -995,7 +995,7 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 	}
 
 	if nBlocks == 1 {
-		if derr := dec.runJob(jobs[0]); derr != nil {
+		if derr := dec.runJob(&jobs[0]); derr != nil {
 			err = derr
 			return
 		}
@@ -1003,9 +1003,9 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 		var wg sync.WaitGroup
 		var derrMu sync.Mutex
 		var derr error
-		for _, j := range jobs {
+		for i := range jobs {
 			wg.Add(1)
-			go func(j cstJob) {
+			go func(j *cstJob) {
 				defer wg.Done()
 				if e := dec.runJob(j); e != nil {
 					derrMu.Lock()
@@ -1014,7 +1014,7 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 					}
 					derrMu.Unlock()
 				}
-			}(j)
+			}(&jobs[i])
 		}
 		wg.Wait()
 		if derr != nil {

@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -511,6 +513,69 @@ func TestSidecarSearcher_ReadAtCoalescing(t *testing.T) {
 	}
 	if calls == 0 {
 		t.Fatalf("no ReadAt calls made")
+	}
+}
+
+// rangeRecorderReaderAt records every ReadAt(off, len) range. Used to verify
+// that the searcher never reads the same main-stream region twice.
+type rangeRecorderReaderAt struct {
+	r      io.ReaderAt
+	mu     sync.Mutex
+	ranges [][2]int64
+}
+
+func (r *rangeRecorderReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	n, err := r.r.ReadAt(p, off)
+	r.mu.Lock()
+	r.ranges = append(r.ranges, [2]int64{off, off + int64(n)})
+	r.mu.Unlock()
+	return n, err
+}
+
+// TestSidecarSearcher_NoBlockReadTwice verifies that across a full search,
+// no byte of the main stream is fetched by more than one ReadAt. Mixes
+// matching and non-matching patterns so the searcher's skip + must-decode +
+// batched-decode paths all participate.
+func TestSidecarSearcher_NoBlockReadTwice(t *testing.T) {
+	data := makeTestData(600 << 10) // ~10 blocks @ 64KB
+	var main, side bytes.Buffer
+	w := NewWriter(&main,
+		WriterBlockSize(64<<10),
+		WriterConcurrency(1),
+		WriterSearchTable(NewSearchTableConfig().WithMatchLen(6)),
+		WriterSidecar(&side),
+	)
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, pat := range [][]byte{
+		[]byte("needle in the haystack"), // matches some blocks
+		[]byte(`"level":"WARN"`),         // matches some blocks
+		[]byte("absolutely-not-present"), // matches nothing → all-skip
+		[]byte(`shutting down`),          // matches some blocks
+	} {
+		t.Run(string(pat), func(t *testing.T) {
+			rr := &rangeRecorderReaderAt{r: bytes.NewReader(main.Bytes())}
+			ss := NewSidecarSearcher(rr, bytes.NewReader(side.Bytes()))
+			if err := ss.Search(pat, func(SearchResult) error { return nil }); err != nil {
+				t.Fatalf("search: %v", err)
+			}
+			rr.mu.Lock()
+			ranges := rr.ranges
+			rr.mu.Unlock()
+			sort.Slice(ranges, func(i, j int) bool { return ranges[i][0] < ranges[j][0] })
+			for i := 1; i < len(ranges); i++ {
+				if ranges[i][0] < ranges[i-1][1] {
+					t.Errorf("overlapping main reads: [%d,%d) then [%d,%d)",
+						ranges[i-1][0], ranges[i-1][1],
+						ranges[i][0], ranges[i][1])
+				}
+			}
+		})
 	}
 }
 
@@ -1108,4 +1173,54 @@ func TestSidecarSearcher_BailOnMissing(t *testing.T) {
 		// ErrSearchTablesUnusable expected.
 		t.Fatalf("got err=%v, want ErrSearchTablesUnusable", err)
 	}
+}
+
+// Sidecar counterpart to BenchmarkSearchCompressedVsUncompressed in
+// search_compressed_test.go. Walks a sidecar (with search tables) and a main
+// stream (data only) via io.ReaderAt. Pattern is absent from the random data
+// and outside its byte range, so every block is skipped via the sidecar's
+// table — the main stream should not be touched.
+func BenchmarkSidecarSearchCompressedVsUncompressed(b *testing.B) {
+	rng := rand.New(rand.NewSource(7))
+	data := make([]byte, 256<<20)
+	for i := range data {
+		data[i] = byte(rng.Intn(8))
+	}
+	pattern := []byte("needle-not-present")
+	build := func(useCompression bool) (main, side []byte) {
+		cfg := NewSearchTableConfig().WithMatchLen(4)
+		if !useCompression {
+			cfg = cfg.WithoutCompression()
+		} else {
+			cfg = cfg.WithCompression(CompressedSearchForce())
+		}
+		var mainBuf, sideBuf bytes.Buffer
+		mainBuf.Grow(len(data))
+		w := NewWriter(&mainBuf,
+			WriterLevel(LevelSmallest),
+			WriterSearchTable(cfg),
+			WriterSidecar(&sideBuf),
+			WriterBlockSize(1<<20),
+			WriterConcurrency(runtime.GOMAXPROCS(0)),
+		)
+		_, _ = w.Write(data)
+		_ = w.Close()
+		return mainBuf.Bytes(), sideBuf.Bytes()
+	}
+	run := func(b *testing.B, main, side []byte) {
+		b.SetBytes(int64(len(data)))
+		b.ReportAllocs()
+		ra := &countingReaderAt{r: bytes.NewReader(main)}
+		for b.Loop() {
+			ss := NewSidecarSearcher(ra, bytes.NewReader(side))
+			_ = ss.Search(pattern, func(SearchResult) error { return nil })
+		}
+		if n := ra.calls.Load(); n != 0 {
+			b.Fatalf("main stream was read %d times for an all-skip search", n)
+		}
+	}
+	mainU, sideU := build(false)
+	mainC, sideC := build(true)
+	b.Run("uncompressed", func(b *testing.B) { run(b, mainU, sideU) })
+	b.Run("compressed", func(b *testing.B) { run(b, mainC, sideC) })
 }

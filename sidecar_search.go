@@ -55,6 +55,10 @@ type SidecarSearcher struct {
 
 	// Tables accumulated between 0x45/0x46 chunks and the next 0x47.
 	pending []blockTableEntry
+	// tableBufs[i] is the reusable backing storage for pending[i].table.
+	// Reused across blocks so each new table can be copied into existing
+	// scratch instead of allocating a fresh slice.
+	tableBufs [][]byte
 
 	// At most one block can be deferred at a time (per SPEC_SEARCH B.4).
 	// When set, sideDeferred holds the block reference whose decision is
@@ -124,6 +128,28 @@ func NewSidecarSearcher(main io.ReaderAt, sidecar io.Reader, opts ...BlockSearch
 	s.infoCB = tmp.infoCallback
 	s.maxBlock = tmp.maxBlock
 	return s
+}
+
+// copyPendingTable copies table into s.tableBufs[len(s.pending)] (growing on
+// demand) and returns the copy. Reusing per-position buffers across blocks
+// avoids the per-block allocation that "append([]byte(nil), table...)" would
+// incur. Safe because pending tables only need to live until the next 0x47
+// chunk is consumed — by the time the next batch of tables starts arriving,
+// the prior batch's slot in tableBufs is no longer referenced.
+func (s *SidecarSearcher) copyPendingTable(table []byte) []byte {
+	i := len(s.pending)
+	for i >= len(s.tableBufs) {
+		s.tableBufs = append(s.tableBufs, nil)
+	}
+	buf := s.tableBufs[i]
+	if cap(buf) < len(table) {
+		buf = make([]byte, len(table))
+	} else {
+		buf = buf[:len(table)]
+	}
+	copy(buf, table)
+	s.tableBufs[i] = buf
+	return buf
 }
 
 // Stats returns search statistics accumulated during the last Search call.
@@ -210,6 +236,16 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			if err != nil {
 				return err
 			}
+			// Pre-size the per-position table scratch to the config's max
+			// bitmap (reductions=0 → 1<<(baseTableSize-3) bytes), so the
+			// per-block copyPendingTable copies into existing storage.
+			i := len(s.streamInfos)
+			for i >= len(s.tableBufs) {
+				s.tableBufs = append(s.tableBufs, nil)
+			}
+			if maxBmp := 1 << (cfg.baseTableSize - 3); cap(s.tableBufs[i]) < maxBmp {
+				s.tableBufs[i] = make([]byte, 0, maxBmp)
+			}
 			s.streamInfos = append(s.streamInfos, cfg)
 			if s.infoCB != nil {
 				s.infoCB(cfg)
@@ -224,8 +260,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			if err != nil {
 				return err
 			}
-			// Copy table — it points into a buffer we may overwrite.
-			tcopy := append([]byte(nil), table...)
+			tcopy := s.copyPendingTable(table)
 			s.pending = append(s.pending, blockTableEntry{cfg: cfg, reductions: reductions, table: tcopy})
 			if s.collectStats {
 				s.statsAccumTable(cfg.baseTableSize, reductions, tcopy, cl, false)
@@ -243,7 +278,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			if err != nil {
 				return err
 			}
-			tcopy := append([]byte(nil), table...)
+			tcopy := s.copyPendingTable(table)
 			s.pending = append(s.pending, blockTableEntry{cfg: cfg, reductions: reductions, table: tcopy})
 			if s.collectStats {
 				s.statsAccumTable(cfg.baseTableSize, reductions, tcopy, cl, true)

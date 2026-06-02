@@ -262,18 +262,18 @@ type BlockSearcher struct {
 	// across iterations to avoid a per-skipped-block heap alloc.
 	prevLazy      *lazyBlock
 	prevLazyStore lazyBlock
-	deferred     *deferredMatch // pending ErrSearchForward re-dispatch
-	pending      *pendingBlock  // block deferred pending next table check
-	cstDec       *cstDecoder    // lazy decoder state for 0x46 chunks
-	infoCallback func(SearchTableConfig)
-	maxBlock     int
-	readHeader   bool
-	ignoreCRC    bool
-	bail         bool // return error if tables can't answer query
-	collectStats bool
-	blockStart   int64
-	blockMatches int // matches found in current block (for false positive tracking)
-	stats        SearchStats
+	deferred      *deferredMatch // pending ErrSearchForward re-dispatch
+	pending       *pendingBlock  // block deferred pending next table check
+	cstDec        *cstDecoder    // lazy decoder state for 0x46 chunks
+	infoCallback  func(SearchTableConfig)
+	maxBlock      int
+	readHeader    bool
+	ignoreCRC     bool
+	bail          bool // return error if tables can't answer query
+	collectStats  bool
+	blockStart    int64
+	blockMatches  int // matches found in current block (for false positive tracking)
+	stats         SearchStats
 }
 
 // BlockSearchOption configures a BlockSearcher.
