@@ -2,11 +2,14 @@ package minlz
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"math/rand"
 	"strings"
 	"testing"
+
+	"github.com/minio/minlz/internal/reference"
 )
 
 // withBaseTableSize sets baseTableSize directly for unit testing.
@@ -2847,5 +2850,448 @@ func BenchmarkPatternCanMatch(b *testing.B) {
 				patternCanMatch(&cfg, table, reductions, pattern)
 			}
 		})
+	}
+}
+
+// TestSearchReferenceCrossImpl encodes a stream with the production Writer's
+// search-table support, then walks the resulting chunks and parses every
+// search-related chunk (0x44 / 0x45 / 0x46) with the new reference package.
+// Lookups against the reference must agree with the production hashes for
+// embedded substrings.
+func TestSearchReferenceCrossImpl(t *testing.T) {
+	// Build a synthetic block-sized body with known substrings.
+	const blockSize = 64 << 10
+	body := bytes.Repeat([]byte("alpha-beta-gamma-delta-"), blockSize/24)
+	body = append(body, []byte("UNIQUE-MARKER-7777")...)
+
+	var buf bytes.Buffer
+	cfg := NewSearchTableConfig().WithMatchLen(6)
+	w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(blockSize))
+	if _, err := w.Write(body); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	stream := buf.Bytes()
+	// First chunk must be stream identifier (0xff). Skip past it.
+	r := stream
+	if r[0] != 0xff {
+		t.Fatalf("expected stream identifier at offset 0, got 0x%x", r[0])
+	}
+
+	saw44 := false
+	saw45OrCompressed := false
+	matchedNeedle := false
+	needle := []byte("UNIQUE-MARKER-7")[:6] // 6-byte prefix; matchLen = 6
+
+	for len(r) >= 4 {
+		chunkType := r[0]
+		chunkLen := int(r[1]) | int(r[2])<<8 | int(r[3])<<16
+		if 4+chunkLen > len(r) {
+			t.Fatalf("chunk %x truncated: need %d have %d", chunkType, 4+chunkLen, len(r))
+		}
+		payload := r[4 : 4+chunkLen]
+
+		switch chunkType {
+		case reference.ChunkSearchInfo:
+			saw44 = true
+			refCfg, err := reference.ParseSearchInfoChunk(payload)
+			if err != nil {
+				t.Fatalf("ref.ParseSearchInfoChunk: %v", err)
+			}
+			if refCfg.MatchLen != 6 || refCfg.TableType != reference.TableTypeNoPrefix {
+				t.Fatalf("0x44 cross-parse: got %+v", refCfg)
+			}
+		case reference.ChunkSearchTable:
+			saw45OrCompressed = true
+			parsed, err := reference.ParseSearchTableChunk(payload)
+			if err != nil {
+				t.Fatalf("ref.ParseSearchTableChunk: %v", err)
+			}
+			if parsed.Contains(needle) {
+				matchedNeedle = true
+			}
+		case reference.ChunkSearchTableCompressed:
+			saw45OrCompressed = true
+			parsed, err := reference.ParseSearchTableCompressedChunk(payload)
+			if err != nil {
+				t.Fatalf("ref.ParseSearchTableCompressedChunk: %v", err)
+			}
+			if parsed.Contains(needle) {
+				matchedNeedle = true
+			}
+		}
+
+		r = r[4+chunkLen:]
+	}
+
+	if !saw44 {
+		t.Error("never saw 0x44 (SearchInfo) in the produced stream")
+	}
+	if !saw45OrCompressed {
+		t.Error("never saw 0x45/0x46 (SearchTable) in the produced stream")
+	}
+	if !matchedNeedle {
+		t.Errorf("reference Contains(%q) returned false for every block; expected at least one block to claim a match", needle)
+	}
+}
+
+// TestSearchReferenceProducesProductionReadable encodes a stream where the
+// reference *produces* the search chunks (alongside data the production writer
+// produces). For this we just ensure the reference encoder's output for 0x44/0x45
+// parses with the production parser via the existing BlockSearcher path.
+//
+// Concretely: build a small block, encode a 0x45 with the reference, then parse
+// the same payload with the production parseSearchTable.
+func TestSearchReferenceProducesProductionReadable(t *testing.T) {
+	block := bytes.Repeat([]byte("MinLZ "), 4096/6+1)[:4096]
+
+	refCfg := reference.SearchConfig{
+		MatchLen:      6,
+		BaseTableSize: 13,
+		TableType:     reference.TableTypeNoPrefix,
+	}
+	table, reductions := reference.BuildSearchTable(refCfg, block, nil)
+	chunk := reference.AppendSearchTableChunk(nil, refCfg, reductions, table)
+	if chunk[0] != reference.ChunkSearchTable {
+		t.Fatalf("unexpected chunk type %x", chunk[0])
+	}
+	// Verify the 3-byte little-endian size matches.
+	payloadLen := int(chunk[1]) | int(chunk[2])<<8 | int(chunk[3])<<16
+	if payloadLen != len(chunk)-4 {
+		t.Fatalf("size mismatch: header says %d, body has %d", payloadLen, len(chunk)-4)
+	}
+
+	// Production parser must accept it.
+	cfg, prodReductions, prodTable, err := parseSearchTable(chunk[4:], false)
+	if err != nil {
+		t.Fatalf("production parseSearchTable: %v", err)
+	}
+	if cfg.matchLen != refCfg.MatchLen || cfg.baseTableSize != refCfg.BaseTableSize {
+		t.Fatalf("config differs: prod %+v ref %+v", cfg, refCfg)
+	}
+	if prodReductions != reductions {
+		t.Fatalf("reductions differ: prod %d ref %d", prodReductions, reductions)
+	}
+	if !bytes.Equal(prodTable, table) {
+		t.Fatalf("table bytes differ: lens %d %d", len(prodTable), len(table))
+	}
+}
+
+// TestSearchReferenceHashAgreement verifies the reference HashValue produces
+// the same indices as the production hashValue for the same inputs across all
+// matchLens.
+func TestSearchReferenceHashAgreement(t *testing.T) {
+	values := []uint64{
+		0, 1, 0xff, 0x100, 0xdeadbeef, 0xcafebabe, 0xfeedfacecafe,
+		binary.LittleEndian.Uint64([]byte("MinLZ123")),
+		binary.LittleEndian.Uint64([]byte("\"id\":42#")),
+	}
+	for ts := uint8(8); ts <= 23; ts++ {
+		for ml := uint8(1); ml <= 8; ml++ {
+			for _, v := range values {
+				got := reference.HashValue(v, ts, ml)
+				want := hashValue(v, ts, ml)
+				if got != want {
+					t.Fatalf("HashValue(0x%x, ts=%d, ml=%d) ref=%d prod=%d", v, ts, ml, got, want)
+				}
+			}
+		}
+	}
+}
+
+// refToProd converts a reference SearchConfig into a production
+// SearchTableConfig (with the same wire-format fields set).
+func refToProd(r reference.SearchConfig) SearchTableConfig {
+	p := SearchTableConfig{
+		matchLen:         r.MatchLen,
+		baseTableSize:    r.BaseTableSize,
+		tableType:        r.TableType,
+		maxPopPct:        defaultMaxPopPct,
+		maxReducedPopPct: defaultMaxReducedPopPct,
+	}
+	copy(p.prefixBytes[:], r.PrefixBytes)
+	p.prefixMask = r.PrefixMask
+	if r.LongPrefix != nil {
+		p.longPrefix = append([]byte(nil), r.LongPrefix...)
+	}
+	return p
+}
+
+// refConfigs returns a representative reference SearchConfig per table type.
+func refConfigs() []reference.SearchConfig {
+	mask := [32]byte{}
+	mask['"'>>3] |= 1 << ('"' & 7)
+	mask[':'>>3] |= 1 << (':' & 7)
+	mask['='>>3] |= 1 << ('=' & 7)
+	return []reference.SearchConfig{
+		{MatchLen: 6, BaseTableSize: 13, TableType: reference.TableTypeNoPrefix},
+		{MatchLen: 4, BaseTableSize: 12, TableType: reference.TableTypeBytePrefix, PrefixBytes: []byte{'"', ':', '='}},
+		{MatchLen: 5, BaseTableSize: 11, TableType: reference.TableTypeMaskPrefix, PrefixMask: mask},
+		{MatchLen: 4, BaseTableSize: 10, TableType: reference.TableTypeLongPrefix, LongPrefix: []byte("\":\"")},
+	}
+}
+
+// configBody returns a synthetic block with embedded prefix-context substrings.
+func configBody() []byte {
+	body := bytes.Repeat([]byte("lorem ipsum dolor sit amet "), 200)
+	body = append(body, []byte("\"id\":\"alpha\" \"id\":\"beta\" name=widget end=true value:42 \":\"gamma\"")...)
+	return body[:4096]
+}
+
+func TestSearchReferenceConfig0x44Bidirectional(t *testing.T) {
+	for _, refCfg := range refConfigs() {
+		t.Run(tableTypeName(refCfg.TableType), func(t *testing.T) {
+			// Reference produces, production parses.
+			refChunk := reference.AppendSearchInfoChunk(nil, refCfg)
+			prodParsed, err := parseSearchInfo(refChunk[4:])
+			if err != nil {
+				t.Fatalf("production parseSearchInfo: %v", err)
+			}
+			assertConfigEquiv(t, "ref→prod", prodParsed, refCfg)
+
+			// Production produces, reference parses.
+			prodCfg := refToProd(refCfg)
+			prodChunk := prodCfg.marshalSearchInfoChunk()
+			refParsed, err := reference.ParseSearchInfoChunk(prodChunk[4:])
+			if err != nil {
+				t.Fatalf("reference ParseSearchInfoChunk: %v", err)
+			}
+			assertConfigEquiv(t, "prod→ref", prodCfg, refParsed)
+		})
+	}
+}
+
+func TestSearchReferenceTable0x45Bidirectional(t *testing.T) {
+	body := configBody()
+	for _, refCfg := range refConfigs() {
+		t.Run(tableTypeName(refCfg.TableType), func(t *testing.T) {
+			refTable, refRed := reference.BuildSearchTable(refCfg, body, nil)
+
+			// Reference produces 0x45, production parses.
+			refChunk := reference.AppendSearchTableChunk(nil, refCfg, refRed, refTable)
+			pcfg, pred, ptable, err := parseSearchTable(refChunk[4:], false)
+			if err != nil {
+				t.Fatalf("production parseSearchTable: %v", err)
+			}
+			if pred != refRed {
+				t.Fatalf("reductions differ: prod=%d ref=%d", pred, refRed)
+			}
+			if !bytes.Equal(ptable, refTable) {
+				t.Fatalf("table bytes differ on prod parse of ref chunk")
+			}
+			assertConfigEquiv(t, "ref→prod", pcfg, refCfg)
+
+			// Production produces 0x45 (using the reference's bitmap), reference parses.
+			prodCfg := refToProd(refCfg)
+			prodChunk := appendSearchTableChunk(nil, &prodCfg, refRed, refTable)
+			rParsed, err := reference.ParseSearchTableChunk(prodChunk[4:])
+			if err != nil {
+				t.Fatalf("reference ParseSearchTableChunk: %v", err)
+			}
+			if rParsed.Reductions != refRed {
+				t.Fatalf("reductions differ: ref=%d want=%d", rParsed.Reductions, refRed)
+			}
+			if !bytes.Equal(rParsed.Table, refTable) {
+				t.Fatalf("table bytes differ on ref parse of prod chunk")
+			}
+			assertConfigEquiv(t, "prod→ref", prodCfg, rParsed.Cfg)
+		})
+	}
+}
+
+func TestSearchReferenceTable0x46Bidirectional(t *testing.T) {
+	body := configBody()
+	for _, refCfg := range refConfigs() {
+		t.Run(tableTypeName(refCfg.TableType), func(t *testing.T) {
+			refTable, refRed := reference.BuildSearchTable(refCfg, body, nil)
+
+			// Reference produces 0x46, production parses.
+			refChunk := reference.AppendSearchTableCompressedChunk(nil, refCfg, refRed, refTable)
+			pcfg, pred, ptable, err := parseSearchTableCompressed(refChunk[4:], nil, false)
+			if err != nil {
+				t.Fatalf("production parseSearchTableCompressed: %v", err)
+			}
+			if pred != refRed {
+				t.Fatalf("reductions differ: prod=%d ref=%d", pred, refRed)
+			}
+			if !bytes.Equal(ptable, refTable) {
+				t.Fatalf("0x46 ref→prod bitmap mismatch")
+			}
+			assertConfigEquiv(t, "ref→prod 0x46", pcfg, refCfg)
+
+			// Production produces 0x46, reference parses.
+			prodCfg := refToProd(refCfg)
+			prodCfg.compression = &compressedOpts{enabled: true, forceCompressed: true, skipPctTimes100: cstDefaultSkipPctTimes100}
+			enc := newCSTEncoder()
+			prodChunk, emitted, err := appendSearchTableCompressedChunk(nil, &prodCfg, refRed, refTable, enc)
+			if err != nil {
+				t.Fatalf("production appendSearchTableCompressedChunk: %v", err)
+			}
+			if !emitted {
+				t.Skip("production declined to emit 0x46 for this bitmap; nothing to round-trip")
+				return
+			}
+			rParsed, err := reference.ParseSearchTableCompressedChunk(prodChunk[4:])
+			if err != nil {
+				t.Fatalf("reference ParseSearchTableCompressedChunk: %v", err)
+			}
+			if rParsed.Reductions != refRed {
+				t.Fatalf("reductions differ: ref=%d want=%d", rParsed.Reductions, refRed)
+			}
+			if !bytes.Equal(rParsed.Table, refTable) {
+				t.Fatalf("0x46 prod→ref bitmap mismatch")
+			}
+			assertConfigEquiv(t, "prod→ref 0x46", prodCfg, rParsed.Cfg)
+		})
+	}
+}
+
+func TestSearchReferenceRemoteRef0x47Bidirectional(t *testing.T) {
+	const maxBlockSize = 1 << 20
+	// Production emits 0x47 via appendRemoteBlockRef one ref at a time (always
+	// absolute first ref). Compose two single-ref chunks and a multi-ref one
+	// produced by the reference; verify both parsers agree on offsets and sizes.
+	t.Run("prod→ref single ref", func(t *testing.T) {
+		chunk := appendRemoteBlockRef(nil, 12345, 42)
+		refs, err := reference.ParseRemoteBlockRefChunk(chunk[4:])
+		if err != nil {
+			t.Fatalf("reference parse: %v", err)
+		}
+		if len(refs) != 1 || refs[0].Offset != 12345 || refs[0].MaxMinusActualLen != 42 {
+			t.Fatalf("got %+v", refs)
+		}
+	})
+	t.Run("ref→prod multi ref", func(t *testing.T) {
+		refIn := []reference.RemoteBlockRef{
+			{Offset: 100, MaxMinusActualLen: 0},
+			{Offset: 5000, MaxMinusActualLen: maxBlockSize - 4096},
+			{Offset: 1_000_000, MaxMinusActualLen: maxBlockSize - 1024},
+		}
+		chunk := reference.AppendRemoteBlockRefChunk(nil, refIn)
+		prodRefs, err := parseRemoteBlockRef(chunk[4:], maxBlockSize)
+		if err != nil {
+			t.Fatalf("production parseRemoteBlockRef: %v", err)
+		}
+		if len(prodRefs) != len(refIn) {
+			t.Fatalf("count: prod=%d ref=%d", len(prodRefs), len(refIn))
+		}
+		for i, want := range refIn {
+			if uint64(prodRefs[i].offset) != want.Offset {
+				t.Errorf("ref[%d] offset: prod=%d want=%d", i, prodRefs[i].offset, want.Offset)
+			}
+			wantUncomp := maxBlockSize - int(want.MaxMinusActualLen)
+			if prodRefs[i].uncompSize != wantUncomp {
+				t.Errorf("ref[%d] uncompSize: prod=%d want=%d", i, prodRefs[i].uncompSize, wantUncomp)
+			}
+		}
+	})
+}
+
+// TestSearchReferenceBuildTableAgreement asserts both implementations produce
+// the same bitmap and reductions for the same input.
+func TestSearchReferenceBuildTableAgreement(t *testing.T) {
+	body := configBody()
+	for _, refCfg := range refConfigs() {
+		t.Run(tableTypeName(refCfg.TableType), func(t *testing.T) {
+			refTable, refRed := reference.BuildSearchTable(refCfg, body, nil)
+
+			prodCfg := refToProd(refCfg)
+			prodTable, prodRed := prodCfg.buildSearchTable(body, nil, nil, false)
+			if prodRed != refRed {
+				t.Fatalf("reductions differ: prod=%d ref=%d", prodRed, refRed)
+			}
+			if !bytes.Equal(prodTable, refTable) {
+				t.Fatalf("bitmaps differ: %d bytes vs %d bytes; first diff at offset %d",
+					len(prodTable), len(refTable), firstDiff(prodTable, refTable))
+			}
+		})
+	}
+}
+
+// TestSearchReferenceContainsLookupAgreement verifies that for the same parsed
+// 0x45 table, ref.Contains(needle) agrees with the production lookup (hashValue
+// + bit test) for many random needles.
+func TestSearchReferenceContainsLookupAgreement(t *testing.T) {
+	body := configBody()
+	for _, refCfg := range refConfigs() {
+		t.Run(tableTypeName(refCfg.TableType), func(t *testing.T) {
+			refTable, refRed := reference.BuildSearchTable(refCfg, body, nil)
+			refParsed := reference.ParsedSearchTable{Cfg: refCfg, Reductions: refRed, Table: refTable}
+
+			ml := int(refCfg.MatchLen)
+			mask := uint32(1)<<(refCfg.BaseTableSize-refRed) - 1
+
+			// Use a deterministic stream of needles built from body slices and
+			// random bytes — covers present and absent windows.
+			seeds := [][]byte{
+				body[:ml], body[100 : 100+ml], body[1000 : 1000+ml],
+				[]byte("XYZ123zzzz")[:ml],
+				[]byte("\xff\xff\xff\xff\xff\xff\xff\xff")[:ml],
+				[]byte("\":\"alp")[:ml],
+			}
+			for _, n := range seeds {
+				v := readLE64Pad(n)
+				h := hashValue(v, refCfg.BaseTableSize, uint8(ml)) & mask
+				prodPresent := refTable[h>>3]&(1<<(h&7)) != 0
+				refPresent := refParsed.Contains(n)
+				if prodPresent != refPresent {
+					t.Errorf("Contains(%q): prod=%v ref=%v (hash=%d)", n, prodPresent, refPresent, h)
+				}
+			}
+		})
+	}
+}
+
+func tableTypeName(t uint8) string {
+	switch t {
+	case reference.TableTypeNoPrefix:
+		return "no-prefix"
+	case reference.TableTypeBytePrefix:
+		return "byte-prefix"
+	case reference.TableTypeMaskPrefix:
+		return "mask-prefix"
+	case reference.TableTypeLongPrefix:
+		return "long-prefix"
+	}
+	return "unknown"
+}
+
+func assertConfigEquiv(t *testing.T, label string, prod SearchTableConfig, ref reference.SearchConfig) {
+	t.Helper()
+	if prod.matchLen != ref.MatchLen {
+		t.Errorf("%s: matchLen prod=%d ref=%d", label, prod.matchLen, ref.MatchLen)
+	}
+	if prod.baseTableSize != ref.BaseTableSize {
+		t.Errorf("%s: baseTableSize prod=%d ref=%d", label, prod.baseTableSize, ref.BaseTableSize)
+	}
+	if prod.tableType != ref.TableType {
+		t.Errorf("%s: tableType prod=%d ref=%d", label, prod.tableType, ref.TableType)
+	}
+	switch ref.TableType {
+	case reference.TableTypeBytePrefix:
+		// Compare against the wire-padded form: if ref.PrefixBytes has fewer
+		// than 8 entries, the encoder pads with the last byte; if it already
+		// has 8 (e.g., after parsing), compare directly.
+		want := make([]byte, 8)
+		n := copy(want, ref.PrefixBytes)
+		if n > 0 && n < 8 {
+			for i := n; i < 8; i++ {
+				want[i] = want[n-1]
+			}
+		}
+		if !bytes.Equal(prod.prefixBytes[:], want) {
+			t.Errorf("%s: prefixBytes differ prod=%v ref=%v (padded=%v)", label, prod.prefixBytes, ref.PrefixBytes, want)
+		}
+	case reference.TableTypeMaskPrefix:
+		if prod.prefixMask != ref.PrefixMask {
+			t.Errorf("%s: prefixMask differs", label)
+		}
+	case reference.TableTypeLongPrefix:
+		if !bytes.Equal(prod.longPrefix, ref.LongPrefix) {
+			t.Errorf("%s: longPrefix prod=%q ref=%q", label, prod.longPrefix, ref.LongPrefix)
+		}
 	}
 }
