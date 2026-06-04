@@ -272,6 +272,26 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			if err != nil {
 				return err
 			}
+			headCfg, headRed, err := parseSearchTableCompressedHeader(payload)
+			if err != nil {
+				return err
+			}
+			if !patternCanUseConfig(&headCfg, pattern) {
+				// Bitmap is irrelevant for this pattern — skip the expensive
+				// huff0/sparse decode. Recorded with table=nil so blockDecision
+				// counts it correctly against TablesUnusable.
+				s.pending = append(s.pending, blockTableEntry{cfg: headCfg, reductions: headRed, table: nil})
+				if s.collectStats {
+					s.stats.TablesPresent++
+					s.stats.TablesBytes += int64(cl + 4)
+					s.stats.TablesCompressed++
+					s.stats.TablesCompressedBytes += int64(cl + 4)
+					s.stats.TableBitmapBytes += int64(1 << (headCfg.baseTableSize - headRed - 3))
+					s.stats.TableBitsSum += int(headCfg.baseTableSize - headRed)
+					s.stats.TableReductionsSum += int(headRed)
+				}
+				continue
+			}
 			if s.cstDec == nil {
 				s.cstDec = newCSTDecoder()
 			}
@@ -362,7 +382,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 				// via a straddling match into the next block, postpone the
 				// decision until the next block's table arrives. Restricted
 				// to single-config tables and no boundary risk from prev.
-				if !skip && i == 0 && len(tables) == 1 && s.sideDeferred == nil &&
+				if !skip && i == 0 && len(tables) == 1 && tables[0].table != nil && s.sideDeferred == nil &&
 					(s.prevBlock == nil || !canBoundaryMatch(s.prevBlock, pattern)) {
 					t := &tables[0]
 					if hashes := patternDeferHashes(&t.cfg, t.table, t.reductions, pattern); hashes != nil {
@@ -515,7 +535,7 @@ func (s *SidecarSearcher) resolveSideDeferred(nextTables []blockTableEntry, batc
 
 	// Decide. Without a usable next-block table, decode conservatively.
 	skip := false
-	if len(nextTables) > 0 {
+	if len(nextTables) > 0 && nextTables[0].table != nil {
 		t := &nextTables[0]
 		// Per SPEC §B.4: ALL absent hashes must be present in the next
 		// block's table for the boundary match to remain possible.
@@ -562,6 +582,11 @@ func (s *SidecarSearcher) blockDecision(tables []blockTableEntry, pattern []byte
 	}
 	for i := range tables {
 		t := &tables[i]
+		if t.table == nil {
+			// Bitmap decode was skipped because the config alone proved the
+			// pattern was unanswerable — same as canUse=false.
+			continue
+		}
 		canUse, mightMatch := patternCanMatch(&t.cfg, t.table, t.reductions, pattern)
 		if !canUse {
 			continue

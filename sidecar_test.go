@@ -883,6 +883,96 @@ func TestSidecarSearcher_StatsFullyPopulated(t *testing.T) {
 	}
 }
 
+// TestSearchers_SkipUnusableTableDecode asserts that when the search pattern
+// makes every per-block table config unusable, the 0x46 bitmap decode is
+// short-circuited: TablesUnusable bumps for every data block, but the
+// CompressedBlocks*/CompressedTablesSum counters stay at zero — proof that
+// the huff0/sparse decode was actually skipped.
+func TestSearchers_SkipUnusableTableDecode(t *testing.T) {
+	data := makeTestData(400 << 10)
+	// Long prefix that appears in every line of makeTestData → table fills
+	// and compresses, producing 0x46 chunks. The search pattern below does
+	// NOT contain "timestamp", so patternCanUseConfig returns false for every
+	// table.
+	cfg := NewSearchTableConfig().WithMatchLen(4).WithLongPrefix([]byte("timestamp"))
+	cfg = cfg.WithCompression()
+
+	pattern := []byte("ZZZ-no-such-substring")
+
+	check := func(t *testing.T, st SearchStats) {
+		t.Helper()
+		if st.TablesCompressed == 0 {
+			t.Skip("no 0x46 chunks emitted with this data; nothing to verify")
+		}
+		if st.TablesUnusable != st.TablesPresent {
+			t.Errorf("TablesUnusable=%d want %d (all tables should be unusable for this pattern)",
+				st.TablesUnusable, st.TablesPresent)
+		}
+		// Proof the bitmap decode was skipped: none of the sub-block counters
+		// can be non-zero — they're populated only by the huff0/sparse decoder.
+		if st.CompressedBlocksTotal != 0 || st.CompressedTablesSum != 0 {
+			t.Errorf("bitmap decode was not skipped: CompressedBlocksTotal=%d CompressedTablesSum=%d",
+				st.CompressedBlocksTotal, st.CompressedTablesSum)
+		}
+		if st.CompressedBytesTabled+st.CompressedBytesRaw+st.CompressedBytesRLE+st.CompressedBytesSparse != 0 {
+			t.Errorf("payload-byte counters non-zero (%d/%d/%d/%d) — bitmap decode happened",
+				st.CompressedBytesTabled, st.CompressedBytesRaw, st.CompressedBytesRLE, st.CompressedBytesSparse)
+		}
+		// Sanity: TableBitmapBytes is still derived from cfg for skipped decodes,
+		// so the ratio in Fprint output remains meaningful.
+		if st.TableBitmapBytes == 0 {
+			t.Errorf("TableBitmapBytes is zero; expected the cfg-derived size to be accumulated")
+		}
+	}
+
+	t.Run("BlockSearcher", func(t *testing.T) {
+		// Inline tables — no sidecar.
+		var main bytes.Buffer
+		w := NewWriter(&main,
+			WriterBlockSize(64<<10),
+			WriterConcurrency(1),
+			WriterSearchTable(cfg),
+		)
+		if _, err := w.Write(data); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		bs := NewBlockSearcher(bytes.NewReader(main.Bytes()), BlockSearchCollectStats())
+		if err := bs.Search(pattern, func(SearchResult) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+		check(t, bs.Stats())
+	})
+
+	t.Run("SidecarSearcher", func(t *testing.T) {
+		// Tables emitted to the sidecar stream.
+		var main, side bytes.Buffer
+		w := NewWriter(&main,
+			WriterBlockSize(64<<10),
+			WriterConcurrency(1),
+			WriterSearchTable(cfg),
+			WriterSidecar(&side),
+		)
+		if _, err := w.Write(data); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		ss := NewSidecarSearcher(
+			bytes.NewReader(main.Bytes()),
+			bytes.NewReader(side.Bytes()),
+			BlockSearchCollectStats(),
+		)
+		if err := ss.Search(pattern, func(SearchResult) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+		check(t, ss.Stats())
+	})
+}
+
 // TestSidecarSearcher_InlineParity runs the same queries through both
 // BlockSearcher (inline tables) and SidecarSearcher (sidecar tables) and
 // asserts they produce identical match sets and equivalent skip/search

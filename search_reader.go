@@ -252,6 +252,10 @@ type BlockSearcher struct {
 	blockTable      []byte
 	blockReductions uint8
 	blockInfo       SearchTableConfig
+	// blockTableUnusable is set when a 0x46 chunk was parsed but its bitmap
+	// was skipped (config alone proved the pattern unanswerable). The next
+	// data block bumps TablesUnusable and clears this flag.
+	blockTableUnusable bool
 
 	decoded   [2][]byte // alternating decode buffers
 	decIdx    int       // which buffer was last used (0 or 1)
@@ -414,6 +418,8 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			s.blockStart = 0
 			s.pending = nil
 			s.prevLazy = nil
+			s.blockTable = nil
+			s.blockTableUnusable = false
 			continue
 
 		case chunkTypeSearchInfo:
@@ -455,6 +461,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			s.blockInfo = cfg
 			s.blockReductions = reductions
 			s.blockTable = table
+			s.blockTableUnusable = false
 			// Resolve any pending block against this new table.
 			if s.pending != nil {
 				if err := s.resolvePending(pattern, fn); err != nil {
@@ -486,6 +493,33 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if !s.readFull(s.buf[:chunkLen]) {
 				return s.err
 			}
+			headCfg, headRed, err := parseSearchTableCompressedHeader(s.buf[:chunkLen])
+			if err != nil {
+				return err
+			}
+			if !patternCanUseConfig(&headCfg, pattern) {
+				// Bitmap is irrelevant for this pattern — skip the expensive
+				// huff0/sparse decode. The next data block bumps TablesUnusable.
+				s.blockInfo = headCfg
+				s.blockReductions = headRed
+				s.blockTable = nil
+				s.blockTableUnusable = true
+				if s.pending != nil {
+					if err := s.resolvePending(pattern, fn); err != nil {
+						return err
+					}
+				}
+				if s.collectStats {
+					s.stats.TablesPresent++
+					s.stats.TablesBytes += int64(chunkLen + 4)
+					s.stats.TablesCompressed++
+					s.stats.TablesCompressedBytes += int64(chunkLen + 4)
+					s.stats.TableBitmapBytes += int64(1 << (headCfg.baseTableSize - headRed - 3))
+					s.stats.TableBitsSum += int(headCfg.baseTableSize - headRed)
+					s.stats.TableReductionsSum += int(headRed)
+				}
+				continue
+			}
 			if s.cstDec == nil {
 				s.cstDec = newCSTDecoder()
 			}
@@ -496,6 +530,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			s.blockInfo = cfg
 			s.blockReductions = reductions
 			s.blockTable = table
+			s.blockTableUnusable = false
 			if s.pending != nil {
 				if err := s.resolvePending(pattern, fn); err != nil {
 					return err
@@ -611,6 +646,14 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 						return ErrSearchTablesUnusable
 					}
 				}
+			} else if s.blockTableUnusable {
+				s.blockTableUnusable = false
+				if s.collectStats {
+					s.stats.TablesUnusable++
+				}
+				if s.bail {
+					return ErrSearchTablesUnusable
+				}
 			} else {
 				if s.collectStats {
 					s.stats.TablesMissing++
@@ -725,6 +768,14 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 					if s.bail {
 						return ErrSearchTablesUnusable
 					}
+				}
+			} else if s.blockTableUnusable {
+				s.blockTableUnusable = false
+				if s.collectStats {
+					s.stats.TablesUnusable++
+				}
+				if s.bail {
+					return ErrSearchTablesUnusable
 				}
 			} else {
 				if s.collectStats {
@@ -1139,6 +1190,51 @@ func canBoundaryMatch(prev, pattern []byte) bool {
 	tail := prev[max(0, len(prev)-len(pattern)+1):]
 	for i := range tail {
 		if bytes.HasPrefix(pattern, tail[i:]) {
+			return true
+		}
+	}
+	return false
+}
+
+// patternCanUseConfig reports whether a search table with this configuration
+// can answer queries for the given pattern. It mirrors patternCanMatch's
+// canUse return using ONLY the config + pattern — no bitmap needed. Callers
+// use this to decide whether to spend the cost of decoding the bitmap.
+func patternCanUseConfig(cfg *SearchTableConfig, pattern []byte) bool {
+	if len(pattern) < int(cfg.matchLen) {
+		return false
+	}
+	switch cfg.tableType {
+	case searchTableTypeNoPrefix:
+		return true
+	case searchTableTypeBytePrefix:
+		var pfxMask [32]byte
+		for _, p := range cfg.prefixBytes {
+			pfxMask[p>>3] |= 1 << (p & 7)
+		}
+		return patternHasPrefixContext(&pfxMask, pattern, int(cfg.matchLen))
+	case searchTableTypeMaskPrefix:
+		return patternHasPrefixContext(&cfg.prefixMask, pattern, int(cfg.matchLen))
+	case searchTableTypeLongPrefix:
+		ml := int(cfg.matchLen)
+		pl := len(cfg.longPrefix)
+		if pl == 0 || len(pattern) < pl+ml {
+			return false
+		}
+		for i := 0; i <= len(pattern)-pl-ml; i++ {
+			if bytes.Equal(pattern[i:i+pl], cfg.longPrefix) {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
+func patternHasPrefixContext(pfxMask *[32]byte, pattern []byte, ml int) bool {
+	for i := 1; i <= len(pattern)-ml; i++ {
+		b := pattern[i-1]
+		if pfxMask[b>>3]&(1<<(b&7)) != 0 {
 			return true
 		}
 	}

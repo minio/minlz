@@ -841,6 +841,24 @@ func (dec *cstDecoder) runJob(j *cstJob) error {
 	return nil
 }
 
+// parseSearchTableCompressedHeader parses just the config + reductions from a
+// 0x46 chunk payload, without touching the bitmap data. Use this when the
+// caller may want to skip the (expensive) bitmap decode based on the config
+// alone, then call parseSearchTableCompressed only when the bitmap is needed.
+func parseSearchTableCompressedHeader(payload []byte) (cfg SearchTableConfig, reductions uint8, err error) {
+	cfg, err = parseSearchInfo(payload)
+	if err != nil {
+		return
+	}
+	off := 3 + cfg.prefixSize()
+	if off >= len(payload) {
+		err = fmt.Errorf("minlz: compressed search table chunk too short for reductions")
+		return
+	}
+	reductions = payload[off]
+	return
+}
+
 // parseSearchTableCompressed parses a 0x46 chunk payload (the bytes after the
 // 4-byte chunk header) and reconstructs the uncompressed bitmap. The returned
 // table slice is freshly allocated; callers are responsible for any pooling.
