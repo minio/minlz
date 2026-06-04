@@ -65,7 +65,6 @@ func NewReader(rd io.Reader) io.ReadCloser {
 	}
 
 	ret, err := NewReaderSize(rd, DefaultBuffers, DefaultBufferSize)
-
 	// Should not be possible to trigger from other packages.
 	if err != nil {
 		panic("unexpected error:" + err.Error())
@@ -90,7 +89,6 @@ func NewReadCloser(rd io.ReadCloser) io.ReadCloser {
 	}
 
 	ret, err := NewReadCloserSize(rd, DefaultBuffers, DefaultBufferSize)
-
 	// Should not be possible to trigger from other packages.
 	if err != nil {
 		panic("unexpected error:" + err.Error())
@@ -107,7 +105,7 @@ func NewReadCloser(rd io.ReadCloser) io.ReadCloser {
 // The input can be read and seeked from the returned reader.
 // When done use Close() to release the buffers.
 func NewReadSeeker(rd io.ReadSeeker) ReadSeekCloser {
-	//Not checking for result as the input interface guarantees it's seekable
+	// Not checking for result as the input interface guarantees it's seekable
 	res, _ := NewReader(rd).(ReadSeekCloser)
 	return res
 }
@@ -247,7 +245,7 @@ func NewReadSeekerSize(rd io.ReadSeeker, buffers, size int) (res ReadSeekCloser,
 	if err != nil {
 		return nil, err
 	}
-	//Not checking for result as the input interface guarantees it's seekable
+	// Not checking for result as the input interface guarantees it's seekable
 	res, _ = reader.(ReadSeekCloser)
 	return
 }
@@ -260,7 +258,7 @@ func NewReadSeekCloserSize(rd ReadSeekCloser, buffers, size int) (res ReadSeekCl
 	if err != nil {
 		return nil, err
 	}
-	//Not checking for result as the input interface guarantees it's seekable
+	// Not checking for result as the input interface guarantees it's seekable
 	res, _ = reader.(ReadSeekCloser)
 	return
 }
@@ -273,7 +271,7 @@ func NewReadSeekCloserBuffer(rd ReadSeekCloser, buffers [][]byte) (res ReadSeekC
 	if err != nil {
 		return nil, err
 	}
-	//Not checking for result as the input interface guarantees it's seekable
+	// Not checking for result as the input interface guarantees it's seekable
 	res, _ = reader.(ReadSeekCloser)
 	return
 }
@@ -390,17 +388,17 @@ func (a *reader) Read(p []byte) (n int, err error) {
 }
 
 func (a *seekable) Seek(offset int64, whence int) (res int64, err error) {
-	//Not checking the result as seekable receiver guarantees it to be assertable
+	// Not checking the result as seekable receiver guarantees it to be assertable
 	seeker, _ := a.in.(io.Seeker)
-	//Make sure the async routine is closed
+	// Make sure the async routine is closed
 	select {
 	case <-a.exited:
 	case a.exit <- struct{}{}:
 		<-a.exited
 	}
 	if whence == io.SeekCurrent {
-		//If need to seek based on current position, take into consideration the bytes we read but the consumer
-		//doesn't know about
+		// If need to seek based on current position, take into consideration the bytes we read but the consumer
+		// doesn't know about
 		err = nil
 		for a.cur != nil {
 			if err = a.fill(); err == nil && a.cur != nil {
@@ -409,9 +407,9 @@ func (a *seekable) Seek(offset int64, whence int) (res int64, err error) {
 			}
 		}
 	}
-	//Seek the actual Seeker
+	// Seek the actual Seeker
 	if res, err = seeker.Seek(offset, whence); err == nil {
-		//If the seek was successful, reinitalize ourselves (with the new position).
+		// If the seek was successful, reinitalize ourselves (with the new position).
 		a.initBuffers(a.in, a.bufs, a.size)
 	}
 	return

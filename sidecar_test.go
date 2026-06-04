@@ -824,9 +824,9 @@ func TestExtractSidecar_ConcatenatedStreams(t *testing.T) {
 //
 //	(1) SearchStats.UncompressedSize was zero because s.blockStart was reset
 //	    on chunkTypeEOF; it should equal the sum of decoded block sizes.
-//	(2) huff0 sub-block stats (Huff0BlocksTotal, raw/RLE/sparse breakdown,
-//	    table headers, payload bytes) were not accumulated from cstDecoder
-//	    after parsing each 0x46 chunk — they all came out as zero.
+//	(2) compressed sub-block stats (CompressedBlocksTotal, raw/RLE/sparse
+//	    breakdown, table headers, payload bytes) were not accumulated from
+//	    cstDecoder after parsing each 0x46 chunk — they all came out as zero.
 func TestSidecarSearcher_StatsFullyPopulated(t *testing.T) {
 	// Compressed search tables (0x46) are only emitted when -search.compress
 	// is set AND the table actually compresses; build data that produces them.
@@ -865,21 +865,21 @@ func TestSidecarSearcher_StatsFullyPopulated(t *testing.T) {
 	// Sanity: we should see at least one compressed table emitted; if not,
 	// the rest of the assertions don't apply.
 	if st.TablesCompressed == 0 {
-		t.Skip("no 0x46 chunks emitted with this data; skipping huff0 stat check")
+		t.Skip("no 0x46 chunks emitted with this data; skipping compressed-stat check")
 	}
-	// (2) huff0 sub-block stats: Huff0BlocksTotal should be > 0 and equal
-	// the sum of the per-disposition counts.
-	if st.Huff0BlocksTotal == 0 {
-		t.Errorf("Huff0BlocksTotal is 0; per-block sub-block stats not accumulated")
+	// (2) compressed sub-block stats: CompressedBlocksTotal should be > 0 and
+	// equal the sum of the per-disposition counts.
+	if st.CompressedBlocksTotal == 0 {
+		t.Errorf("CompressedBlocksTotal is 0; per-block sub-block stats not accumulated")
 	}
-	sum := st.Huff0BlocksRaw + st.Huff0BlocksRLE + st.Huff0BlocksSparse
-	if sum > st.Huff0BlocksTotal {
-		t.Errorf("Huff0Blocks{Raw,RLE,Sparse} sum=%d exceeds Total=%d", sum, st.Huff0BlocksTotal)
+	sum := st.CompressedBlocksRaw + st.CompressedBlocksRLE + st.CompressedBlocksSparse
+	if sum > st.CompressedBlocksTotal {
+		t.Errorf("CompressedBlocks{Raw,RLE,Sparse} sum=%d exceeds Total=%d", sum, st.CompressedBlocksTotal)
 	}
 	// At least one payload-byte counter should be non-zero (some sub-blocks
 	// must carry actual bytes).
-	if st.Huff0BytesTabled+st.Huff0BytesRaw+st.Huff0BytesRLE+st.Huff0BytesSparse == 0 {
-		t.Errorf("all Huff0Bytes* counters are zero; payload bytes not accumulated")
+	if st.CompressedBytesTabled+st.CompressedBytesRaw+st.CompressedBytesRLE+st.CompressedBytesSparse == 0 {
+		t.Errorf("all CompressedBytes* counters are zero; payload bytes not accumulated")
 	}
 }
 

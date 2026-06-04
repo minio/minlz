@@ -23,8 +23,7 @@ import (
 
 // lZ4Converter provides conversion from LZ4 blocks as defined here:
 // https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md
-type lZ4Converter struct {
-}
+type lZ4Converter struct{}
 
 // errDstTooSmall is returned when provided destination is too small.
 var errDstTooSmall = errors.New("minlz: destination too small")

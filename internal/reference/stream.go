@@ -47,7 +47,7 @@ func ReadStream(r io.Reader, debugOut io.Writer) error {
 	}
 
 	// Verify checksum of buffer
-	var crcTable = crc32.MakeTable(crc32.Castagnoli)
+	crcTable := crc32.MakeTable(crc32.Castagnoli)
 	verifyChecksum := func(b []byte, want uint32) error {
 		c := crc32.Update(0, crcTable, b)
 		c = c>>15 | c<<17 + 0xa282ead8
@@ -56,7 +56,7 @@ func ReadStream(r io.Reader, debugOut io.Writer) error {
 		}
 		return nil
 	}
-	var readMaxBlockSize = 0
+	readMaxBlockSize := 0
 	var tmp [8]byte
 	decompressedSize := 0
 	for {

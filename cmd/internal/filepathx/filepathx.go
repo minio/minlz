@@ -24,10 +24,10 @@ func Glob(pattern string) ([]string, error) {
 
 // Expand finds matches for the provided Globs.
 func (globs Globs) Expand() ([]string, error) {
-	var matches = []string{""} // accumulate here
+	matches := []string{""} // accumulate here
 	for _, glob := range globs {
 		var hits []string
-		var hitMap = map[string]bool{}
+		hitMap := map[string]bool{}
 		for _, match := range matches {
 			paths, err := filepath.Glob(match + glob)
 			if err != nil {

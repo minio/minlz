@@ -258,7 +258,6 @@ func (w *wCounter) Write(p []byte) (n int, err error) {
 	n, err = w.out.Write(p)
 	w.n += n
 	return n, err
-
 }
 
 // toSize converts a size indication to bytes.

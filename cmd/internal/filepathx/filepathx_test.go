@@ -9,7 +9,7 @@ import (
 func TestGlob_ZeroDoubleStars_oneMatch(t *testing.T) {
 	// test passthru to vanilla path/filepath
 	path := "./a/b/c.d/e.f"
-	err := os.MkdirAll(path, 0755)
+	err := os.MkdirAll(path, 0o755)
 	if err != nil {
 		t.Fatalf("os.MkdirAll: %s", err)
 	}
@@ -29,7 +29,7 @@ func TestGlob_ZeroDoubleStars_oneMatch(t *testing.T) {
 func TestGlob_OneDoubleStar_oneMatch(t *testing.T) {
 	// test a single double-star
 	path := "./a/b/c.d/e.f"
-	err := os.MkdirAll(path, 0755)
+	err := os.MkdirAll(path, 0o755)
 	if err != nil {
 		t.Fatalf("os.MkdirAll: %s", err)
 	}
@@ -49,7 +49,7 @@ func TestGlob_OneDoubleStar_oneMatch(t *testing.T) {
 func TestGlob_OneDoubleStar_twoMatches(t *testing.T) {
 	// test a single double-star
 	path := "./a/b/c.d/e.f"
-	err := os.MkdirAll(path, 0755)
+	err := os.MkdirAll(path, 0o755)
 	if err != nil {
 		t.Fatalf("os.MkdirAll: %s", err)
 	}
@@ -75,7 +75,7 @@ func TestGlob_OneDoubleStar_twoMatches(t *testing.T) {
 func TestGlob_TwoDoubleStars_oneMatch(t *testing.T) {
 	// test two double-stars
 	path := "./a/b/c.d/e.f"
-	err := os.MkdirAll(path, 0755)
+	err := os.MkdirAll(path, 0o755)
 	if err != nil {
 		t.Fatalf("os.MkdirAll: %s", err)
 	}

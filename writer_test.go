@@ -28,7 +28,7 @@ import (
 )
 
 func testOptions(_ testing.TB) map[string][]WriterOption {
-	var testOptions = map[string][]WriterOption{
+	testOptions := map[string][]WriterOption{
 		"default": {WriterAddIndex(true)},
 		"fast":    {WriterLevel(LevelFastest)},
 		"best":    {WriterLevel(LevelSmallest)},
@@ -191,7 +191,6 @@ func TestEncoderRegression(t *testing.T) {
 				var got []byte
 				dec.Reset(&buf)
 				got, err = io.ReadAll(dec)
-
 				if err != nil {
 					t.Error(err)
 					return
@@ -354,7 +353,7 @@ func TestIndex(t *testing.T) {
 					fatalErr(t, err)
 
 					// Read a little...
-					var tmp = make([]byte, len(input)/2)
+					tmp := make([]byte, len(input)/2)
 					_, err = io.ReadFull(rs, tmp[:])
 					fatalErr(t, err)
 
@@ -386,7 +385,7 @@ func TestIndex(t *testing.T) {
 				fatalErr(t, err)
 
 				// Read a little...
-				var tmp = make([]byte, len(input)/2)
+				tmp := make([]byte, len(input)/2)
 				_, err = io.ReadFull(rs, tmp[:])
 				fatalErr(t, err)
 				wantLen := len(tmp)

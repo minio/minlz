@@ -334,7 +334,7 @@ func processStream(filename string, o streamCompressOpts) {
 	src, err := readahead.NewReaderSize(file, o.cpu+1, 1<<20)
 	exitErr(err)
 	defer src.Close()
-	var rc = &rCounter{
+	rc := &rCounter{
 		in: src,
 	}
 	if !o.quiet {

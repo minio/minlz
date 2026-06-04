@@ -301,6 +301,6 @@ func ExampleSearchStats_Fprint() {
 	// Table population: avg 2.7%, min 1.6%, max 3.9%
 	// Table types: 0 uncompressed (0x45), 2 compressed (0x46)
 	// Compressed tables: 2 (100.0% of total), 46 wire bytes, 64 uncompressed bitmap bytes (71.88% ratio)
-	// huff0 sub-blocks: 2 total (0 tabled, 0 raw, 0 RLE, 2 sparse); 0 tables emitted (share=0.00 tables/tabled-block)
-	//   payload bytes: tabled=0 raw=0 RLE=0 sparse=16; table-header bytes=0
+	//  Sub-blocks: 2 total (0 tabled, 0 raw, 0 RLE, 2 sparse); 0 tables emitted (share=0.00 tables/tabled-block)
+	//  Payload bytes: tabled=0 raw=0 RLE=0 sparse=16; table-header bytes=0
 }

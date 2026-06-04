@@ -108,20 +108,20 @@ func decodeSparseBitTable(dst, src []byte) error {
 // CompressedSearchStats reports per-bitmap stats produced by the compressed
 // search-table encoder. It is delivered via CompressedSearchStatsHook.
 type CompressedSearchStats struct {
-	BitmapBytes    int
-	Reductions     uint8 // reductions applied to the bitmap before encoding
-	Huff0BlockSize int   // 1<<h0_bs, or 0 if SkippedBand or below minimum size
-	Huff0Blocks    int
-	SetBits        int
-	TotalBits      int
-	SkippedBand    bool // popcount band rejected compression
-	SkippedSize    bool // bitmap below cstMinBitmapForCompression
-	Chunk0x45Size  int  // alternative uncompressed-form size
-	Chunk0x46Size  int  // produced compressed-form size; 0 if not emitted
-	Emitted0x46    bool
-	Tables         int // distinct tables embedded
+	BitmapBytes   int
+	Reductions    uint8 // reductions applied to the bitmap before encoding
+	SubBlockSize  int   // 1<<h0_bs, or 0 if SkippedBand or below minimum size
+	SubBlocks     int
+	SetBits       int
+	TotalBits     int
+	SkippedBand   bool // popcount band rejected compression
+	SkippedSize   bool // bitmap below cstMinBitmapForCompression
+	Chunk0x45Size int  // alternative uncompressed-form size
+	Chunk0x46Size int  // produced compressed-form size; 0 if not emitted
+	Emitted0x46   bool
+	Tables        int // distinct tables embedded
 
-	// Per-disposition sub-block counts (sum to Huff0Blocks when emitted).
+	// Per-disposition sub-block counts (sum to SubBlocks when emitted).
 	BlocksOwnTable    int
 	BlocksGlobalTable int
 	BlocksRaw         int
@@ -333,8 +333,8 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 		// Shouldn't happen for valid bitmaps; bail to 0x45.
 		return nil, false, nil
 	}
-	stats.Huff0BlockSize = bsize
-	stats.Huff0Blocks = nBlocks
+	stats.SubBlockSize = bsize
+	stats.SubBlocks = nBlocks
 
 	e.reset(nBlocks)
 

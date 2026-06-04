@@ -198,10 +198,10 @@ func TestCompressedRLEAllZero(t *testing.T) {
 	if !bytes.Equal(got, bitmap) {
 		t.Fatalf("roundtrip mismatch")
 	}
-	// Every huff0 sub-block should be RLE.
-	if seenStats.BlocksRLE != seenStats.Huff0Blocks {
+	// Every compressed sub-block should be RLE.
+	if seenStats.BlocksRLE != seenStats.SubBlocks {
 		t.Fatalf("expected all %d blocks RLE, got own=%d global=%d raw=%d rle=%d",
-			seenStats.Huff0Blocks,
+			seenStats.SubBlocks,
 			seenStats.BlocksOwnTable, seenStats.BlocksGlobalTable,
 			seenStats.BlocksRaw, seenStats.BlocksRLE)
 	}
@@ -677,12 +677,12 @@ func TestCompressedStatsHook(t *testing.T) {
 	if got.BitmapBytes != 8192 {
 		t.Fatalf("BitmapBytes=%d", got.BitmapBytes)
 	}
-	if got.Huff0Blocks != 1 || got.Huff0BlockSize != 8192 {
-		t.Fatalf("Huff0Blocks=%d size=%d", got.Huff0Blocks, got.Huff0BlockSize)
+	if got.SubBlocks != 1 || got.SubBlockSize != 8192 {
+		t.Fatalf("SubBlocks=%d size=%d", got.SubBlocks, got.SubBlockSize)
 	}
 	totalBlocks := got.BlocksOwnTable + got.BlocksGlobalTable + got.BlocksRaw + got.BlocksRLE
-	if totalBlocks != got.Huff0Blocks {
-		t.Fatalf("sub-block counts %d do not sum to Huff0Blocks %d", totalBlocks, got.Huff0Blocks)
+	if totalBlocks != got.SubBlocks {
+		t.Fatalf("sub-block counts %d do not sum to SubBlocks %d", totalBlocks, got.SubBlocks)
 	}
 	if got.Chunk0x45Size == 0 || got.Chunk0x46Size == 0 || !got.Emitted0x46 {
 		t.Fatalf("size stats unexpected: %+v", got)

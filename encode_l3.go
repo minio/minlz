@@ -22,8 +22,10 @@ import (
 )
 
 // pools with hash tables for best encoding.
-var encBestLPool sync.Pool
-var encBestSPool sync.Pool
+var (
+	encBestLPool sync.Pool
+	encBestSPool sync.Pool
+)
 
 // encodeBlockBest encodes a non-empty src to a guaranteed-large-enough dst. It
 // assumes that the varint-encoded length of the decompressed bytes has already
@@ -80,8 +82,8 @@ func encodeBlockBest(dst, src []byte, dict *dict) (d int) {
 	}
 	defer encBestSPool.Put(sTable)
 
-	//var lTable [maxLTableSize]uint64
-	//var sTable [maxSTableSize]uint64
+	// var lTable [maxLTableSize]uint64
+	// var sTable [maxSTableSize]uint64
 
 	// Bail if we can't compress to at least this.
 	dstLimit := len(src) - 5
@@ -94,7 +96,7 @@ func encodeBlockBest(dst, src []byte, dict *dict) (d int) {
 	s := 1
 	repeat := 1
 	if dict != nil {
-		//dict.initBest()
+		// dict.initBest()
 		s = 0
 		repeat = len(dict.dict) - dict.repeat
 	}

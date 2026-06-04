@@ -33,8 +33,10 @@ type SeekingHTTP struct {
 }
 
 // Compile-time check of interface implementations.
-var _ io.ReadSeeker = (*SeekingHTTP)(nil)
-var _ io.ReaderAt = (*SeekingHTTP)(nil)
+var (
+	_ io.ReadSeeker = (*SeekingHTTP)(nil)
+	_ io.ReaderAt   = (*SeekingHTTP)(nil)
+)
 
 // New initializes a SeekingHTTP for the given URL.
 // The SeekingHTTP.Client field may be set before the first call

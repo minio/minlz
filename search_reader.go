@@ -40,21 +40,21 @@ type SearchStats struct {
 	TablesCompressedBytes int64 // Total wire bytes of 0x46 chunks (subset of TablesBytes)
 	TableBitmapBytes      int64 // Total uncompressed bitmap bytes across 0x46 chunks
 
-	// huff0 sub-block breakdown for the 0x46 chunks above.
-	Huff0BlocksTotal  int // Sum of huff0 sub-blocks across all 0x46 chunks
-	Huff0BlocksRaw    int // Sub-blocks with disposition = raw
-	Huff0BlocksRLE    int // Sub-blocks with disposition = RLE
-	Huff0BlocksSparse int // Sub-blocks with disposition = sparse bit table
-	Huff0TablesSum    int // Sum of distinct huff0 tables emitted across all 0x46 chunks
+	// Compressed sub-block breakdown for the 0x46 chunks above.
+	CompressedBlocksTotal  int // Sum of compressed sub-blocks across all 0x46 chunks
+	CompressedBlocksRaw    int // Sub-blocks with disposition = raw
+	CompressedBlocksRLE    int // Sub-blocks with disposition = RLE
+	CompressedBlocksSparse int // Sub-blocks with disposition = sparse bit table
+	CompressedTablesSum    int // Sum of distinct tables emitted across all 0x46 chunks
 
 	// Wire-byte breakdown of 0x46 sub-block payloads (excludes the disposition
 	// byte itself; for tabled blocks includes the uvarint length prefix and
 	// compressed data, but NOT the table header — that's tracked separately).
-	Huff0BytesTabled       int64
-	Huff0BytesRaw          int64
-	Huff0BytesRLE          int64
-	Huff0BytesSparse       int64
-	Huff0BytesTableHeaders int64 // bytes consumed by serialized huff0 tables
+	CompressedBytesTabled       int64
+	CompressedBytesRaw          int64
+	CompressedBytesRLE          int64
+	CompressedBytesSparse       int64
+	CompressedBytesTableHeaders int64 // bytes consumed by serialized tables
 }
 
 // Fprint writes a human-readable summary of the search stats to w.
@@ -98,15 +98,15 @@ func (st SearchStats) Fprint(w io.Writer) {
 			fmt.Fprintf(w, "Compressed tables: %d (%.1f%% of total), %d wire bytes, %d uncompressed bitmap bytes (%.2f%% ratio)\n",
 				st.TablesCompressed, pct(st.TablesCompressed, st.TablesPresent),
 				st.TablesCompressedBytes, st.TableBitmapBytes, ratio)
-			tabled := st.Huff0BlocksTotal - st.Huff0BlocksRaw - st.Huff0BlocksRLE - st.Huff0BlocksSparse
+			tabled := st.CompressedBlocksTotal - st.CompressedBlocksRaw - st.CompressedBlocksRLE - st.CompressedBlocksSparse
 			share := 0.0
 			if tabled > 0 {
-				share = float64(st.Huff0TablesSum) / float64(tabled)
+				share = float64(st.CompressedTablesSum) / float64(tabled)
 			}
-			fmt.Fprintf(w, "huff0 sub-blocks: %d total (%d tabled, %d raw, %d RLE, %d sparse); %d tables emitted (share=%.2f tables/tabled-block)\n",
-				st.Huff0BlocksTotal, tabled, st.Huff0BlocksRaw, st.Huff0BlocksRLE, st.Huff0BlocksSparse, st.Huff0TablesSum, share)
-			fmt.Fprintf(w, "  payload bytes: tabled=%d raw=%d RLE=%d sparse=%d; table-header bytes=%d\n",
-				st.Huff0BytesTabled, st.Huff0BytesRaw, st.Huff0BytesRLE, st.Huff0BytesSparse, st.Huff0BytesTableHeaders)
+			fmt.Fprintf(w, " Sub-blocks: %d total (%d tabled, %d raw, %d RLE, %d sparse); %d tables emitted (share=%.2f tables/tabled-block)\n",
+				st.CompressedBlocksTotal, tabled, st.CompressedBlocksRaw, st.CompressedBlocksRLE, st.CompressedBlocksSparse, st.CompressedTablesSum, share)
+			fmt.Fprintf(w, " Payload bytes: tabled=%d raw=%d RLE=%d sparse=%d; table-header bytes=%d\n",
+				st.CompressedBytesTabled, st.CompressedBytesRaw, st.CompressedBytesRLE, st.CompressedBytesSparse, st.CompressedBytesTableHeaders)
 		}
 	}
 }
@@ -507,16 +507,16 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				s.stats.TablesCompressed++
 				s.stats.TablesCompressedBytes += int64(chunkLen + 4)
 				s.stats.TableBitmapBytes += int64(len(table))
-				s.stats.Huff0BlocksTotal += s.cstDec.lastBlocks
-				s.stats.Huff0BlocksRaw += s.cstDec.lastBlocksRaw
-				s.stats.Huff0BlocksRLE += s.cstDec.lastBlocksRLE
-				s.stats.Huff0BlocksSparse += s.cstDec.lastBlocksSparse
-				s.stats.Huff0TablesSum += s.cstDec.lastTables
-				s.stats.Huff0BytesTabled += int64(s.cstDec.lastBytesTabled)
-				s.stats.Huff0BytesRaw += int64(s.cstDec.lastBytesRaw)
-				s.stats.Huff0BytesRLE += int64(s.cstDec.lastBytesRLE)
-				s.stats.Huff0BytesSparse += int64(s.cstDec.lastBytesSparse)
-				s.stats.Huff0BytesTableHeaders += int64(s.cstDec.lastBytesTableHeader)
+				s.stats.CompressedBlocksTotal += s.cstDec.lastBlocks
+				s.stats.CompressedBlocksRaw += s.cstDec.lastBlocksRaw
+				s.stats.CompressedBlocksRLE += s.cstDec.lastBlocksRLE
+				s.stats.CompressedBlocksSparse += s.cstDec.lastBlocksSparse
+				s.stats.CompressedTablesSum += s.cstDec.lastTables
+				s.stats.CompressedBytesTabled += int64(s.cstDec.lastBytesTabled)
+				s.stats.CompressedBytesRaw += int64(s.cstDec.lastBytesRaw)
+				s.stats.CompressedBytesRLE += int64(s.cstDec.lastBytesRLE)
+				s.stats.CompressedBytesSparse += int64(s.cstDec.lastBytesSparse)
+				s.stats.CompressedBytesTableHeaders += int64(s.cstDec.lastBytesTableHeader)
 				s.stats.TableBitsSum += int(cfg.baseTableSize - reductions)
 				s.stats.TableReductionsSum += int(reductions)
 				setBits := 0

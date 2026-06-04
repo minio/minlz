@@ -283,17 +283,17 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			s.pending = append(s.pending, blockTableEntry{cfg: cfg, reductions: reductions, table: tcopy})
 			if s.collectStats {
 				s.statsAccumTable(cfg.baseTableSize, reductions, tcopy, cl, true)
-				// huff0 sub-block stats live on the cstDecoder after parse.
-				s.stats.Huff0BlocksTotal += s.cstDec.lastBlocks
-				s.stats.Huff0BlocksRaw += s.cstDec.lastBlocksRaw
-				s.stats.Huff0BlocksRLE += s.cstDec.lastBlocksRLE
-				s.stats.Huff0BlocksSparse += s.cstDec.lastBlocksSparse
-				s.stats.Huff0TablesSum += s.cstDec.lastTables
-				s.stats.Huff0BytesTabled += int64(s.cstDec.lastBytesTabled)
-				s.stats.Huff0BytesRaw += int64(s.cstDec.lastBytesRaw)
-				s.stats.Huff0BytesRLE += int64(s.cstDec.lastBytesRLE)
-				s.stats.Huff0BytesSparse += int64(s.cstDec.lastBytesSparse)
-				s.stats.Huff0BytesTableHeaders += int64(s.cstDec.lastBytesTableHeader)
+				// Compressed sub-block stats live on the cstDecoder after parse.
+				s.stats.CompressedBlocksTotal += s.cstDec.lastBlocks
+				s.stats.CompressedBlocksRaw += s.cstDec.lastBlocksRaw
+				s.stats.CompressedBlocksRLE += s.cstDec.lastBlocksRLE
+				s.stats.CompressedBlocksSparse += s.cstDec.lastBlocksSparse
+				s.stats.CompressedTablesSum += s.cstDec.lastTables
+				s.stats.CompressedBytesTabled += int64(s.cstDec.lastBytesTabled)
+				s.stats.CompressedBytesRaw += int64(s.cstDec.lastBytesRaw)
+				s.stats.CompressedBytesRLE += int64(s.cstDec.lastBytesRLE)
+				s.stats.CompressedBytesSparse += int64(s.cstDec.lastBytesSparse)
+				s.stats.CompressedBytesTableHeaders += int64(s.cstDec.lastBytesTableHeader)
 			}
 
 		case chunkTypeRemoteBlockRef:

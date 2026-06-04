@@ -99,9 +99,9 @@ func FuzzEncodingBlocks(f *testing.F) {
 				x := crc32.ChecksumIEEE(want)
 				name := fmt.Sprintf("errs/block-%08x", x)
 				fmt.Println(name, "mismatch at pos", n)
-				os.WriteFile(name+"input.bin", data, 0644)
-				os.WriteFile(name+"encoded.bin", comp, 0644)
-				os.WriteFile(name+"decoded.bin", got, 0644)
+				os.WriteFile(name+"input.bin", data, 0o644)
+				os.WriteFile(name+"encoded.bin", comp, 0o644)
+				os.WriteFile(name+"decoded.bin", got, 0o644)
 				t.Errorf("roundtrip Go mismatch at byte %d, output written to %q", n, name)
 				return
 			}
@@ -217,9 +217,9 @@ func FuzzDecodeBlock(f *testing.F) {
 					x := crc32.ChecksumIEEE(base)
 					name := fmt.Sprintf("errs/block-%08x", x)
 					fmt.Println(name, "mismatch at pos", n)
-					os.WriteFile(name+"input.bin", data, 0644)
-					os.WriteFile(name+"decoded-asm.bin", base, 0644)
-					os.WriteFile(name+"decoded-go.bin", got, 0644)
+					os.WriteFile(name+"input.bin", data, 0o644)
+					os.WriteFile(name+"decoded-asm.bin", base, 0o644)
+					os.WriteFile(name+"decoded-go.bin", got, 0o644)
 					t.Errorf("pure Go mismatch at byte %d, output written to %q", n, name)
 				}
 				return
