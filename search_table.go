@@ -36,6 +36,7 @@ type SearchTableConfig struct {
 	matchLen            uint8
 	tableType           uint8
 	baseTableSize       uint8 // log2, computed at writer init from block size
+	extras              uint8 // type 4 only: E+1 hashes per prefix occurrence; matchLen+extras ≤ 16
 	prefixBytes         [8]byte
 	prefixMask          [32]byte
 	longPrefix          []byte
@@ -73,7 +74,11 @@ func (c SearchTableConfig) String() string {
 		}
 		prefix = fmt.Sprintf("mask-prefix (%d bytes)", n)
 	case searchTableTypeLongPrefix:
-		prefix = fmt.Sprintf("long-prefix=%q", string(c.longPrefix))
+		if c.extras > 0 {
+			prefix = fmt.Sprintf("long-prefix=%q extras=%d", string(c.longPrefix), c.extras)
+		} else {
+			prefix = fmt.Sprintf("long-prefix=%q", string(c.longPrefix))
+		}
 	default:
 		prefix = fmt.Sprintf("type=%d", c.tableType)
 	}
@@ -138,6 +143,18 @@ func (c SearchTableConfig) WithMaskPrefix(mask [32]byte) SearchTableConfig {
 func (c SearchTableConfig) WithLongPrefix(prefix []byte) SearchTableConfig {
 	c.tableType = searchTableTypeLongPrefix
 	c.longPrefix = slices.Clone(prefix)
+	return c
+}
+
+// WithExtras sets the number of extra hashes emitted after each long-prefix
+// occurrence. With extras=E, table type 4 writes E+1 consecutive overlapping
+// matchLen-byte windows per indexed position; the searcher checks the same
+// E+1 windows per pattern occurrence. matchLen+extras must not exceed 16.
+//
+// Extras only applies to type 4 (long prefix). Setting extras > 0 on any other
+// table type produces a validation error.
+func (c SearchTableConfig) WithExtras(n int) SearchTableConfig {
+	c.extras = uint8(n)
 	return c
 }
 
@@ -210,6 +227,14 @@ func (c *SearchTableConfig) validate() error {
 	if c.tableType == searchTableTypeLongPrefix && (len(c.longPrefix) < 1 || len(c.longPrefix) > 256) {
 		return fmt.Errorf("minlz: long prefix length must be 1-256, got %d", len(c.longPrefix))
 	}
+	if c.extras != 0 {
+		if c.tableType != searchTableTypeLongPrefix {
+			return fmt.Errorf("minlz: extras only valid for long-prefix tables (type 4)")
+		}
+		if int(c.matchLen)+int(c.extras) > 16 {
+			return fmt.Errorf("minlz: matchLen+extras must be <= 16, got matchLen=%d extras=%d", c.matchLen, c.extras)
+		}
+	}
 	return nil
 }
 
@@ -225,6 +250,14 @@ func (c *SearchTableConfig) maxChunkSize() int {
 	return 4 + c.searchTablePayloadSize(1<<(c.baseTableSize-3))
 }
 
+// overlapBytes returns the number of bytes the search-table encoder needs
+// from the start of the next block to safely index positions near the end
+// of the current block. With extras=E (type 4), the encoder reads up to
+// matchLen+E-1 bytes past the block end.
+func (c *SearchTableConfig) overlapBytes() int {
+	return max(0, int(c.matchLen)+int(c.extras)-1)
+}
+
 func (c *SearchTableConfig) prefixSize() int {
 	switch c.tableType {
 	case searchTableTypeBytePrefix:
@@ -232,7 +265,8 @@ func (c *SearchTableConfig) prefixSize() int {
 	case searchTableTypeMaskPrefix:
 		return 32
 	case searchTableTypeLongPrefix:
-		return 1 + len(c.longPrefix)
+		// length byte + extras byte + prefix bytes
+		return 2 + len(c.longPrefix)
 	}
 	return 0
 }
@@ -292,7 +326,7 @@ func (c *SearchTableConfig) appendPrefix(dst []byte) []byte {
 	case searchTableTypeMaskPrefix:
 		return append(dst, c.prefixMask[:]...)
 	case searchTableTypeLongPrefix:
-		dst = append(dst, uint8(len(c.longPrefix)-1))
+		dst = append(dst, uint8(len(c.longPrefix)-1), c.extras)
 		return append(dst, c.longPrefix...)
 	}
 	return dst
@@ -354,14 +388,18 @@ func parseSearchInfo(payload []byte) (SearchTableConfig, error) {
 		}
 		copy(cfg.prefixMask[:], payload[:32])
 	case searchTableTypeLongPrefix:
-		if len(payload) < 1 {
+		if len(payload) < 2 {
 			return cfg, fmt.Errorf("minlz: search info long prefix too short")
 		}
 		pLen := int(payload[0]) + 1
-		if len(payload) < 1+pLen {
+		cfg.extras = payload[1]
+		if int(cfg.matchLen)+int(cfg.extras) > 16 {
+			return cfg, fmt.Errorf("minlz: matchLen+extras must be <= 16, got matchLen=%d extras=%d", cfg.matchLen, cfg.extras)
+		}
+		if len(payload) < 2+pLen {
 			return cfg, fmt.Errorf("minlz: search info long prefix data too short")
 		}
-		cfg.longPrefix = slices.Clone(payload[1 : 1+pLen])
+		cfg.longPrefix = slices.Clone(payload[2 : 2+pLen])
 	default:
 		return cfg, fmt.Errorf("minlz: unknown search table type %d", cfg.tableType)
 	}

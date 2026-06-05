@@ -143,6 +143,86 @@ with higher false-positive rates.
 cfg := minlz.NewSearchTableConfig().WithMaxPopulation(50)
 ```
 
+### Prefixes
+
+Prefix filtering dramatically reduces table size for structured data by only indexing
+positions that follow specific bytes. For example, in JSON data, values always follow
+`"` or `:`, so most byte positions can be skipped during indexing.
+
+Since fewer positions are indexed, the base table population is much lower, allowing
+more reductions and producing significantly smaller tables on disk. The downside is that
+search patterns must contain at least one prefix byte (or match the long prefix) for
+the table to be usable. Patterns without any prefix bytes fall back to full block decode.
+
+There are two prefix modes:
+
+#### Single byte
+
+Single-byte prefixes only indexes positions preceded by one of these bytes.
+`WithBytePrefix` accepts up to 8 bytes directly; for more than 8, use `WithMaskPrefix`
+with a 256-bit bitmask. Both produce the same result.
+```go
+cfg := minlz.NewSearchTableConfig().WithBytePrefix('"', ':')
+```
+
+#### Long prefix
+
+Long prefix only indexes positions preceded by an exact multi-byte sequence (1–256 bytes):
+```go
+cfg := minlz.NewSearchTableConfig().WithLongPrefix([]byte(`id:"`))
+```
+
+The searcher scans the search pattern for prefix bytes *anywhere inside it*. For example,
+searching for `"unique-9876"` with byte prefix `"` works because `"` appears at position 0
+in the pattern. The table is consulted for the hash window that follows each prefix
+occurrence in the pattern.
+
+When no prefix bytes appear in the search pattern, the table cannot be used and the
+searcher falls back to full block decode.
+
+##### Extras
+
+By default a long-prefix table records one `matchLen`-byte hash per prefix occurrence.
+`WithExtras(E)` widens that to `E+1` overlapping `matchLen`-byte windows at offsets
+`0..E` after each prefix, and the searcher checks the same `E+1` windows per occurrence
+in the query. The constraint is `matchLen + E ≤ 16`, so the post-prefix region the
+encoder hashes never exceeds 16 bytes.
+
+```go
+cfg := minlz.NewSearchTableConfig().
+    WithMatchLen(8).
+    WithLongPrefix([]byte(`"timestamp":`)).
+    WithExtras(8) // 9 hashes per occurrence (matchLen+extras = 16)
+```
+
+Extras effectively turn the table into a `k=E+1` Bloom filter for the post-prefix bytes:
+the false-positive probability per occurrence drops from `p` to `p^(E+1)`. The cost is
+proportionally more bits set per occurrence — typical sidecars grow by roughly the same
+factor before sparse/huff0 compression kicks in.
+
+When to use it:
+
+- The prefix fires sparsely (e.g. one structured field per log line) and queries reliably
+  carry enough trailing bytes (`L ≥ pl + matchLen + E`).
+- The single-hash table is collision-bound — many candidate blocks turn out to be false
+  positives that have to be decoded.
+
+When to avoid it:
+
+- The prefix is dense and the table is already population-bound; extras multiply the
+  population without adding filtering power.
+- Queries are short and would not fill `matchLen + E` bytes after the prefix; those
+  occurrences become unusable and the searcher falls back.
+
+#### Choosing good prefix bytes
+
+Pick bytes that immediately precede the values you'll search for:
+
+- **JSON data:** `"` and `:` — values always follow `":` or `:[`.
+- **CSV data:** `,` or `\t` — field separators.
+- **Key=value formats:** `=` precedes values.
+- **Log lines with fields:** space, tab, `=`, or `:`.
+
 ### Compressed Search Tables
 
 Search-table bitmaps are stored compressed by default: the encoder shrinks
@@ -197,51 +277,6 @@ Some decoders may not support compressed search tables — use
 `WithoutCompression()` (or `-search.uncompressed`) if you need to interoperate
 with them.
 
-### Prefixes
-
-Prefix filtering dramatically reduces table size for structured data by only indexing
-positions that follow specific bytes. For example, in JSON data, values always follow
-`"` or `:`, so most byte positions can be skipped during indexing.
-
-Since fewer positions are indexed, the base table population is much lower, allowing
-more reductions and producing significantly smaller tables on disk. The downside is that
-search patterns must contain at least one prefix byte (or match the long prefix) for
-the table to be usable. Patterns without any prefix bytes fall back to full block decode.
-
-There are two prefix modes:
-
-#### Single byte
-
-Single-byte prefixes only indexes positions preceded by one of these bytes.
-`WithBytePrefix` accepts up to 8 bytes directly; for more than 8, use `WithMaskPrefix`
-with a 256-bit bitmask. Both produce the same result.
-```go
-cfg := minlz.NewSearchTableConfig().WithBytePrefix('"', ':')
-```
-
-#### Long prefix
-
-Long prefix only indexes positions preceded by an exact multi-byte sequence (1–256 bytes):
-```go
-cfg := minlz.NewSearchTableConfig().WithLongPrefix([]byte(`id:"`))
-```
-
-The searcher scans the search pattern for prefix bytes *anywhere inside it*. For example,
-searching for `"unique-9876"` with byte prefix `"` works because `"` appears at position 0
-in the pattern. The table is consulted for the hash window that follows each prefix
-occurrence in the pattern.
-
-When no prefix bytes appear in the search pattern, the table cannot be used and the
-searcher falls back to full block decode.
-
-#### Choosing good prefix bytes
-
-Pick bytes that immediately precede the values you'll search for:
-
-- **JSON data:** `"` and `:` — values always follow `":` or `:[`.
-- **CSV data:** `,` or `\t` — field separators.
-- **Key=value formats:** `=` precedes values.
-- **Log lines with fields:** space, tab, `=`, or `:`.
 
 ## Sidecar Streams
 
@@ -392,6 +427,8 @@ mz c -search file.log                              # default matchLen=6, no pref
 mz c -search -search.len=4 file.log                # matchLen=4
 mz c -search -search.prefixes='":'  file.log       # byte prefixes " and :
 mz c -search -search.prefix='id:"' file.log        # long prefix
+mz c -search -search.prefix='"timestamp":' -search.extras=8 -search.len=8 file.log
+                                                    # long prefix + 9 hashes per occurrence (matchLen+extras ≤ 16)
 mz c -search -search.max=50 -search.lim=30 file.log # custom population limits
 mz c -bs=1MB -search file.log                       # 1MB blocks (more granular skipping)
 mz c -search -search.uncompressed file.log          # disable per-block table compression

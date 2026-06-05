@@ -203,6 +203,73 @@ func TestRoundTripLongPrefix(t *testing.T) {
 	}
 }
 
+func TestRoundTripLongPrefixExtras(t *testing.T) {
+	// Block has the prefix `":"` followed by distinct 16-byte payloads
+	// so each occurrence produces 4 different hash entries (extras=3).
+	prefix := []byte(`":"`)
+	const ml, ex = 4, 3
+	needles := [][]byte{
+		bytes.Join([][]byte{prefix, []byte("ALPHAALPHAALPHAA")}, nil),
+		bytes.Join([][]byte{prefix, []byte("BETABETABETABETA")}, nil),
+	}
+	block, placements := makeBlock(needles)
+
+	cfg := SearchConfig{
+		MatchLen:      ml,
+		BaseTableSize: 12,
+		TableType:     TableTypeLongPrefix,
+		Extras:        ex,
+		LongPrefix:    prefix,
+	}
+	table, reductions := BuildSearchTable(cfg, block, nil)
+
+	chunk44 := AppendSearchInfoChunk(nil, cfg)
+	cfg44, err := ParseSearchInfoChunk(chunk44[4:])
+	if err != nil {
+		t.Fatalf("ParseSearchInfoChunk: %v", err)
+	}
+	if cfg44.Extras != cfg.Extras {
+		t.Fatalf("0x44 extras roundtrip: got %d want %d", cfg44.Extras, cfg.Extras)
+	}
+
+	chunk45 := AppendSearchTableChunk(nil, cfg, reductions, table)
+	parsed, err := ParseSearchTableChunk(chunk45[4:])
+	if err != nil {
+		t.Fatalf("ParseSearchTableChunk: %v", err)
+	}
+	if parsed.Cfg.Extras != cfg.Extras {
+		t.Fatalf("0x45 extras roundtrip: got %d want %d", parsed.Cfg.Extras, cfg.Extras)
+	}
+	if !bytes.Equal(parsed.Cfg.LongPrefix, cfg.LongPrefix) {
+		t.Fatalf("0x45 long prefix roundtrip mismatch")
+	}
+
+	// Every E+1 window after each prefix occurrence must be present.
+	for _, pos := range placements {
+		base := pos + len(prefix)
+		for j := 0; j <= ex; j++ {
+			if !parsed.Contains(block[base+j : base+j+ml]) {
+				t.Errorf("Contains window j=%d at pos=%d = false", j, pos)
+			}
+		}
+	}
+}
+
+func TestLongPrefixExtrasRejectMalformed(t *testing.T) {
+	// Build a payload manually with matchLen=8 + extras=9 (sum 17, illegal).
+	payload := []byte{
+		byte(TableTypeLongPrefix),
+		8,             // matchLen
+		12,            // baseTableSize
+		2,             // prefix length - 1
+		9,             // extras (matchLen+extras = 17 > 16)
+		'i', 'd', ':', // prefix
+	}
+	if _, err := ParseSearchInfoChunk(payload); err == nil {
+		t.Fatal("expected error for matchLen+extras > 16")
+	}
+}
+
 func TestRemoteBlockRefRoundTrip(t *testing.T) {
 	refs := []RemoteBlockRef{
 		{Offset: 100, MaxMinusActualLen: 0},

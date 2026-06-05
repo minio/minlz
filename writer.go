@@ -475,7 +475,7 @@ func (w *Writer) EncodeBuffer(buf []byte) (err error) {
 		// Overlap for search table boundary patterns.
 		var overlap []byte
 		if w.searchCfg != nil && len(buf) > 0 {
-			overlap = buf[:min(len(buf), int(w.searchCfg.matchLen)-1)]
+			overlap = buf[:min(len(buf), w.searchCfg.overlapBytes())]
 		}
 
 		// Get output buffer. Front is reserved for search chunk, data starts at searchMaxChunk.
@@ -625,7 +625,7 @@ func (w *Writer) write(p []byte) (nRet int, errRet error) {
 		// Overlap for search table from contiguous p (before copying to inbuf).
 		var overlap []byte
 		if w.searchCfg != nil && len(p) > 0 {
-			end := min(len(p), int(w.searchCfg.matchLen)-1)
+			end := min(len(p), w.searchCfg.overlapBytes())
 			overlap = make([]byte, end)
 			copy(overlap, p[:end])
 		}
@@ -889,7 +889,7 @@ func (w *Writer) writeSync(p []byte) (nRet int, errRet error) {
 				return 0, err
 			}
 			if w.searchCfg != nil && n2 > 0 {
-				overlap := p[:min(len(p), int(w.searchCfg.matchLen)-1)]
+				overlap := p[:min(len(p), w.searchCfg.overlapBytes())]
 				if err := w.writeSearchTableSync(uncompressed, overlap); err != nil {
 					return 0, err
 				}
@@ -898,7 +898,7 @@ func (w *Writer) writeSync(p []byte) (nRet int, errRet error) {
 				return 0, err
 			}
 		} else if w.searchCfg != nil && n2 > 0 {
-			overlap := p[:min(len(p), int(w.searchCfg.matchLen)-1)]
+			overlap := p[:min(len(p), w.searchCfg.overlapBytes())]
 			if err := w.writeSearchTableSync(uncompressed, overlap); err != nil {
 				return 0, err
 			}

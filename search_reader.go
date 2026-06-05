@@ -1217,11 +1217,12 @@ func patternCanUseConfig(cfg *SearchTableConfig, pattern []byte) bool {
 		return patternHasPrefixContext(&cfg.prefixMask, pattern, int(cfg.matchLen))
 	case searchTableTypeLongPrefix:
 		ml := int(cfg.matchLen)
+		ex := int(cfg.extras)
 		pl := len(cfg.longPrefix)
-		if pl == 0 || len(pattern) < pl+ml {
+		if pl == 0 || len(pattern) < pl+ml+ex {
 			return false
 		}
-		for i := 0; i <= len(pattern)-pl-ml; i++ {
+		for i := 0; i <= len(pattern)-pl-ml-ex; i++ {
 			if bytes.Equal(pattern[i:i+pl], cfg.longPrefix) {
 				return true
 			}
@@ -1304,23 +1305,33 @@ func patternCanMatch(cfg *SearchTableConfig, table []byte, reductions uint8, pat
 
 	case searchTableTypeLongPrefix:
 		pl := len(cfg.longPrefix)
-		if len(pattern) < int(cfg.matchLen) {
+		ml := int(cfg.matchLen)
+		ex := int(cfg.extras)
+		if len(pattern) < ml+ex {
 			return false, true
 		}
 		checked := 0
-		firstCheckedPresent := false
-		for i := 0; i <= len(pattern)-pl-int(cfg.matchLen); i++ {
+		firstCheckedAllPresent := false
+		for i := 0; i <= len(pattern)-pl-ml-ex; i++ {
 			if !bytes.Equal(pattern[i:i+pl], cfg.longPrefix) {
 				continue
 			}
-			v := readLE64Pad(pattern[i+pl:])
-			h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
-			present := table[h>>3]&(1<<(h&7)) != 0
-			if checked == 0 {
-				firstCheckedPresent = present
+			// All E+1 windows after the prefix must be present for this
+			// occurrence to anchor in the block.
+			allPresent := true
+			for j := 0; j <= ex; j++ {
+				v := readLE64Pad(pattern[i+pl+j:])
+				h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
+				if table[h>>3]&(1<<(h&7)) == 0 {
+					allPresent = false
+					break
+				}
 			}
-			if !present {
-				if firstCheckedPresent {
+			if checked == 0 {
+				firstCheckedAllPresent = allPresent
+			}
+			if !allPresent {
+				if firstCheckedAllPresent {
 					return true, true
 				}
 				return true, false
@@ -1433,6 +1444,12 @@ func patternDeferHashes(cfg *SearchTableConfig, table []byte, reductions uint8, 
 		return deferHashesWithPrefixMask(cfg, table, mask, &cfg.prefixMask, pattern)
 
 	case searchTableTypeLongPrefix:
+		// TODO: re-enable deferred path for extras > 0. With E+1 windows per
+		// occurrence the threshold logic must be adjusted to account for the
+		// expanded boundary range.
+		if cfg.extras != 0 {
+			return nil
+		}
 		ml := int(cfg.matchLen)
 		pl := len(cfg.longPrefix)
 		if len(pattern) < ml {

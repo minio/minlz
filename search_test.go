@@ -3295,3 +3295,411 @@ func assertConfigEquiv(t *testing.T, label string, prod SearchTableConfig, ref r
 		}
 	}
 }
+
+// TestExtrasConfigValidate exercises the matchLen+extras ≤ 16 and
+// type-4-only constraints on the config layer.
+func TestExtrasConfigValidate(t *testing.T) {
+	cases := []struct {
+		name    string
+		cfg     SearchTableConfig
+		wantErr string
+	}{
+		{
+			"ok_zero_extras",
+			NewSearchTableConfig().WithMatchLen(6).WithLongPrefix([]byte("id:")),
+			"",
+		},
+		{
+			"ok_long_prefix_extras",
+			NewSearchTableConfig().WithMatchLen(4).WithLongPrefix([]byte("id:")).WithExtras(3),
+			"",
+		},
+		{
+			"ok_boundary_matchlen_plus_extras_eq_16",
+			NewSearchTableConfig().WithMatchLen(8).WithLongPrefix([]byte("xx")).WithExtras(8),
+			"",
+		},
+		{
+			"err_extras_on_no_prefix",
+			NewSearchTableConfig().WithMatchLen(4).WithExtras(3),
+			"extras only valid for long-prefix",
+		},
+		{
+			"err_extras_on_byte_prefix",
+			NewSearchTableConfig().WithMatchLen(4).WithBytePrefix('=').WithExtras(2),
+			"extras only valid for long-prefix",
+		},
+		{
+			"err_sum_overflow",
+			NewSearchTableConfig().WithMatchLen(8).WithLongPrefix([]byte("xx")).WithExtras(9),
+			"matchLen+extras must be <= 16",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("want error containing %q, got nil", tt.wantErr)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("want error containing %q, got: %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestExtrasChunkRoundtrip verifies the extras byte makes it through the
+// 0x44 and 0x45 wire format.
+func TestExtrasChunkRoundtrip(t *testing.T) {
+	cfg := withBaseTableSize(
+		NewSearchTableConfig().WithMatchLen(4).WithLongPrefix([]byte("id:")).WithExtras(5),
+		12,
+	)
+
+	info := cfg.marshalSearchInfoChunk()
+	parsed, err := parseSearchInfo(info[4:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.tableType != cfg.tableType || parsed.matchLen != cfg.matchLen ||
+		parsed.baseTableSize != cfg.baseTableSize || parsed.extras != cfg.extras {
+		t.Fatalf("0x44 roundtrip mismatch: got %+v, want type=%d ml=%d ts=%d extras=%d prefix=%q",
+			parsed, cfg.tableType, cfg.matchLen, cfg.baseTableSize, cfg.extras, cfg.longPrefix)
+	}
+	if !bytes.Equal(parsed.longPrefix, cfg.longPrefix) {
+		t.Fatalf("0x44 prefix mismatch: got %q want %q", parsed.longPrefix, cfg.longPrefix)
+	}
+
+	// 0x45 roundtrip with a real bitmap.
+	table := make([]byte, 32)
+	table[0] = 0xff
+	reductions := cfg.baseTableSize - 8
+	chunk := appendSearchTableChunk(nil, &cfg, reductions, table)
+	pcfg, pred, ptable, perr := parseSearchTable(chunk[4:], false)
+	if perr != nil {
+		t.Fatal(perr)
+	}
+	if pcfg.extras != cfg.extras {
+		t.Fatalf("0x45 extras roundtrip: got %d want %d", pcfg.extras, cfg.extras)
+	}
+	if pred != reductions || !bytes.Equal(ptable, table) {
+		t.Fatalf("0x45 table/reductions roundtrip mismatch")
+	}
+}
+
+// TestExtrasRejectMalformed verifies the parser rejects matchLen+extras > 16.
+func TestExtrasRejectMalformed(t *testing.T) {
+	// Hand-build a payload claiming matchLen=8, extras=9 (sum 17).
+	payload := []byte{
+		searchTableTypeLongPrefix, // table type
+		8,                         // matchLen
+		12,                        // baseTableSize
+		2,                         // prefix length - 1 (so pl=3)
+		9,                         // extras (illegal: 8+9 > 16)
+		'i', 'd', ':',             // prefix
+	}
+	_, err := parseSearchInfo(payload)
+	if err == nil {
+		t.Fatal("expected error for matchLen+extras > 16")
+	}
+	if !strings.Contains(err.Error(), "matchLen+extras") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestExtrasNoFalseNegatives checks that, for a block containing the prefix,
+// every E+1 window after each prefix occurrence is present in the table.
+func TestExtrasNoFalseNegatives(t *testing.T) {
+	rng := rand.New(rand.NewSource(31))
+	prefix := []byte(`":"`)
+
+	for _, ml := range []int{4, 6, 8} {
+		for _, ex := range []int{0, 1, 3, 16 - ml} {
+			if ml+ex > 16 {
+				continue
+			}
+			t.Run("", func(t *testing.T) {
+				// 4 KiB block with several injected prefix occurrences.
+				data := make([]byte, 4096)
+				for i := range data {
+					data[i] = byte('a' + rng.Intn(20)) // ASCII letters, no prefix bytes
+				}
+				positions := []int{50, 500, 1234, 2500, 3500}
+				for _, p := range positions {
+					copy(data[p:], prefix)
+					// Fill ml+ex random bytes after prefix to give each occurrence
+					// a unique window set.
+					rng.Read(data[p+len(prefix) : p+len(prefix)+ml+ex])
+				}
+
+				cfg := withBaseTableSize(
+					NewSearchTableConfig().WithMatchLen(ml).WithLongPrefix(prefix).WithExtras(ex),
+					16,
+				)
+				table, reductions := cfg.buildSearchTable(data, nil, nil, false)
+				if table == nil {
+					t.Skip("table dropped due to population")
+				}
+				mask := uint32(1<<(cfg.baseTableSize-reductions)) - 1
+
+				// Every E+1 window after every injected prefix must be set.
+				for _, p := range positions {
+					base := p + len(prefix)
+					for j := 0; j <= ex; j++ {
+						h := hashValue(readLE64Pad(data[base+j:]), cfg.baseTableSize, cfg.matchLen) & mask
+						if table[h>>3]&(1<<(h&7)) == 0 {
+							t.Fatalf("false negative: ml=%d ex=%d pos=%d j=%d", ml, ex, p, j)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestExtrasSearchEndToEnd round-trips a stream with extras enabled and
+// verifies the searcher finds an injected needle and skips other blocks.
+func TestExtrasSearchEndToEnd(t *testing.T) {
+	blockSize := minBlockSize
+	// Compressible filler (no `":"` substring) so blocks reach the search
+	// table emit path. Random/uncompressible blocks get stored raw and the
+	// writer omits their tables.
+	filler := bytes.Repeat([]byte("abcdefghijklmnop\n"), blockSize/17+1)
+	data := make([]byte, blockSize*3)
+	copy(data[0:], filler[:blockSize])
+	copy(data[blockSize:], filler[:blockSize])
+	copy(data[blockSize*2:], filler[:blockSize])
+
+	target := []byte(`"timestamp":"1679909263.614381575"`)
+	// Place the needle in block 1.
+	needlePos := blockSize + 1000
+	copy(data[needlePos:], target)
+
+	cfg := NewSearchTableConfig().
+		WithMatchLen(4).
+		WithLongPrefix([]byte(`":"`)).
+		WithExtras(3)
+
+	var buf bytes.Buffer
+	w := NewWriter(&buf,
+		WriterSearchTable(cfg),
+		WriterBlockSize(blockSize),
+		WriterConcurrency(1),
+	)
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify decode round-trip.
+	reader := NewReader(bytes.NewReader(buf.Bytes()))
+	got, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Fatal("decoded data mismatch")
+	}
+
+	// Search for the needle. The pattern contains the prefix `":"` at i=10
+	// (`"timestamp"` is 11 bytes including the quote at index 0; the `":"`
+	// substring sits at position 10..12).
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
+	found := 0
+	err = searcher.Search(target, func(r SearchResult) error {
+		if bytes.Contains(r.Blocks[1], target) {
+			found++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found == 0 {
+		t.Fatalf("needle not found; stats: %+v", searcher.Stats())
+	}
+	st := searcher.Stats()
+	// With 3 blocks, blocks without the needle should mostly be skipped.
+	if st.BlocksSkipped == 0 {
+		t.Errorf("expected at least one block to be skipped, got stats: %+v", st)
+	}
+}
+
+// TestExtrasSearcherSkipsAbsentPattern verifies a pattern whose extras
+// window is absent in the table gets the block skipped.
+func TestExtrasSearcherSkipsAbsentPattern(t *testing.T) {
+	blockSize := minBlockSize
+	// Block has the prefix `":"` followed by `AAAAAAAA` (compressible).
+	// Searcher looks for `":"BBBBBBBB` which has the same prefix but a
+	// totally different post-prefix value → all extras windows absent.
+	data := make([]byte, blockSize)
+	for i := range data {
+		data[i] = '.'
+	}
+	copy(data[100:], []byte(`":"AAAAAAAA`))
+
+	cfg := NewSearchTableConfig().
+		WithMatchLen(4).
+		WithLongPrefix([]byte(`":"`)).
+		WithExtras(3)
+
+	var buf bytes.Buffer
+	w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(blockSize), WriterConcurrency(1))
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sanity: pattern must be long enough — pl+ml+ex = 3+4+3 = 10 bytes minimum.
+	absent := []byte(`":"BBBBBBBB`)
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
+	matches := 0
+	err := searcher.Search(absent, func(r SearchResult) error {
+		matches++
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if matches != 0 {
+		t.Fatalf("found false-positive match for absent pattern: %d", matches)
+	}
+	if searcher.Stats().BlocksSkipped == 0 {
+		t.Fatalf("expected the single data block to be skipped, stats: %+v", searcher.Stats())
+	}
+}
+
+// TestExtrasReferenceParity verifies that the in-tree encoder and the
+// internal/reference encoder produce the same packed table for a long-prefix
+// configuration with extras, ensuring spec/impl agreement.
+func TestExtrasReferenceParity(t *testing.T) {
+	prefix := []byte(`id":"`)
+	data := make([]byte, 4096)
+	rng := rand.New(rand.NewSource(2026))
+	for i := range data {
+		data[i] = byte('a' + rng.Intn(20))
+	}
+	// Sprinkle prefix occurrences.
+	for _, p := range []int{40, 600, 1200, 2000, 3000} {
+		copy(data[p:], prefix)
+		rng.Read(data[p+len(prefix) : p+len(prefix)+8])
+	}
+
+	const ml, ex = 4, 3
+	cfg := withBaseTableSize(
+		NewSearchTableConfig().WithMatchLen(ml).WithLongPrefix(prefix).WithExtras(ex),
+		14,
+	)
+	refCfg := reference.SearchConfig{
+		MatchLen:      ml,
+		BaseTableSize: 14,
+		TableType:     reference.TableTypeLongPrefix,
+		Extras:        ex,
+		LongPrefix:    prefix,
+	}
+
+	table, reductions := cfg.buildSearchTable(data, nil, nil, false)
+	refTable, refReductions := reference.BuildSearchTable(refCfg, data, nil)
+
+	// Reductions are decided independently; both should produce the same
+	// final bit-set on the lower table half. Compare unreduced bitmaps by
+	// reductively re-folding to the same size.
+	if reductions != refReductions {
+		// Re-fold the lower-reductions table.
+		t.Logf("reductions differ: %d vs ref %d — re-folding for comparison", reductions, refReductions)
+	}
+	tableEq, refEq := table, refTable
+	for reductions < refReductions {
+		half := len(tableEq) / 2
+		for i := 0; i < half; i++ {
+			tableEq[i] |= tableEq[half+i]
+		}
+		tableEq = tableEq[:half]
+		reductions++
+	}
+	for refReductions < reductions {
+		half := len(refEq) / 2
+		for i := 0; i < half; i++ {
+			refEq[i] |= refEq[half+i]
+		}
+		refEq = refEq[:half]
+		refReductions++
+	}
+	if !bytes.Equal(tableEq, refEq) {
+		t.Fatalf("in-tree and reference encoders disagree on table bits")
+	}
+}
+
+// TestExtrasBoundaryOverlap verifies that a prefix near the end of a block,
+// where the extras windows extend into the next block, still gets all E+1
+// entries written to the block's table via the expanded tail overlap.
+func TestExtrasBoundaryOverlap(t *testing.T) {
+	blockSize := minBlockSize
+	prefix := []byte(`":"`)
+	const ml, ex = 4, 3
+
+	// Place the prefix so its first-match-position is inside block 0 but
+	// the last extras window crosses into block 1.
+	// Layout in block 0:
+	//   prefix at [P, P+pl) with P+pl < blockSize
+	//   payload at [P+pl, P+pl+ml+ex)
+	// We want P+pl+ml+ex > blockSize → P > blockSize - pl - ml - ex.
+	P := blockSize - len(prefix) - ml - ex + 2
+
+	// Compressible filler keeps the writer in compressed-block mode.
+	filler := bytes.Repeat([]byte("abcdefghijklmnop\n"), blockSize/17+1)
+	data := make([]byte, blockSize*2)
+	copy(data[0:], filler[:blockSize])
+	copy(data[blockSize:], filler[:blockSize])
+
+	copy(data[P:], prefix)
+	for j := 0; j < ml+ex; j++ {
+		data[P+len(prefix)+j] = byte('A' + j)
+	}
+
+	cfg := NewSearchTableConfig().
+		WithMatchLen(ml).
+		WithLongPrefix(prefix).
+		WithExtras(ex)
+
+	var buf bytes.Buffer
+	w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(blockSize), WriterConcurrency(1))
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// The needle straddles the block boundary; the searcher must not skip
+	// either block.
+	needle := make([]byte, 0, len(prefix)+ml+ex)
+	needle = append(needle, prefix...)
+	for j := 0; j < ml+ex; j++ {
+		needle = append(needle, byte('A'+j))
+	}
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
+	found := 0
+	err := searcher.Search(needle, func(r SearchResult) error {
+		if bytes.Contains(append(append([]byte{}, r.PrevBlock()...), r.Blocks[1]...), needle) {
+			found++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found == 0 {
+		t.Fatalf("boundary-straddling needle not found; stats: %+v", searcher.Stats())
+	}
+}

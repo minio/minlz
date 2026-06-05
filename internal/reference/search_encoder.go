@@ -71,6 +71,7 @@ type SearchConfig struct {
 	MatchLen      uint8    // 1..8
 	BaseTableSize uint8    // 8..23 (log2 of bit count)
 	TableType     uint8    // 1..4
+	Extras        uint8    // type 4 only: E+1 hashes per prefix occurrence; MatchLen+Extras ≤ 16
 	PrefixBytes   []byte   // type 2: 1..8 bytes (will be padded to 8 on the wire)
 	PrefixMask    [32]byte // type 3: 256-bit set
 	LongPrefix    []byte   // type 4: 1..256 bytes
@@ -111,8 +112,8 @@ func HashValue(val uint64, tableSize, matchLen uint8) uint32 {
 }
 
 // BuildSearchTable produces the packed bitmap and the chosen reductions count
-// for blockData. overlap is up to MatchLen-1 bytes from the start of the next
-// block (empty for the last block in a stream).
+// for blockData. overlap is up to MatchLen+Extras-1 bytes from the start of
+// the next block (empty for the last block in a stream).
 //
 // The returned table length is 1 << (BaseTableSize - reductions - 3) bytes,
 // rounded up to the 32-byte minimum.
@@ -124,9 +125,12 @@ func BuildSearchTable(cfg SearchConfig, blockData, overlap []byte) (table []byte
 	table = make([]byte, tableBytes)
 
 	// Index every starting position in blockData. The window read at each
-	// position can cross into overlap.
+	// position can cross into overlap. With Extras=E the encoder writes E+1
+	// hashes per indexed position (offsets 0..E), so the last byte read is
+	// matchLen+E-1 past the position.
 	ml := int(cfg.MatchLen)
-	last := len(blockData) - ml + 1 // last position where the window is fully inside blockData
+	ex := int(cfg.Extras)
+	last := len(blockData) - ml - ex + 1 // last position where all windows fit fully inside blockData
 	if last < 0 {
 		last = 0
 	}
@@ -144,18 +148,18 @@ func BuildSearchTable(cfg SearchConfig, blockData, overlap []byte) (table []byte
 		}
 		var scratch [16]byte
 		n := copy(scratch[:], blockData[pos:])
-		if n < ml {
-			copy(scratch[n:], overlap)
+		copy(scratch[n:], overlap)
+		for j := 0; j <= ex; j++ {
+			h := HashValue(readLE64Pad(scratch[j:j+ml]), cfg.BaseTableSize, cfg.MatchLen)
+			setBit(table, h)
 		}
-		h := HashValue(readLE64Pad(scratch[:ml]), cfg.BaseTableSize, cfg.MatchLen)
-		setBit(table, h)
 	}
 
 	// Positions fully inside blockData.
 	for pos := 0; pos < last; pos++ {
 		indexAt(pos)
 	}
-	// Overlap tail: positions whose window extends into the next block.
+	// Overlap tail: positions whose windows extend into the next block.
 	// Only emitted when overlap data is available — the last block of a stream
 	// has no overlap, so its tail positions are not indexed.
 	if len(overlap) > 0 {
@@ -275,7 +279,8 @@ func prefixSize(cfg SearchConfig) int {
 	case TableTypeMaskPrefix:
 		return 32
 	case TableTypeLongPrefix:
-		return 1 + len(cfg.LongPrefix)
+		// length byte + extras byte + prefix bytes
+		return 2 + len(cfg.LongPrefix)
 	}
 	return 0
 }
@@ -299,7 +304,7 @@ func appendConfig(dst []byte, cfg SearchConfig) []byte {
 	case TableTypeMaskPrefix:
 		return append(dst, cfg.PrefixMask[:]...)
 	case TableTypeLongPrefix:
-		dst = append(dst, byte(len(cfg.LongPrefix)-1))
+		dst = append(dst, byte(len(cfg.LongPrefix)-1), cfg.Extras)
 		return append(dst, cfg.LongPrefix...)
 	}
 	return dst

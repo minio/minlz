@@ -262,11 +262,16 @@ func parseConfig(payload []byte) (SearchConfig, int, error) {
 		copy(cfg.PrefixMask[:], payload[off:off+32])
 		off += 32
 	case TableTypeLongPrefix:
-		if off+1 > len(payload) {
-			return cfg, 0, fmt.Errorf("minlz: long-prefix length truncated")
+		if off+2 > len(payload) {
+			return cfg, 0, fmt.Errorf("minlz: long-prefix header truncated")
 		}
 		k := int(payload[off]) + 1
 		off++
+		cfg.Extras = payload[off]
+		off++
+		if int(cfg.MatchLen)+int(cfg.Extras) > 16 {
+			return cfg, 0, fmt.Errorf("minlz: matchLen+extras must be <= 16, got matchLen=%d extras=%d", cfg.MatchLen, cfg.Extras)
+		}
 		if off+k > len(payload) {
 			return cfg, 0, fmt.Errorf("minlz: long-prefix data truncated (need %d)", k)
 		}

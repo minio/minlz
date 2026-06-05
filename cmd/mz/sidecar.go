@@ -69,6 +69,7 @@ func mainSidecarBuild(args []string) {
 		searchLens         = fs.String("search.lens", "6", "Comma-separated list of match lengths (1-8); one config per length")
 		searchPfx          = fs.String("search.prefixes", "", "Search prefix bytes (e.g. ':,\"')")
 		searchPfxLong      = fs.String("search.prefix", "", "Single longer prefix string (e.g. 'id\":\"')")
+		searchExtras       = fs.Int("search.extras", 0, "Requires -search.prefix: emit Extras+1 windows per prefix occurrence (0-15). matchLen+extras must be <= 16")
 		searchMax          = fs.Int("search.max", 75, "Discard search-table entries with population % > this")
 		searchLim          = fs.Int("search.lim", 25, "Stop reducing search tables when reduced population exceeds this %. Auto-tightened to 10 when a prefix is set, unless explicitly overridden.")
 		searchUncompressed = fs.Bool("search.uncompressed", false, "Disable per-block search-table compression (default emits 0x46 chunks)")
@@ -134,12 +135,29 @@ Options:`)
 			exitErr(fmt.Errorf("--search.lens %d out of range (1-8)", n))
 		}
 		cfg := minlz.NewSearchTableConfig().WithMatchLen(n).WithMaxPopulation(*searchMax)
-		if len(*searchPfxLong) == 1 {
-			cfg = cfg.WithBytePrefix((*searchPfxLong)[0])
-		} else if len(*searchPfxLong) > 1 {
-			cfg = cfg.WithLongPrefix([]byte(*searchPfxLong))
+		// With -search.extras > 0 we route -search.prefix to a long prefix
+		// (type 4) even if it is a single byte — extras only applies to type 4.
+		useLongPrefix := *searchExtras > 0
+		if len(*searchPfxLong) > 0 {
+			if useLongPrefix || len(*searchPfxLong) > 1 {
+				cfg = cfg.WithLongPrefix([]byte(*searchPfxLong))
+			} else {
+				cfg = cfg.WithBytePrefix((*searchPfxLong)[0])
+			}
 		} else if len(*searchPfx) > 0 {
 			cfg = cfg.WithBytePrefix([]byte(*searchPfx)...)
+		}
+		if *searchExtras != 0 {
+			if *searchExtras < 0 || *searchExtras > 15 {
+				exitErr(fmt.Errorf("search extras must be 0-15"))
+			}
+			if n+*searchExtras > 16 {
+				exitErr(fmt.Errorf("matchLen+extras must be <= 16, got matchLen=%d extras=%d", n, *searchExtras))
+			}
+			if len(*searchPfxLong) == 0 {
+				exitErr(fmt.Errorf("-search.extras requires -search.prefix"))
+			}
+			cfg = cfg.WithExtras(*searchExtras)
 		}
 		if searchLimSet {
 			cfg = cfg.WithMaxReducedPopulation(*searchLim)

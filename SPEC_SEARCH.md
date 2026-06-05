@@ -324,12 +324,32 @@ Each bit indicates if a byte value at that position is a prefix of the search pa
 
 #### 3.3.4 Table Type 4
 
+| Length | Description           |
+|--------|-----------------------|
+| 1      | Table Type (always 4) |
+| 1      | Prefix Length         |
+| 1      | Extra Matches         |
+| n      | Prefix                |
+
 The first byte defines the prefix length. One must be added to the length after being read.
 
-The prefix (1 to 256 bytes) is stored after the length indication.
+The second byte defines the number of extra matches following the prefix.
+0 means one match, 15 means 16 matches. `matchLen + Extra Matches` MUST NOT exceed 16.
+Tables where `matchLen + Extra Matches > 16` are malformed and MUST be rejected.
 
-A type 4 table with prefix `"id":` will therefore only contain entries following that prefix.
+For each indexed position `P+pl` (the byte immediately following the prefix in the data),
+hashes are written for `Extra Matches + 1` consecutive overlapping windows at positions
+`P+pl, P+pl+1, ..., P+pl+Extra Matches`. Each window hashes `matchLen` bytes, so the
+windows collectively span bytes `[P+pl, P+pl+matchLen+Extra Matches)` of the data.
 
+All `Extra Matches + 1` hash entries for one prefix occurrence are stored in the same
+block's search table — the block containing the prefix bytes. The encoder's tail-overlap
+into the next block must therefore cover `matchLen + Extra Matches - 1` bytes (rather than
+`matchLen - 1`), so that all windows can be read for prefix positions near the block end.
+
+The prefix (1 to 256 bytes) is stored after the length indication and the extras byte.
+
+A type 4 table with prefix `"id":` will only contain entries following that prefix.
 
 ## Appendix A - Using Search Tables
 
@@ -404,24 +424,33 @@ help and the searcher must fall back to decoding the block.
 ### A.4 Type 4 - Long Prefix
 
 The table contains entries for positions following a multi-byte prefix sequence.
-The searcher scans the pattern for any occurrence of the prefix substring and
-checks the `matchLen` bytes that follow it.
+With `Extra Matches = E`, the encoder writes `E+1` overlapping windows of `matchLen`
+bytes per prefix occurrence. The searcher mirrors this: for every prefix occurrence
+found inside the pattern, it checks all `E+1` windows. Every checked window must be
+present for that occurrence to remain a candidate.
 
-For pattern `P` of length `L`, prefix `pfx` of length `K`, and matchLen = `M`:
+For pattern `P` of length `L`, prefix `pfx` of length `K`, matchLen = `M`, extras = `E`:
 
 ```
 checked = 0
-for i = 0 to L - K - M:
+for i = 0 to L - K - M - E:
     if P[i : i+K] == pfx:
-        if not present(P[i+K : i+K+M]):
-            skip block
+        for j = 0 to E:
+            if not present(P[i+K+j : i+K+j+M]):
+                skip block
         checked++
 if checked == 0:
     cannot use table (fall back to full decode)
 ```
 
-For example, with prefix `":"` and matchLen 4, searching for `stamp":"1679909263`
-finds `":"` at position 5. The window `1679` is checked.
+A prefix occurrence is only usable when the pattern has at least `K + M + E` bytes
+after it (so all `E+1` windows fit). Occurrences that fall short of the trailing-byte
+requirement are silently ignored; if no occurrence is usable, the table cannot help
+and the searcher falls back.
+
+For example, with prefix `":"`, matchLen 4, and extras 3, searching for
+`stamp":"1679909263` finds `":"` at position 5. The windows `1679`, `6799`, `7990`,
+`9909` are all checked.
 
 ### A.5 Fallback Behavior
 
@@ -445,6 +474,11 @@ For block N of size S with matchLen M, the positions that need overlap are
 `S-M+1` through `S-1`. Each of these positions reads bytes from both block N
 and block N+1. The encoder should provide the first `M-1` bytes of block N+1
 as overlap when building block N's table.
+
+For type 4 tables with `Extra Matches = E > 0`, every indexed prefix occurrence
+contributes `E+1` consecutive windows. The encoder must therefore read up to
+`M + E - 1` bytes past the block end, so the overlap from block N+1 must extend
+to `M + E - 1` bytes for type 4 tables with extras.
 
 For contiguous buffers (`EncodeBuffer`), the overlap is directly available.
 For streaming writes, the overlap comes from the remaining data in the write buffer.

@@ -342,15 +342,15 @@ func BuildSidecar(dst io.Writer, src io.Reader, opts ...SidecarOption) error {
 		o.cfgs[i].resolveDefaults()
 	}
 
-	// Compute the largest matchLen across configs — we need (matchLen-1)
-	// bytes of overlap from the next block when indexing the current.
-	maxMatchLen := 0
+	// Compute the largest overlap needed across configs. Type 4 with
+	// extras=E needs matchLen+E-1 bytes of overlap from the next block;
+	// other types need matchLen-1.
+	overlapLen := 0
 	for _, c := range o.cfgs {
-		if int(c.matchLen) > maxMatchLen {
-			maxMatchLen = int(c.matchLen)
+		if n := c.overlapBytes(); n > overlapLen {
+			overlapLen = n
 		}
 	}
-	overlapLen := max(0, maxMatchLen-1)
 
 	// Write sidecar stream header + 0x44 info chunks (one per config).
 	if _, err := dst.Write(makeHeader(maxBlock)); err != nil {

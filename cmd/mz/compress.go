@@ -52,6 +52,7 @@ func mainCompress(args []string) {
 		searchLen          = fs.Int("search.len", 6, "Add search tables with given match length (1-8)")
 		searchPfx          = fs.String("search.prefixes", "", "Search table prefix bytes (e.g. '=', '=:')")
 		searchPfxString    = fs.String("search.prefix", "", "Single value longer prefix, eg 'id:\\\"'")
+		searchExtras       = fs.Int("search.extras", 0, "Requires -search.prefix: emit Extras+1 windows per prefix occurrence (0-15). matchLen+extras must be <= 16")
 		searchMax          = fs.Int("search.max", 75, "Discards search table entries with a population percentage higher than this")
 		searchLim          = fs.Int("search.lim", 25, "Stops reducing search tables when reduced population exceeds this percentage. Auto-tightened to 10 when a prefix is set, unless explicitly overridden.")
 		searchUncompressed = fs.Bool("search.uncompressed", false, "Disable per-block search-table compression (default emits 0x46 chunks)")
@@ -141,12 +142,29 @@ Options:`)
 			exitErr(fmt.Errorf("search limit must be between 1 and 100"))
 		}
 		cfg := minlz.NewSearchTableConfig().WithMatchLen(*searchLen).WithMaxPopulation(*searchMax)
-		if len(*searchPfxString) == 1 {
-			cfg = cfg.WithBytePrefix((*searchPfxString)[0])
-		} else if len(*searchPfxString) > 1 {
-			cfg = cfg.WithLongPrefix([]byte(*searchPfxString))
+		// With -search.extras > 0 we route -search.prefix to a long prefix
+		// (type 4) even if it is a single byte — extras only applies to type 4.
+		useLongPrefix := *searchExtras > 0
+		if len(*searchPfxString) > 0 {
+			if useLongPrefix || len(*searchPfxString) > 1 {
+				cfg = cfg.WithLongPrefix([]byte(*searchPfxString))
+			} else {
+				cfg = cfg.WithBytePrefix((*searchPfxString)[0])
+			}
 		} else if len(*searchPfx) > 0 {
 			cfg = cfg.WithBytePrefix([]byte(*searchPfx)...)
+		}
+		if *searchExtras != 0 {
+			if *searchExtras < 0 || *searchExtras > 15 {
+				exitErr(fmt.Errorf("search extras must be 0-15"))
+			}
+			if *searchLen+*searchExtras > 16 {
+				exitErr(fmt.Errorf("matchLen+extras must be <= 16, got matchLen=%d extras=%d", *searchLen, *searchExtras))
+			}
+			if len(*searchPfxString) == 0 {
+				exitErr(fmt.Errorf("-search.extras requires -search.prefix"))
+			}
+			cfg = cfg.WithExtras(*searchExtras)
 		}
 		searchLimSet := false
 		searchCompSkipSet := false
