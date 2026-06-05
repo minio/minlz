@@ -32,9 +32,11 @@ type remoteRef struct {
 
 // appendRemoteBlockRef appends a 0x47 chunk containing a single absolute
 // block reference. maxMinusActual = streamMaxBlockSize - blockUncompressedSize.
+// Panics on negative inputs — these indicate a writer bug, and silently
+// producing an empty chunk would corrupt the sidecar.
 func appendRemoteBlockRef(dst []byte, blockOffset int64, maxMinusActual int) []byte {
 	if blockOffset < 0 || maxMinusActual < 0 {
-		return dst
+		panic(fmt.Sprintf("minlz: appendRemoteBlockRef: negative input (offset=%d, maxMinusActual=%d)", blockOffset, maxMinusActual))
 	}
 	var pl [binary.MaxVarintLen64 * 2]byte
 	n := binary.PutUvarint(pl[:], uint64(blockOffset))
@@ -77,7 +79,7 @@ func parseRemoteBlockRef(payload []byte, maxBlockSize int) ([]remoteRef, error) 
 		if abs < 0 {
 			return nil, fmt.Errorf("%w: negative offset in 0x47", ErrSidecarInvalid)
 		}
-		if int(minusActual) > maxBlockSize {
+		if minusActual > uint64(maxBlockSize) {
 			return nil, fmt.Errorf("%w: max-actual %d exceeds block size %d", ErrSidecarInvalid, minusActual, maxBlockSize)
 		}
 		uncomp := maxBlockSize - int(minusActual)

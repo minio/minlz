@@ -15,13 +15,15 @@ With this information, blocks can be skipped if searching for specific patterns.
 
 A stream can contain search indexes only. This means that blocks are referenced into another stream.
 
-The stream should be valid, but instead of the block data, Remote Block Reference (chunk type 0x47) 
+The stream should be valid, but instead of the block data, Remote Block Reference (chunk type 0x47)
 is inserted for each data block.
 
-All other chunks should remain as they would be on the original stream,
-including the search index, which should reference the original stream.
+A sidecar stream carries the stream header, the search-related chunks (0x44 / 0x45 / 0x46),
+and a 0x47 Remote Block Reference per data block, followed by the stream's EOF chunk.
+Other chunk types from the original stream (raw / compressed data, seek index, padding, etc.)
+are NOT carried over — the sidecar references the data via the 0x47 offsets instead.
 
-This will allow the index to be stored separately from the data. 
+This allows the index to be stored separately from the data.
 
 ## 2 New Chunks
 

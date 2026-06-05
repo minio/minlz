@@ -242,8 +242,11 @@ func (w *Writer) Reset(writer io.Writer) {
 			if w.sidecar != nil && input.uncompSize > 0 && w.err(nil) == nil {
 				if err := w.writeSidecarStartIfNeeded(); err == nil {
 					if len(input.sidecarPre) > 0 {
-						if _, err := w.sidecar.Write(input.sidecarPre); err != nil {
+						n, err := w.sidecar.Write(input.sidecarPre)
+						if err != nil {
 							_ = w.err(err)
+						} else if n != len(input.sidecarPre) {
+							_ = w.err(io.ErrShortWrite)
 						}
 					}
 					if w.err(nil) == nil {
@@ -818,6 +821,7 @@ func (w *Writer) writeFull(inbuf []byte) (errRet error) {
 		} else {
 			res.b = dbuf
 		}
+		res.pooled = obuf
 		output <- res
 
 		w.buffers.Put(inbuf)
