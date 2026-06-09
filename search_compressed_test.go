@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -197,10 +198,10 @@ func TestCompressedRLEAllZero(t *testing.T) {
 	if !bytes.Equal(got, bitmap) {
 		t.Fatalf("roundtrip mismatch")
 	}
-	// Every huff0 sub-block should be RLE.
-	if seenStats.BlocksRLE != seenStats.Huff0Blocks {
+	// Every compressed sub-block should be RLE.
+	if seenStats.BlocksRLE != seenStats.SubBlocks {
 		t.Fatalf("expected all %d blocks RLE, got own=%d global=%d raw=%d rle=%d",
-			seenStats.Huff0Blocks,
+			seenStats.SubBlocks,
 			seenStats.BlocksOwnTable, seenStats.BlocksGlobalTable,
 			seenStats.BlocksRaw, seenStats.BlocksRLE)
 	}
@@ -676,12 +677,12 @@ func TestCompressedStatsHook(t *testing.T) {
 	if got.BitmapBytes != 8192 {
 		t.Fatalf("BitmapBytes=%d", got.BitmapBytes)
 	}
-	if got.Huff0Blocks != 1 || got.Huff0BlockSize != 8192 {
-		t.Fatalf("Huff0Blocks=%d size=%d", got.Huff0Blocks, got.Huff0BlockSize)
+	if got.SubBlocks != 1 || got.SubBlockSize != 8192 {
+		t.Fatalf("SubBlocks=%d size=%d", got.SubBlocks, got.SubBlockSize)
 	}
-	totalBlocks := got.BlocksOwnTable + got.BlocksGlobalTable + got.BlocksRaw + got.BlocksRLE
-	if totalBlocks != got.Huff0Blocks {
-		t.Fatalf("sub-block counts %d do not sum to Huff0Blocks %d", totalBlocks, got.Huff0Blocks)
+	totalBlocks := got.BlocksOwnTable + got.BlocksGlobalTable + got.BlocksRaw + got.BlocksRLE + got.BlocksSparse
+	if totalBlocks != got.SubBlocks {
+		t.Fatalf("sub-block counts %d do not sum to SubBlocks %d", totalBlocks, got.SubBlocks)
 	}
 	if got.Chunk0x45Size == 0 || got.Chunk0x46Size == 0 || !got.Emitted0x46 {
 		t.Fatalf("size stats unexpected: %+v", got)
@@ -870,7 +871,7 @@ func BenchmarkCompressedSearchEncode(b *testing.B) {
 }
 
 func BenchmarkCompressedSearchDecode(b *testing.B) {
-	for _, sz := range []int{4096, 8192, 64 << 10, 128 << 10, 512 << 10, 1 << 20} {
+	for _, sz := range []int{1 << 20} {
 		b.Run(fmt.Sprintf("%d", sz), func(b *testing.B) {
 			bitmap := makeBitmap(sz, 0.10, 42)
 			cfg := NewSearchTableConfig().WithMatchLen(4).WithCompression(CompressedSearchForce())
@@ -962,28 +963,32 @@ func BenchmarkCompressedSearchEncodeByPath(b *testing.B) {
 // vs off so the developer can eyeball wire-size differences.
 func BenchmarkCompressedSearchVsUncompressed(b *testing.B) {
 	rng := rand.New(rand.NewSource(7))
-	data := make([]byte, 256<<10)
+	data := make([]byte, 8<<20)
 	for i := range data {
-		data[i] = byte(rng.Intn(16)) // skewed → good for compression
+		data[i] = byte(rng.Intn(4)) // skewed → good for compression
 	}
 	run := func(b *testing.B, useCompression bool) {
 		cfg := NewSearchTableConfig().WithMatchLen(4)
-		if useCompression {
-			cfg = cfg.WithCompression()
+		if !useCompression {
+			cfg = cfg.WithoutCompression()
+		} else {
+			cfg = cfg.WithCompression(CompressedSearchForce())
 		}
+		var lastLen int
+		var buf bytes.Buffer
+		buf.Grow(len(data))
+		w := NewWriter(&buf,
+			WriterLevel(LevelFastest),
+			WriterSearchTable(cfg),
+			WriterBlockSize(64<<10),
+			WriterConcurrency(runtime.GOMAXPROCS(0)),
+		)
 		b.SetBytes(int64(len(data)))
 		b.ReportAllocs()
-		var lastLen int
 		for b.Loop() {
-			var buf bytes.Buffer
-			buf.Grow(len(data))
-			w := NewWriter(&buf,
-				WriterUncompressed(),
-				WriterSearchTable(cfg),
-				WriterBlockSize(64<<10),
-				WriterConcurrency(1),
-			)
-			_, _ = w.Write(data)
+			buf.Reset()
+			w.Reset(&buf)
+			_ = w.EncodeBuffer(data)
 			_ = w.Close()
 			lastLen = buf.Len()
 		}
@@ -992,6 +997,51 @@ func BenchmarkCompressedSearchVsUncompressed(b *testing.B) {
 	}
 	b.Run("uncompressed", func(b *testing.B) { run(b, false) })
 	b.Run("compressed", func(b *testing.B) { run(b, true) })
+}
+
+// Quick smoke benchmark covering the Reader→search path with compression on
+// vs off so the developer can eyeball search throughput differences. The
+// pattern is absent from the random data and lives outside the byte range
+// the data uses, so all blocks are skipped via the search table and the
+// per-block bitmap decode + lookup dominates the measured cost.
+func BenchmarkSearchCompressedVsUncompressed(b *testing.B) {
+	rng := rand.New(rand.NewSource(7))
+	data := make([]byte, 256<<20)
+	for i := range data {
+		data[i] = byte(rng.Intn(4))
+	}
+	pattern := []byte("needle-not-present")
+	build := func(useCompression bool) []byte {
+		cfg := NewSearchTableConfig().WithMatchLen(4)
+		if !useCompression {
+			cfg = cfg.WithoutCompression()
+		} else {
+			cfg = cfg.WithCompression(CompressedSearchForce())
+		}
+		var buf bytes.Buffer
+		buf.Grow(len(data))
+		w := NewWriter(&buf,
+			WriterLevel(LevelFastest),
+			WriterSearchTable(cfg),
+			WriterBlockSize(64<<10),
+			WriterConcurrency(1),
+		)
+		_, _ = w.Write(data)
+		_ = w.Close()
+		return buf.Bytes()
+	}
+	run := func(b *testing.B, stream []byte) {
+		b.SetBytes(int64(len(data)))
+		b.ReportAllocs()
+		for b.Loop() {
+			s := NewBlockSearcher(bytes.NewReader(stream))
+			_ = s.Search(pattern, func(SearchResult) error { return nil })
+		}
+	}
+	streamU := build(false)
+	streamC := build(true)
+	b.Run("uncompressed", func(b *testing.B) { run(b, streamU) })
+	b.Run("compressed", func(b *testing.B) { run(b, streamC) })
 }
 
 // Suppress unused-import warning when -tags ... drops the strings import.

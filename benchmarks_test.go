@@ -292,7 +292,7 @@ func downloadBenchmarkFiles(b testing.TB, basename string) (errRet error) {
 	}
 	// Download the official snappy C++ implementation reference test data
 	// files for benchmarking.
-	if err := os.MkdirAll(bDir, 0777); err != nil && !os.IsExist(err) {
+	if err := os.MkdirAll(bDir, 0o777); err != nil && !os.IsExist(err) {
 		return fmt.Errorf("failed to create %s: %s", bDir, err)
 	}
 

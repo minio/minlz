@@ -79,14 +79,17 @@ func (c *SearchTableConfig) buildSearchTable(blockData, overlap, dst []byte, pac
 		}
 		buildTablePrefixLookup(table, blockData, nPositions, c.baseTableSize, c.matchLen, &lookup)
 	case searchTableTypeLongPrefix:
-		buildTablePrefixLong(table, blockData, nPositions, c.baseTableSize, c.matchLen, c.longPrefix)
+		buildTablePrefixLong(table, blockData, nPositions, c.baseTableSize, c.matchLen, c.extras, c.longPrefix)
 	}
 
 	// Index the tail positions that span into the overlap.
+	// Type 4 with extras=E indexes E+1 windows per prefix occurrence, so the
+	// boundary region extends back by an additional E bytes.
 	if len(overlap) > 0 {
 		ml := int(c.matchLen)
+		ex := int(c.extras)
 		var tmp [16]byte
-		start := max(0, len(blockData)-ml+1)
+		start := max(0, len(blockData)-ml-ex+1)
 		for pos := start; pos < len(blockData); pos++ {
 			// For prefix tables, only index if the preceding byte is a prefix.
 			if pos > 0 {
@@ -118,7 +121,9 @@ func (c *SearchTableConfig) buildSearchTable(blockData, overlap, dst []byte, pac
 			}
 			n := copy(tmp[:], blockData[pos:])
 			copy(tmp[n:], overlap)
-			setBit(table, hashValue(readLE64Pad(tmp[:ml]), c.baseTableSize, c.matchLen))
+			for j := 0; j <= ex; j++ {
+				setBit(table, hashValue(readLE64Pad(tmp[j:j+ml]), c.baseTableSize, c.matchLen))
+			}
 		}
 	}
 
@@ -847,8 +852,14 @@ func buildTablePrefixLookup(table []byte, data []byte, nPositions int, tableSize
 }
 
 // buildTablePrefixLong indexes positions following a long prefix match.
-func buildTablePrefixLong(table []byte, data []byte, nPositions int, tableSize, matchLen uint8, prefix []byte) {
-	n := nPositions - int(matchLen) + 1
+// With extras=E, each indexed position emits E+1 hashes for matchLen-byte
+// windows at offsets 0..E from the position. The main loop only handles
+// positions where all E+1 windows fit fully within blockData; the
+// overlap-tail loop in buildSearchTable handles the rest.
+func buildTablePrefixLong(table []byte, data []byte, nPositions int, tableSize, matchLen, extras uint8, prefix []byte) {
+	ml := int(matchLen)
+	ex := int(extras)
+	n := nPositions - ml - ex + 1
 	if n <= 0 {
 		return
 	}
@@ -856,12 +867,11 @@ func buildTablePrefixLong(table []byte, data []byte, nPositions int, tableSize, 
 	if pl > n {
 		return
 	}
-	safeEnd := max(0, len(data)-7)
+	safeEnd := max(0, len(data)-7-ex)
 	mainEnd := min(n, safeEnd)
 
-	switch pl {
-	case 1:
-		// Single byte prefix - similar to mask but with one value.
+	if ex == 0 && pl == 1 {
+		// Fast path preserved for the common extras=0 single-byte case.
 		p := prefix[0]
 		switch matchLen {
 		case 1:
@@ -900,17 +910,24 @@ func buildTablePrefixLong(table []byte, data []byte, nPositions int, tableSize, 
 				setBit(table, hashValue(readLE64Pad(data[i:]), tableSize, matchLen))
 			}
 		}
-	default:
-		// Multi-byte prefix. Use simple comparison.
-		for i := pl; i < mainEnd; i++ {
-			if matchPrefix(data[i-pl:i], prefix) {
-				setBit(table, hashValue(load64(data, i), tableSize, matchLen))
-			}
+		return
+	}
+
+	// General path: multi-byte prefix and/or extras > 0.
+	for i := pl; i < mainEnd; i++ {
+		if !matchPrefix(data[i-pl:i], prefix) {
+			continue
 		}
-		for i := max(pl, mainEnd); i < n; i++ {
-			if matchPrefix(data[i-pl:i], prefix) {
-				setBit(table, hashValue(readLE64Pad(data[i:]), tableSize, matchLen))
-			}
+		for j := 0; j <= ex; j++ {
+			setBit(table, hashValue(load64(data, i+j), tableSize, matchLen))
+		}
+	}
+	for i := max(pl, mainEnd); i < n; i++ {
+		if !matchPrefix(data[i-pl:i], prefix) {
+			continue
+		}
+		for j := 0; j <= ex; j++ {
+			setBit(table, hashValue(readLE64Pad(data[i+j:]), tableSize, matchLen))
 		}
 	}
 }

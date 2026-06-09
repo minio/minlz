@@ -136,7 +136,7 @@ func DecodeBlock(src []byte) (dst []byte, err error) {
 
 	// Offset is retained between operations and initialized to 1.
 	// This is used for repeat offsets.
-	var offset = uint32(1)
+	offset := uint32(1)
 
 	// While we have input left.
 	for len(src) > 0 {

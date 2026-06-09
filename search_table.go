@@ -33,15 +33,17 @@ const (
 // SearchTableConfig configures search table generation for a Writer.
 // Use NewSearchTableConfig to create, then chain With* methods to customize.
 type SearchTableConfig struct {
-	matchLen         uint8
-	tableType        uint8
-	baseTableSize    uint8 // log2, computed at writer init from block size
-	prefixBytes      [8]byte
-	prefixMask       [32]byte
-	longPrefix       []byte
-	maxPopPct        int
-	maxReducedPopPct int
-	compression      *compressedOpts // nil = emit 0x45 only
+	matchLen            uint8
+	tableType           uint8
+	baseTableSize       uint8 // log2, computed at writer init from block size
+	extras              uint8 // type 4 only: E+1 hashes per prefix occurrence; matchLen+extras ≤ 16
+	prefixBytes         [8]byte
+	prefixMask          [32]byte
+	longPrefix          []byte
+	maxPopPct           int
+	maxReducedPopPct    int
+	maxReducedPopPctSet bool            // true once WithMaxReducedPopulation has been called
+	compression         *compressedOpts // nil = emit 0x45 only
 }
 
 // String returns a one-line, human-readable summary of the search table
@@ -72,7 +74,11 @@ func (c SearchTableConfig) String() string {
 		}
 		prefix = fmt.Sprintf("mask-prefix (%d bytes)", n)
 	case searchTableTypeLongPrefix:
-		prefix = fmt.Sprintf("long-prefix=%q", string(c.longPrefix))
+		if c.extras > 0 {
+			prefix = fmt.Sprintf("long-prefix=%q extras=%d", string(c.longPrefix), c.extras)
+		} else {
+			prefix = fmt.Sprintf("long-prefix=%q", string(c.longPrefix))
+		}
 	default:
 		prefix = fmt.Sprintf("type=%d", c.tableType)
 	}
@@ -81,13 +87,19 @@ func (c SearchTableConfig) String() string {
 }
 
 // NewSearchTableConfig creates a search table config.
-// Defaults: matchLen=6, no prefix (type 1), auto table size, 70% max population, 25% max conflicts.
+// Defaults: matchLen=6, no prefix (type 1), auto table size, 70% max
+// population, 25% max reduced population (auto-tightened to 10% when a prefix
+// is configured), compression on.
 func NewSearchTableConfig() SearchTableConfig {
 	return SearchTableConfig{
 		matchLen:         6,
 		tableType:        searchTableTypeNoPrefix,
 		maxPopPct:        defaultMaxPopPct,
 		maxReducedPopPct: defaultMaxReducedPopPct,
+		compression: &compressedOpts{
+			enabled:         true,
+			skipPctTimes100: cstDefaultSkipPctTimes100,
+		},
 	}
 }
 
@@ -95,6 +107,9 @@ func NewSearchTableConfig() SearchTableConfig {
 // Shorter values use less of the search pattern but are more likely to collide.
 // Default is 6.
 func (c SearchTableConfig) WithMatchLen(n int) SearchTableConfig {
+	if n < 0 || n > 255 {
+		n = 255 // out of uint8 range: let validate() reject instead of silently wrapping
+	}
 	c.matchLen = uint8(n)
 	return c
 }
@@ -134,6 +149,21 @@ func (c SearchTableConfig) WithLongPrefix(prefix []byte) SearchTableConfig {
 	return c
 }
 
+// WithExtras sets the number of extra hashes emitted after each long-prefix
+// occurrence. With extras=E, table type 4 writes E+1 consecutive overlapping
+// matchLen-byte windows per indexed position; the searcher checks the same
+// E+1 windows per pattern occurrence. matchLen+extras must not exceed 16.
+//
+// Extras only applies to type 4 (long prefix). Setting extras > 0 on any other
+// table type produces a validation error.
+func (c SearchTableConfig) WithExtras(n int) SearchTableConfig {
+	if n < 0 || n > 255 {
+		n = 255 // out of uint8 range: let validate() reject instead of silently wrapping
+	}
+	c.extras = uint8(n)
+	return c
+}
+
 // WithMaxPopulation sets the max population percentage (0-100).
 // Tables with more bits set are skipped entirely.
 func (c SearchTableConfig) WithMaxPopulation(pct int) SearchTableConfig {
@@ -143,15 +173,21 @@ func (c SearchTableConfig) WithMaxPopulation(pct int) SearchTableConfig {
 
 // WithMaxReducedPopulation sets the max population percentage (0-100) for the
 // reduced table. Reductions stop before exceeding this threshold.
+//
+// Default is 25%, automatically tightened to 10% when a prefix is configured
+// (byte/mask/long). Calling this method disables that auto-tightening — the
+// supplied value is used regardless of prefix.
 func (c SearchTableConfig) WithMaxReducedPopulation(pct int) SearchTableConfig {
 	c.maxReducedPopPct = pct
+	c.maxReducedPopPctSet = true
 	return c
 }
 
-// WithCompression enables huff0 compression of per-block search tables.
-// This will reduce search index size on high quality search indexes,
-// with low population count.
-// Search Indexes that can only be marginally compressed are stored uncompressed.
+// WithCompression enables huff0 compression of per-block search tables and
+// optionally tunes it. Compression is on by default — call this only to pass
+// non-default options.
+//
+// Search indexes that can only be marginally compressed are stored uncompressed.
 //
 // With no options, defaults are: 10.0% popcount band, no stats hook,
 // non-forced (emit compressed only when smaller).
@@ -167,6 +203,24 @@ func (c SearchTableConfig) WithCompression(opts ...CompressedSearchOption) Searc
 	return c
 }
 
+// WithoutCompression disables the per-block search-table compression that is
+// on by default. The stream will emit only 0x45 chunks; readers that don't
+// implement 0x46 can read it.
+func (c SearchTableConfig) WithoutCompression() SearchTableConfig {
+	c.compression = nil
+	return c
+}
+
+// resolveDefaults applies context-dependent defaults that were not set
+// explicitly by the caller. Currently: tightens maxReducedPopPct to 10 when a
+// prefix is configured and WithMaxReducedPopulation was not called.
+// Must be called once the tableType is final.
+func (c *SearchTableConfig) resolveDefaults() {
+	if !c.maxReducedPopPctSet && c.tableType != searchTableTypeNoPrefix {
+		c.maxReducedPopPct = 10
+	}
+}
+
 func (c *SearchTableConfig) validate() error {
 	if c.matchLen < 1 || c.matchLen > 8 {
 		return fmt.Errorf("minlz: search table matchLen must be 1-8, got %d", c.matchLen)
@@ -178,6 +232,14 @@ func (c *SearchTableConfig) validate() error {
 	}
 	if c.tableType == searchTableTypeLongPrefix && (len(c.longPrefix) < 1 || len(c.longPrefix) > 256) {
 		return fmt.Errorf("minlz: long prefix length must be 1-256, got %d", len(c.longPrefix))
+	}
+	if c.extras != 0 {
+		if c.tableType != searchTableTypeLongPrefix {
+			return fmt.Errorf("minlz: extras only valid for long-prefix tables (type 4)")
+		}
+		if int(c.matchLen)+int(c.extras) > 16 {
+			return fmt.Errorf("minlz: matchLen+extras must be <= 16, got matchLen=%d extras=%d", c.matchLen, c.extras)
+		}
 	}
 	return nil
 }
@@ -194,6 +256,14 @@ func (c *SearchTableConfig) maxChunkSize() int {
 	return 4 + c.searchTablePayloadSize(1<<(c.baseTableSize-3))
 }
 
+// overlapBytes returns the number of bytes the search-table encoder needs
+// from the start of the next block to safely index positions near the end
+// of the current block. With extras=E (type 4), the encoder reads up to
+// matchLen+E-1 bytes past the block end.
+func (c *SearchTableConfig) overlapBytes() int {
+	return max(0, int(c.matchLen)+int(c.extras)-1)
+}
+
 func (c *SearchTableConfig) prefixSize() int {
 	switch c.tableType {
 	case searchTableTypeBytePrefix:
@@ -201,7 +271,8 @@ func (c *SearchTableConfig) prefixSize() int {
 	case searchTableTypeMaskPrefix:
 		return 32
 	case searchTableTypeLongPrefix:
-		return 1 + len(c.longPrefix)
+		// length byte + extras byte + prefix bytes
+		return 2 + len(c.longPrefix)
 	}
 	return 0
 }
@@ -261,7 +332,7 @@ func (c *SearchTableConfig) appendPrefix(dst []byte) []byte {
 	case searchTableTypeMaskPrefix:
 		return append(dst, c.prefixMask[:]...)
 	case searchTableTypeLongPrefix:
-		dst = append(dst, uint8(len(c.longPrefix)-1))
+		dst = append(dst, uint8(len(c.longPrefix)-1), c.extras)
 		return append(dst, c.longPrefix...)
 	}
 	return dst
@@ -323,14 +394,18 @@ func parseSearchInfo(payload []byte) (SearchTableConfig, error) {
 		}
 		copy(cfg.prefixMask[:], payload[:32])
 	case searchTableTypeLongPrefix:
-		if len(payload) < 1 {
+		if len(payload) < 2 {
 			return cfg, fmt.Errorf("minlz: search info long prefix too short")
 		}
 		pLen := int(payload[0]) + 1
-		if len(payload) < 1+pLen {
+		cfg.extras = payload[1]
+		if int(cfg.matchLen)+int(cfg.extras) > 16 {
+			return cfg, fmt.Errorf("minlz: matchLen+extras must be <= 16, got matchLen=%d extras=%d", cfg.matchLen, cfg.extras)
+		}
+		if len(payload) < 2+pLen {
 			return cfg, fmt.Errorf("minlz: search info long prefix data too short")
 		}
-		cfg.longPrefix = slices.Clone(payload[1 : 1+pLen])
+		cfg.longPrefix = slices.Clone(payload[2 : 2+pLen])
 	default:
 		return cfg, fmt.Errorf("minlz: unknown search table type %d", cfg.tableType)
 	}

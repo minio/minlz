@@ -40,21 +40,21 @@ type SearchStats struct {
 	TablesCompressedBytes int64 // Total wire bytes of 0x46 chunks (subset of TablesBytes)
 	TableBitmapBytes      int64 // Total uncompressed bitmap bytes across 0x46 chunks
 
-	// huff0 sub-block breakdown for the 0x46 chunks above.
-	Huff0BlocksTotal  int // Sum of huff0 sub-blocks across all 0x46 chunks
-	Huff0BlocksRaw    int // Sub-blocks with disposition = raw
-	Huff0BlocksRLE    int // Sub-blocks with disposition = RLE
-	Huff0BlocksSparse int // Sub-blocks with disposition = sparse bit table
-	Huff0TablesSum    int // Sum of distinct huff0 tables emitted across all 0x46 chunks
+	// Compressed sub-block breakdown for the 0x46 chunks above.
+	CompressedBlocksTotal  int // Sum of compressed sub-blocks across all 0x46 chunks
+	CompressedBlocksRaw    int // Sub-blocks with disposition = raw
+	CompressedBlocksRLE    int // Sub-blocks with disposition = RLE
+	CompressedBlocksSparse int // Sub-blocks with disposition = sparse bit table
+	CompressedTablesSum    int // Sum of distinct tables emitted across all 0x46 chunks
 
 	// Wire-byte breakdown of 0x46 sub-block payloads (excludes the disposition
 	// byte itself; for tabled blocks includes the uvarint length prefix and
 	// compressed data, but NOT the table header — that's tracked separately).
-	Huff0BytesTabled       int64
-	Huff0BytesRaw          int64
-	Huff0BytesRLE          int64
-	Huff0BytesSparse       int64
-	Huff0BytesTableHeaders int64 // bytes consumed by serialized huff0 tables
+	CompressedBytesTabled       int64
+	CompressedBytesRaw          int64
+	CompressedBytesRLE          int64
+	CompressedBytesSparse       int64
+	CompressedBytesTableHeaders int64 // bytes consumed by serialized tables
 }
 
 // Fprint writes a human-readable summary of the search stats to w.
@@ -98,15 +98,15 @@ func (st SearchStats) Fprint(w io.Writer) {
 			fmt.Fprintf(w, "Compressed tables: %d (%.1f%% of total), %d wire bytes, %d uncompressed bitmap bytes (%.2f%% ratio)\n",
 				st.TablesCompressed, pct(st.TablesCompressed, st.TablesPresent),
 				st.TablesCompressedBytes, st.TableBitmapBytes, ratio)
-			tabled := st.Huff0BlocksTotal - st.Huff0BlocksRaw - st.Huff0BlocksRLE - st.Huff0BlocksSparse
+			tabled := st.CompressedBlocksTotal - st.CompressedBlocksRaw - st.CompressedBlocksRLE - st.CompressedBlocksSparse
 			share := 0.0
 			if tabled > 0 {
-				share = float64(st.Huff0TablesSum) / float64(tabled)
+				share = float64(st.CompressedTablesSum) / float64(tabled)
 			}
-			fmt.Fprintf(w, "huff0 sub-blocks: %d total (%d tabled, %d raw, %d RLE, %d sparse); %d tables emitted (share=%.2f tables/tabled-block)\n",
-				st.Huff0BlocksTotal, tabled, st.Huff0BlocksRaw, st.Huff0BlocksRLE, st.Huff0BlocksSparse, st.Huff0TablesSum, share)
-			fmt.Fprintf(w, "  payload bytes: tabled=%d raw=%d RLE=%d sparse=%d; table-header bytes=%d\n",
-				st.Huff0BytesTabled, st.Huff0BytesRaw, st.Huff0BytesRLE, st.Huff0BytesSparse, st.Huff0BytesTableHeaders)
+			fmt.Fprintf(w, " Sub-blocks: %d total (%d tabled, %d raw, %d RLE, %d sparse); %d tables emitted (share=%.2f tables/tabled-block)\n",
+				st.CompressedBlocksTotal, tabled, st.CompressedBlocksRaw, st.CompressedBlocksRLE, st.CompressedBlocksSparse, st.CompressedTablesSum, share)
+			fmt.Fprintf(w, " Payload bytes: tabled=%d raw=%d RLE=%d sparse=%d; table-header bytes=%d\n",
+				st.CompressedBytesTabled, st.CompressedBytesRaw, st.CompressedBytesRLE, st.CompressedBytesSparse, st.CompressedBytesTableHeaders)
 		}
 	}
 }
@@ -155,11 +155,23 @@ func (r SearchResult) PrevBlock() []byte {
 	return nil
 }
 
-// lazyBlock holds compressed block data for on-demand decompression.
+// lazyBlock holds compressed block data for on-demand decompression. It
+// has two modes:
+//   - in-memory: chunkData holds the chunk payload (checksum + body).
+//     Used by BlockSearcher for inline streams.
+//   - remote: main + mainOffset point at the chunk header in an io.ReaderAt.
+//     Used by SidecarSearcher.
 type lazyBlock struct {
-	chunkData []byte // chunk payload: checksum + compressed/uncompressed data
-	chunkType byte
-	decompLen int    // decompressed size (from varint); avoids decode to get length
+	chunkData []byte // in-memory: chunk payload: checksum + compressed/uncompressed data
+	chunkType byte   // in-memory mode only
+
+	// Remote mode (sidecar): when main is non-nil, decode() fetches and
+	// decodes the chunk at mainOffset via ReadAt.
+	main       io.ReaderAt
+	mainOffset int64
+	maxBlock   int
+
+	decompLen int    // decompressed size; avoids decode to get length
 	decoded   []byte // cached result; nil until first decode
 	ignoreCRC bool
 }
@@ -167,6 +179,14 @@ type lazyBlock struct {
 func (lb *lazyBlock) decode() []byte {
 	if lb.decoded != nil {
 		return lb.decoded
+	}
+	if lb.main != nil {
+		d, err := readAndDecodeMainBlock(lb.main, lb.mainOffset, lb.decompLen, lb.maxBlock, lb.ignoreCRC)
+		if err != nil {
+			return nil
+		}
+		lb.decoded = d
+		return d
 	}
 	buf := lb.chunkData
 	if len(buf) < checksumSize {
@@ -232,23 +252,32 @@ type BlockSearcher struct {
 	blockTable      []byte
 	blockReductions uint8
 	blockInfo       SearchTableConfig
+	// blockTableUnusable is set when a 0x46 chunk was parsed but its bitmap
+	// was skipped (config alone proved the pattern unanswerable). The next
+	// data block bumps TablesUnusable and clears this flag.
+	blockTableUnusable bool
 
-	decoded      [2][]byte      // alternating decode buffers
-	decIdx       int            // which buffer was last used (0 or 1)
-	prevBlock    []byte         // points into decoded[(decIdx+1)&1], nil if skipped
-	prevLazy     *lazyBlock     // compressed previous block for lazy PrevBlock(); nil if decoded
-	deferred     *deferredMatch // pending ErrSearchForward re-dispatch
-	pending      *pendingBlock  // block deferred pending next table check
-	cstDec       *cstDecoder    // lazy decoder state for 0x46 chunks
-	infoCallback func(SearchTableConfig)
-	maxBlock     int
-	readHeader   bool
-	ignoreCRC    bool
-	bail         bool // return error if tables can't answer query
-	collectStats bool
-	blockStart   int64
-	blockMatches int // matches found in current block (for false positive tracking)
-	stats        SearchStats
+	decoded   [2][]byte // alternating decode buffers
+	decIdx    int       // which buffer was last used (0 or 1)
+	prevBlock []byte    // points into decoded[(decIdx+1)&1], nil if skipped
+	// prevLazy is *lazyBlock so it can carry a nil sentinel meaning "no
+	// lazy prev." When set by bufferSkippedBlock / resolvePending, it
+	// always points at &prevLazyStore — the backing storage is reused
+	// across iterations to avoid a per-skipped-block heap alloc.
+	prevLazy      *lazyBlock
+	prevLazyStore lazyBlock
+	deferred      *deferredMatch // pending ErrSearchForward re-dispatch
+	pending       *pendingBlock  // block deferred pending next table check
+	cstDec        *cstDecoder    // lazy decoder state for 0x46 chunks
+	infoCallback  func(SearchTableConfig)
+	maxBlock      int
+	readHeader    bool
+	ignoreCRC     bool
+	bail          bool // return error if tables can't answer query
+	collectStats  bool
+	blockStart    int64
+	blockMatches  int // matches found in current block (for false positive tracking)
+	stats         SearchStats
 }
 
 // BlockSearchOption configures a BlockSearcher.
@@ -389,6 +418,8 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			s.blockStart = 0
 			s.pending = nil
 			s.prevLazy = nil
+			s.blockTable = nil
+			s.blockTableUnusable = false
 			continue
 
 		case chunkTypeSearchInfo:
@@ -430,6 +461,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			s.blockInfo = cfg
 			s.blockReductions = reductions
 			s.blockTable = table
+			s.blockTableUnusable = false
 			// Resolve any pending block against this new table.
 			if s.pending != nil {
 				if err := s.resolvePending(pattern, fn); err != nil {
@@ -461,6 +493,33 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if !s.readFull(s.buf[:chunkLen]) {
 				return s.err
 			}
+			headCfg, headRed, err := parseSearchTableCompressedHeader(s.buf[:chunkLen])
+			if err != nil {
+				return err
+			}
+			if !patternCanUseConfig(&headCfg, pattern) {
+				// Bitmap is irrelevant for this pattern — skip the expensive
+				// huff0/sparse decode. The next data block bumps TablesUnusable.
+				s.blockInfo = headCfg
+				s.blockReductions = headRed
+				s.blockTable = nil
+				s.blockTableUnusable = true
+				if s.pending != nil {
+					if err := s.resolvePending(pattern, fn); err != nil {
+						return err
+					}
+				}
+				if s.collectStats {
+					s.stats.TablesPresent++
+					s.stats.TablesBytes += int64(chunkLen + 4)
+					s.stats.TablesCompressed++
+					s.stats.TablesCompressedBytes += int64(chunkLen + 4)
+					s.stats.TableBitmapBytes += int64(1 << (headCfg.baseTableSize - headRed - 3))
+					s.stats.TableBitsSum += int(headCfg.baseTableSize - headRed)
+					s.stats.TableReductionsSum += int(headRed)
+				}
+				continue
+			}
 			if s.cstDec == nil {
 				s.cstDec = newCSTDecoder()
 			}
@@ -471,6 +530,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			s.blockInfo = cfg
 			s.blockReductions = reductions
 			s.blockTable = table
+			s.blockTableUnusable = false
 			if s.pending != nil {
 				if err := s.resolvePending(pattern, fn); err != nil {
 					return err
@@ -482,16 +542,16 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				s.stats.TablesCompressed++
 				s.stats.TablesCompressedBytes += int64(chunkLen + 4)
 				s.stats.TableBitmapBytes += int64(len(table))
-				s.stats.Huff0BlocksTotal += s.cstDec.lastBlocks
-				s.stats.Huff0BlocksRaw += s.cstDec.lastBlocksRaw
-				s.stats.Huff0BlocksRLE += s.cstDec.lastBlocksRLE
-				s.stats.Huff0BlocksSparse += s.cstDec.lastBlocksSparse
-				s.stats.Huff0TablesSum += s.cstDec.lastTables
-				s.stats.Huff0BytesTabled += int64(s.cstDec.lastBytesTabled)
-				s.stats.Huff0BytesRaw += int64(s.cstDec.lastBytesRaw)
-				s.stats.Huff0BytesRLE += int64(s.cstDec.lastBytesRLE)
-				s.stats.Huff0BytesSparse += int64(s.cstDec.lastBytesSparse)
-				s.stats.Huff0BytesTableHeaders += int64(s.cstDec.lastBytesTableHeader)
+				s.stats.CompressedBlocksTotal += s.cstDec.lastBlocks
+				s.stats.CompressedBlocksRaw += s.cstDec.lastBlocksRaw
+				s.stats.CompressedBlocksRLE += s.cstDec.lastBlocksRLE
+				s.stats.CompressedBlocksSparse += s.cstDec.lastBlocksSparse
+				s.stats.CompressedTablesSum += s.cstDec.lastTables
+				s.stats.CompressedBytesTabled += int64(s.cstDec.lastBytesTabled)
+				s.stats.CompressedBytesRaw += int64(s.cstDec.lastBytesRaw)
+				s.stats.CompressedBytesRLE += int64(s.cstDec.lastBytesRLE)
+				s.stats.CompressedBytesSparse += int64(s.cstDec.lastBytesSparse)
+				s.stats.CompressedBytesTableHeaders += int64(s.cstDec.lastBytesTableHeader)
 				s.stats.TableBitsSum += int(cfg.baseTableSize - reductions)
 				s.stats.TableReductionsSum += int(reductions)
 				setBits := 0
@@ -585,6 +645,14 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 					if s.bail {
 						return ErrSearchTablesUnusable
 					}
+				}
+			} else if s.blockTableUnusable {
+				s.blockTableUnusable = false
+				if s.collectStats {
+					s.stats.TablesUnusable++
+				}
+				if s.bail {
+					return ErrSearchTablesUnusable
 				}
 			} else {
 				if s.collectStats {
@@ -700,6 +768,14 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 					if s.bail {
 						return ErrSearchTablesUnusable
 					}
+				}
+			} else if s.blockTableUnusable {
+				s.blockTableUnusable = false
+				if s.collectStats {
+					s.stats.TablesUnusable++
+				}
+				if s.bail {
+					return ErrSearchTablesUnusable
 				}
 			} else {
 				if s.collectStats {
@@ -1037,7 +1113,8 @@ func (s *BlockSearcher) resolvePending(pattern []byte, fn func(SearchResult) err
 				return err
 			}
 		}
-		s.prevLazy = &p.lazy
+		s.prevLazyStore = p.lazy
+		s.prevLazy = &s.prevLazyStore
 		s.prevBlock = nil
 		return nil
 	}
@@ -1089,12 +1166,13 @@ func (s *BlockSearcher) bufferSkippedBlock(chunkType byte, chunkLen int) (decomp
 	if s.prevLazy != nil {
 		reclaimed = s.prevLazy.chunkData
 	}
-	s.prevLazy = &lazyBlock{
+	s.prevLazyStore = lazyBlock{
 		chunkData: s.buf[:chunkLen],
 		chunkType: chunkType,
 		decompLen: decompLen,
 		ignoreCRC: s.ignoreCRC,
 	}
+	s.prevLazy = &s.prevLazyStore
 	if reclaimed != nil {
 		s.buf = reclaimed[:0]
 	} else {
@@ -1112,6 +1190,52 @@ func canBoundaryMatch(prev, pattern []byte) bool {
 	tail := prev[max(0, len(prev)-len(pattern)+1):]
 	for i := range tail {
 		if bytes.HasPrefix(pattern, tail[i:]) {
+			return true
+		}
+	}
+	return false
+}
+
+// patternCanUseConfig reports whether a search table with this configuration
+// can answer queries for the given pattern. It mirrors patternCanMatch's
+// canUse return using ONLY the config + pattern — no bitmap needed. Callers
+// use this to decide whether to spend the cost of decoding the bitmap.
+func patternCanUseConfig(cfg *SearchTableConfig, pattern []byte) bool {
+	if len(pattern) < int(cfg.matchLen) {
+		return false
+	}
+	switch cfg.tableType {
+	case searchTableTypeNoPrefix:
+		return true
+	case searchTableTypeBytePrefix:
+		var pfxMask [32]byte
+		for _, p := range cfg.prefixBytes {
+			pfxMask[p>>3] |= 1 << (p & 7)
+		}
+		return patternHasPrefixContext(&pfxMask, pattern, int(cfg.matchLen))
+	case searchTableTypeMaskPrefix:
+		return patternHasPrefixContext(&cfg.prefixMask, pattern, int(cfg.matchLen))
+	case searchTableTypeLongPrefix:
+		ml := int(cfg.matchLen)
+		ex := int(cfg.extras)
+		pl := len(cfg.longPrefix)
+		if pl == 0 || len(pattern) < pl+ml+ex {
+			return false
+		}
+		for i := 0; i <= len(pattern)-pl-ml-ex; i++ {
+			if bytes.Equal(pattern[i:i+pl], cfg.longPrefix) {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
+func patternHasPrefixContext(pfxMask *[32]byte, pattern []byte, ml int) bool {
+	for i := 1; i <= len(pattern)-ml; i++ {
+		b := pattern[i-1]
+		if pfxMask[b>>3]&(1<<(b&7)) != 0 {
 			return true
 		}
 	}
@@ -1181,23 +1305,33 @@ func patternCanMatch(cfg *SearchTableConfig, table []byte, reductions uint8, pat
 
 	case searchTableTypeLongPrefix:
 		pl := len(cfg.longPrefix)
-		if len(pattern) < int(cfg.matchLen) {
+		ml := int(cfg.matchLen)
+		ex := int(cfg.extras)
+		if len(pattern) < ml+ex {
 			return false, true
 		}
 		checked := 0
-		firstCheckedPresent := false
-		for i := 0; i <= len(pattern)-pl-int(cfg.matchLen); i++ {
+		firstCheckedAllPresent := false
+		for i := 0; i <= len(pattern)-pl-ml-ex; i++ {
 			if !bytes.Equal(pattern[i:i+pl], cfg.longPrefix) {
 				continue
 			}
-			v := readLE64Pad(pattern[i+pl:])
-			h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
-			present := table[h>>3]&(1<<(h&7)) != 0
-			if checked == 0 {
-				firstCheckedPresent = present
+			// All E+1 windows after the prefix must be present for this
+			// occurrence to anchor in the block.
+			allPresent := true
+			for j := 0; j <= ex; j++ {
+				v := readLE64Pad(pattern[i+pl+j:])
+				h := hashValue(v, cfg.baseTableSize, cfg.matchLen) & mask
+				if table[h>>3]&(1<<(h&7)) == 0 {
+					allPresent = false
+					break
+				}
 			}
-			if !present {
-				if firstCheckedPresent {
+			if checked == 0 {
+				firstCheckedAllPresent = allPresent
+			}
+			if !allPresent {
+				if firstCheckedAllPresent {
 					return true, true
 				}
 				return true, false
@@ -1310,6 +1444,12 @@ func patternDeferHashes(cfg *SearchTableConfig, table []byte, reductions uint8, 
 		return deferHashesWithPrefixMask(cfg, table, mask, &cfg.prefixMask, pattern)
 
 	case searchTableTypeLongPrefix:
+		// TODO: re-enable deferred path for extras > 0. With E+1 windows per
+		// occurrence the threshold logic must be adjusted to account for the
+		// expanded boundary range.
+		if cfg.extras != 0 {
+			return nil
+		}
 		ml := int(cfg.matchLen)
 		pl := len(cfg.longPrefix)
 		if len(pattern) < ml {

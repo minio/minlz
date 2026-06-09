@@ -51,7 +51,8 @@ func main() {
 		avx2:         false,
 		outputMargin: 17,
 		inputMargin:  17,
-		skipOutput:   false}
+		skipOutput:   false,
+	}
 
 	// 16 bit hash table has too big of a speed impact.
 	o.fastOpts = fastOpts{match8: false, fuselits: true, checkRepeats: true, checkBack: true, skipOne: false, incLoop: 4, minSizeLog: 5}
@@ -209,6 +210,7 @@ func (r regTable) SaveIdx(val, idx reg.GPVirtual) {
 		panic(r.scale)
 	}
 }
+
 func reloadTables(param string, tables ...*regTable) {
 	r := Load(Param(param), GP64())
 	for _, t := range tables {
@@ -258,12 +260,12 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 		dstTxt = ""
 	}
 
-	var offsetBytes = uint8(4)
+	offsetBytes := uint8(4)
 	if maxLen <= 65536 {
 		offsetBytes = 2
 	}
 
-	var tableSize = int(offsetBytes) * (1 << tableBits)
+	tableSize := int(offsetBytes) * (1 << tableBits)
 	// Memzero needs at least 128 bytes.
 	if tableSize < 128 {
 		panic("tableSize must be at least 128 bytes")
@@ -278,7 +280,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 
 	o.maxLen = maxLen
 	o.maxOffset = maxLen - 1
-	var literalMaxOverhead = maxLitOverheadFor(maxLen)
+	literalMaxOverhead := maxLitOverheadFor(maxLen)
 
 	lenSrcBasic, err := Param("src").Len().Resolve()
 	if err != nil {
@@ -731,7 +733,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 
 			LEAL(Mem{Base: s, Disp: 2}, tmp)
 
-			//if uint32(cv>>8) == load32(src, candidate2)
+			// if uint32(cv>>8) == load32(src, candidate2)
 			if !skipOne {
 				checkCandidate(candidate2, func() {
 					if match8 {
@@ -819,7 +821,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 	Label("match_dst_size_check_" + name)
 
 	cv := GP64()
-	//Label("match_nolit_loop_" + name)
+	// Label("match_nolit_loop_" + name)
 	base := GP32()
 	MOVL(s, base.As32())
 	// Update repeat
@@ -1154,12 +1156,12 @@ func maxLitOverheadFor(n int) int {
 }
 
 func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, skipLog, lHashBytes, maxLen int) {
-	var offsetBytes = uint8(4)
+	offsetBytes := uint8(4)
 	if maxLen <= 65536 {
 		offsetBytes = 2
 	}
-	var lTableSize = int(offsetBytes) * (1 << lTableBits)
-	var sTableSize = int(offsetBytes) * (1 << sTableBits)
+	lTableSize := int(offsetBytes) * (1 << lTableBits)
+	sTableSize := int(offsetBytes) * (1 << sTableBits)
 	tableSize := lTableSize + sTableSize
 
 	// Memzero needs at least 128 bytes.
@@ -1177,7 +1179,7 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 	if lHashBytes > 7 || lHashBytes <= 4 {
 		panic("lHashBytes must be <= 7 and >4")
 	}
-	var literalMaxOverhead = maxLitOverheadFor(maxLen)
+	literalMaxOverhead := maxLitOverheadFor(maxLen)
 
 	const sHashBytes = 4
 	o.maxLen = maxLen
@@ -1585,7 +1587,7 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 				JEQ(LabelRef("candidate_match_" + name))
 			})
 
-			//if uint32(cv) == load32(src, candidateS)
+			// if uint32(cv) == load32(src, candidateS)
 			checkCandidate(candidateS, func() {
 				CMPL(shortVal.As32(), cv.As32())
 				JEQ(LabelRef("candidateS_match_" + name))
@@ -1775,7 +1777,7 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 					CMPL(litLen.As32(), U8(3))
 					JA(LabelRef("match_emit_lits_" + name)) // If > 3
 
-					//nextEmit = GP64()
+					// nextEmit = GP64()
 					MOVLQZX(nextEmitL, nextEmit.As64())
 
 					// We are safe to emit combined copy and literals.
@@ -2081,7 +2083,6 @@ func (o options) genEmitLiteral() {
 	Label("emit_literal_end_standalone")
 	Store(retval, ReturnIndex(0))
 	RET()
-
 }
 
 // emitLiteral can be used for inlining an emitLiteral call.
@@ -2623,7 +2624,7 @@ func (o options) emitCopy(name string, length, offset, retval, dstBase reg.GPVir
 		JAE(ok)
 	})
 	if o.maxOffset > maxCopy2Offset {
-		//if offset >= 65536 {
+		// if offset >= 65536 {
 		CMPL(offset.As32(), U32(maxCopy2Offset))
 		JBE(LabelRef("two_byte_offset_" + name))
 		o.emitCopy3(name+"_emit3", length, offset, retval, dstBase, nil, end)
@@ -2723,7 +2724,7 @@ func (o options) emitCopy2WithLits(name string, length, offset, lits, retval, ds
 	remain = GP64()
 	tmp := GP64()
 	XORQ(remain, remain)
-	SUBL(U8(64), offset.As32())                             //offset -= 64
+	SUBL(U8(64), offset.As32())                             // offset -= 64
 	LEAL(Mem{Base: length.As32(), Disp: -11}, tmp.As32())   // tmp = length-11 (to be remain)
 	LEAL(Mem{Base: length.As32(), Disp: -4}, length.As32()) // length -= 4
 	if !o.skipOutput {
@@ -2853,7 +2854,7 @@ func (o options) genMemMoveShort(name string, dst, src, length reg.GPVirtual, en
 	}
 	JMP(LabelRef(name + "move_33through64"))
 
-	//genMemMoveLong(name, dst, src, length, end)
+	// genMemMoveLong(name, dst, src, length, end)
 
 	if margin <= 3 && minMove < 3 {
 		Label(name + "move_1or2")
@@ -3690,7 +3691,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	// LOOP
 	if !prefetch {
 		// Triggers https://github.com/golang/go/issues/74648
-		//PCALIGN(16)
+		// PCALIGN(16)
 	}
 	Label(name + "_loop")
 	CMPQ(src, srcLimit)
@@ -3937,7 +3938,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 		//  offset = int(uint32(src[s-2]) | uint32(src[s-1])<<8)
 
 		CMPL(value.As32(), U8(61))
-		JB(LabelRef(name + "_copy_2_0_extra")) //likely
+		JB(LabelRef(name + "_copy_2_0_extra")) // likely
 		JEQ(LabelRef(name + "_copy_2_1_extra"))
 		CMPL(length.As32(), U8(63))
 		JB(LabelRef(name + "_copy_2_2_extra"))

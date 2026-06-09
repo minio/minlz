@@ -188,7 +188,7 @@ func minLZDecodeGo(dst, src []byte) int {
 	for s < len(src)-11 {
 		// Maximum input needed.
 		if debug {
-			//fmt.Printf("in:%x, tag: %02b va:%x - src: %d, dst: %d\n", src[s], src[s]&3, src[s]>>2, s, d)
+			// fmt.Printf("in:%x, tag: %02b va:%x - src: %d, dst: %d\n", src[s], src[s]&3, src[s]>>2, s, d)
 		}
 
 		switch load8(src, s) & 0x03 {
@@ -361,7 +361,7 @@ func minLZDecodeGo(dst, src []byte) int {
 	// Remaining with extra checks...
 	for s < len(src) {
 		if debug {
-			//fmt.Printf("in:%x, tag: %02b va:%x - src: %d, dst: %d\n", src[s], src[s]&3, src[s]>>2, s, d)
+			// fmt.Printf("in:%x, tag: %02b va:%x - src: %d, dst: %d\n", src[s], src[s]&3, src[s]>>2, s, d)
 		}
 		switch load8(src, s) & 0x03 {
 		case tagLiteral:

@@ -28,20 +28,20 @@ func load8(b []byte, i int) byte {
 }
 
 func load16(b []byte, i int) uint16 {
-	//return binary.LittleEndian.Uint16(b[i:])
-	//return *(*uint16)(unsafe.Pointer(&b[i]))
+	// return binary.LittleEndian.Uint16(b[i:])
+	// return *(*uint16)(unsafe.Pointer(&b[i]))
 	return *(*uint16)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(b)), i))
 }
 
 func load32(b []byte, i int) uint32 {
-	//return binary.LittleEndian.Uint32(b[i:])
-	//return *(*uint32)(unsafe.Pointer(&b[i]))
+	// return binary.LittleEndian.Uint32(b[i:])
+	// return *(*uint32)(unsafe.Pointer(&b[i]))
 	return *(*uint32)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(b)), i))
 }
 
 func load64(b []byte, i int) uint64 {
-	//return binary.LittleEndian.Uint64(b[i:])
-	//return *(*uint64)(unsafe.Pointer(&b[i]))
+	// return binary.LittleEndian.Uint64(b[i:])
+	// return *(*uint64)(unsafe.Pointer(&b[i]))
 	return *(*uint64)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(b)), i))
 }
 
@@ -50,12 +50,12 @@ func store8(b []byte, idx int, v uint8) {
 }
 
 func store16(b []byte, idx int, v uint16) {
-	//binary.LittleEndian.PutUint16(b[idx:], v)
+	// binary.LittleEndian.PutUint16(b[idx:], v)
 	*(*uint16)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(b)), idx)) = v
 }
 
 func store32(b []byte, idx int, v uint32) {
-	//binary.LittleEndian.PutUint32(b[idx:], v)
+	// binary.LittleEndian.PutUint32(b[idx:], v)
 	*(*uint32)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(b)), idx)) = v
 }
 

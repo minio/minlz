@@ -574,7 +574,7 @@ To decode from any given uncompressed offset `(wantOffset)`:
 
 This is similar to S2, except the ID is 0x40 instead of 0x99.
 
-### 4.12 Block Search (chunk type 0x44, 0x45) — OPTIONAL
+### 4.12 Block Search (chunk type 0x44 -> 0x47) — OPTIONAL
 
 See [SPEC_SEARCH.md](SPEC_SEARCH.md) for details.
 

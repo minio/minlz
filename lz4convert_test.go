@@ -70,7 +70,7 @@ func TestLZ4Converter_ConvertBlock(t *testing.T) {
 			t.Log("lz4->minlz size:", sz)
 			t.Log("lz4 -> minlz bytes saved:", len(lz4Data)-sz)
 
-			//t.Log(os.WriteFile("conv/"+tf.label+".mzb", out, os.ModePerm))
+			// t.Log(os.WriteFile("conv/"+tf.label+".mzb", out, os.ModePerm))
 			decom, err := decodeGo(nil, out)
 			if err != nil {
 				t.Fatal(err)
@@ -247,6 +247,7 @@ func BenchmarkLZ4Converter_ConvertBlockParallel(b *testing.B) {
 		})
 	}
 }
+
 func BenchmarkCompressBlockReference(b *testing.B) {
 	b.Skip("Only reference for BenchmarkLZ4Converter_ConvertBlock")
 	for _, tf := range testFiles {

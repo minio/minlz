@@ -113,19 +113,18 @@ most from a sparser table.
 
 Defaults:
 
-- Library default: 25 %.
-- `mz` CLI default: 50 %, automatically tightened (halved with prefix or
-  compression, divided by 3 with both) since [prefixed tables](#prefixes)
-  and [compressed tables](#compressed-search-tables-opt-in) both want
-  sparser bitmaps.
+- Library and `mz` CLI default: 25 %, automatically tightened to 10 % when a
+  prefix is configured (byte/mask/long). Calling
+  `WithMaxReducedPopulation` (library) or `-search.lim` (CLI) overrides the
+  auto-tightening with the supplied value.
 
 ```go
 cfg := minlz.NewSearchTableConfig().WithMaxReducedPopulation(30)
 ```
 
-When compression is on, lower limits (<20 %) has much less of an impact on
-stream size than the default because the extra bytes spent on a larger bitmap
-are recovered by the huff0 / sparse encoding.
+Compression is on by default; the extra bytes spent on a larger bitmap are
+recovered by the huff0 / sparse encoding, so lower limits (<20 %) hardly
+affect stream size compared to the default.
 
 ### Table Max Population Size
 
@@ -143,58 +142,6 @@ with higher false-positive rates.
 ```go
 cfg := minlz.NewSearchTableConfig().WithMaxPopulation(50)
 ```
-
-### Compressed Search Tables (opt-in)
-
-Search-table bitmaps can optionally be stored compressed. This is a stream-
-level opt-in: the encoder shrinks each per-block bitmap when doing so saves
-bytes, and the decoder unpacks it on the fly during search.
-
-When it helps most:
-
-- **High-Quality tables**. This will reduce the impact of having a low
-  reduction limit and therefore less collisions.
-- **Sparse search tables** (small prefix matchLen, structured data with a
-  selective prefix). Often shrinks the table by 5×–50× on the wire.
-- **Very dense tables** where the same byte value repeats (especially
-  all-zero or all-one bitmaps that compress to a few bytes regardless of
-  size).
-
-When it makes little difference:
-
-- Tables with ~50% population: byte entropy is already maximal, so there's
-  nothing to compress. The encoder detects this and skips the compressed
-  form by default.
-
-Enable it via `WithCompression` on the search table config:
-
-```go
-// Defaults: 10 % popcount band, no stats hook.
-cfg := minlz.NewSearchTableConfig().WithCompression()
-w := minlz.NewWriter(out, minlz.WriterSearchTable(cfg))
-```
-
-Tuning options (all optional):
-
-| Option                                   | Description                                                                                       |
-|------------------------------------------|---------------------------------------------------------------------------------------------------|
-| `CompressedSearchSkipPct(pct float64)`   | Skip compression when popcount % is within ±pct of 50 (default 10 %).                             |
-| `CompressedSearchStatsHook(fn)`          | Per-bitmap callback with disposition counts and on-wire sizes — useful for tuning.                |
-| `CompressedSearchForce()`                | Emit the compressed chunk even when larger than the uncompressed form. Benchmarking only.         |
-
-When compression is enabled, the recommended `MaxReducedPopulation` is
-lower than the default — leaving tables sparser pays off because the bytes
-shrink so much. The `mz` CLI does this automatically; for library use,
-call `.WithMaxReducedPopulation(15)` (or pass `-search.lim` to `mz`).
-
-Decoding is transparent: a `BlockSearcher` over a stream that mixes
-compressed and uncompressed search tables handles both with no caller
-opt-in. The per-bitmap unpack runs in parallel for large bitmaps, so
-search throughput is unchanged in practice.
-
-For format details see `SPEC_SEARCH.md` §2.2 / §2.2.1.
-
-Some decoders may not support compressed search tables.
 
 ### Prefixes
 
@@ -233,6 +180,40 @@ occurrence in the pattern.
 When no prefix bytes appear in the search pattern, the table cannot be used and the
 searcher falls back to full block decode.
 
+##### Extras
+
+By default a long-prefix table records one `matchLen`-byte hash per prefix occurrence.
+`WithExtras(E)` widens that to `E+1` overlapping `matchLen`-byte windows at offsets
+`0..E` after each prefix, and the searcher checks the same `E+1` windows per occurrence
+in the query. The constraint is `matchLen + E ≤ 16`, so the post-prefix region the
+encoder hashes never exceeds 16 bytes.
+
+```go
+cfg := minlz.NewSearchTableConfig().
+    WithMatchLen(8).
+    WithLongPrefix([]byte(`"timestamp":`)).
+    WithExtras(8) // 9 hashes per occurrence (matchLen+extras = 16)
+```
+
+Extras effectively turn the table into a `k=E+1` Bloom filter for the post-prefix bytes:
+the false-positive probability per occurrence drops from `p` to `p^(E+1)`. The cost is
+proportionally more bits set per occurrence — typical sidecars grow by roughly the same
+factor before sparse/huff0 compression kicks in.
+
+When to use it:
+
+- The prefix fires sparsely (e.g. one structured field per log line) and queries reliably
+  carry enough trailing bytes (`L ≥ pl + matchLen + E`).
+- The single-hash table is collision-bound — many candidate blocks turn out to be false
+  positives that have to be decoded.
+
+When to avoid it:
+
+- The prefix is dense and the table is already population-bound; extras multiply the
+  population without adding filtering power.
+- Queries are short and would not fill `matchLen + E` bytes after the prefix; those
+  occurrences become unusable and the searcher falls back.
+
 #### Choosing good prefix bytes
 
 Pick bytes that immediately precede the values you'll search for:
@@ -242,6 +223,199 @@ Pick bytes that immediately precede the values you'll search for:
 - **Key=value formats:** `=` precedes values.
 - **Log lines with fields:** space, tab, `=`, or `:`.
 
+### Compressed Search Tables
+
+Search-table bitmaps are stored compressed by default: the encoder shrinks
+each per-block bitmap when doing so saves bytes, and the decoder unpacks it
+on the fly during search.
+
+When it helps most:
+
+- **High-Quality tables**. This will reduce the impact of having a low
+  reduction limit and therefore less collisions.
+- **Sparse search tables** (small prefix matchLen, structured data with a
+  selective prefix). Often shrinks the table by 5×–50× on the wire.
+- **Very dense tables** where the same byte value repeats (especially
+  all-zero or all-one bitmaps that compress to a few bytes regardless of
+  size).
+
+When it makes little difference:
+
+- Tables with ~50% population: byte entropy is already maximal, so there's
+  nothing to compress. The encoder detects this and skips the compressed
+  form by default.
+
+To turn it off:
+
+```go
+cfg := minlz.NewSearchTableConfig().WithoutCompression()
+w := minlz.NewWriter(out, minlz.WriterSearchTable(cfg))
+```
+
+…or from the CLI: `mz c -search -search.uncompressed file.log`.
+
+Tuning options (all optional, pass to `WithCompression(...)`):
+
+| Option                                   | Description                                                                                       |
+|------------------------------------------|---------------------------------------------------------------------------------------------------|
+| `CompressedSearchSkipPct(pct float64)`   | Skip compression when popcount % is within ±pct of 50 (default 10 %).                             |
+| `CompressedSearchStatsHook(fn)`          | Per-bitmap callback with disposition counts and on-wire sizes — useful for tuning.                |
+| `CompressedSearchForce()`                | Emit the compressed chunk even when larger than the uncompressed form. Benchmarking only.         |
+
+The library auto-tightens `MaxReducedPopulation` to 10 when a prefix is
+configured (see [Table Reduction Limit](#table-reduction-limit)) — sparser
+tables compress better.
+
+Decoding is transparent: a `BlockSearcher` over a stream that mixes
+compressed and uncompressed search tables handles both with no caller
+opt-in. The per-bitmap unpack runs in parallel for large bitmaps, so
+search throughput is unchanged in practice.
+
+For format details see `SPEC_SEARCH.md` §2.2 / §2.2.1.
+
+Some decoders may not support compressed search tables — use
+`WithoutCompression()` (or `-search.uncompressed`) if you need to interoperate
+with them.
+
+
+## Sidecar Streams
+
+Search tables normally live *inside* the compressed stream — one per block,
+right in front of the corresponding data. A **sidecar stream** instead puts
+every search table into a *separate* file, leaving the main `.mz` stream as
+plain compressed data. Searching then takes two inputs: the sidecar (read
+once, top-to-bottom) and the main stream (random-access via `io.ReaderAt`,
+typically a regular file).
+
+### Why?
+
+- **You can't (or don't want to) re-encode the data.** Maybe the `.mz` was
+  written long ago, or it lives on read-only storage. `BuildSidecar` decodes
+  each block, builds fresh tables, and writes the sidecar — the original
+  `.mz` is never touched.
+- **You want to store the index separately.** Indexes can be regenerated;
+  data often can't. Putting them on different storage tiers (or even
+  different hosts) is a clean way to express that.
+- **You want to drop the indexes from an existing indexed stream.** If you
+  compressed with `-search` but later want to slim the main file without
+  losing search, extract the index to a sidecar and strip the main.
+- **You want multiple search configurations for the same data.** The inline
+  writer only carries one config; a sidecar can carry many (for example one
+  tuned for short patterns and one tuned for JSON keys).
+
+The main stream and the sidecar are **both valid MinLZ streams on their
+own**. A regular `NewReader` over a sidecar produces zero data bytes (only
+skippable chunks); over a stripped main stream it produces the original
+payload.
+
+Sidecar files conventionally use the `.mzs` extension (sits next to `.mz`),
+but they are ordinary MinLZ streams and can have any filename.
+
+### Three ways to produce a sidecar
+
+#### 1. While compressing — `WriterSidecar`
+
+The main writer behaves normally; the search-table chunks are diverted to a
+second `io.Writer`:
+
+```go
+mainF, _ := os.Create("foo.mz")
+sideF, _ := os.Create("foo.mz.mzs")
+cfg := minlz.NewSearchTableConfig().WithMatchLen(6)
+w := minlz.NewWriter(mainF,
+    minlz.WriterSearchTable(cfg),
+    minlz.WriterSidecar(sideF),
+)
+w.Write(data)
+w.Close()
+```
+
+#### 2. From an existing stream that has no indexes — `BuildSidecar`
+
+Reads the source once, decompresses each block, builds fresh tables, and
+writes the sidecar. The source is not modified:
+
+```go
+src, _ := os.Open("foo.mz")
+side, _ := os.Create("foo.mz.mzs")
+err := minlz.BuildSidecar(side, src,
+    minlz.SidecarSearchTable(minlz.NewSearchTableConfig().WithMatchLen(6)),
+)
+```
+
+Pass `SidecarSearchTable` multiple times to embed several configs in one
+sidecar. At search time a block is skipped if **any** embedded table proves
+the pattern absent; tables that don't apply to the query are ignored.
+
+#### 3. From an existing indexed stream — `ExtractSidecar`
+
+Copies the existing `0x44`/`0x45`/`0x46` chunks verbatim into a sidecar. No
+decoding required. Two modes:
+
+```go
+// (a) No stripping. Sidecar offsets reference src's original layout, so
+//     the original file must be kept and searched against.
+minlz.ExtractSidecar(sideOut, nil, src)
+
+// (b) With stripping. Re-emits src to newMainOut without the search chunks;
+//     sidecar offsets reference the new layout. A fresh seek index is
+//     appended to newMainOut so it remains seekable on its own.
+minlz.ExtractSidecar(sideOut, newMainOut, src)
+```
+
+### Searching with a sidecar
+
+```go
+mainF, _ := os.Open("foo.mz")        // io.ReaderAt
+sideF, _ := os.Open("foo.mz.mzs")    // io.Reader
+
+searcher := minlz.NewSidecarSearcher(mainF, sideF)
+searcher.Search([]byte("pattern"), func(r minlz.SearchResult) error {
+    fmt.Printf("match at stream offset %d\n", r.StreamOffset)
+    return nil
+})
+```
+
+The searcher walks the sidecar once and only touches the main stream for
+blocks that aren't proven absent. Adjacent must-decode blocks are coalesced
+into a single `ReadAt`; skipped blocks issue no I/O against the main stream
+until the caller invokes `result.PrevBlock()` for boundary context (then
+they are fetched and decoded on demand).
+
+`SidecarSearcher` accepts the same `BlockSearchOption`s as `BlockSearcher`
+(`BlockSearchBailOnMissing`, `BlockSearchCollectStats`,
+`BlockSearchIgnoreCRC`, …). Multiple goroutines may run independent
+`SidecarSearcher`s against the same main file concurrently — each owns its
+own sidecar `io.Reader` and the underlying `ReadAt` is shared safely.
+
+### Commandline
+
+```bash
+mz sidecar build   [-search.lens=4,6] [-search.compress] foo.mz   # -> foo.mz.mzs
+mz sidecar extract [-newstream stripped.mz]              foo.mz   # -> foo.mz.mzs (+ stripped.mz)
+mz search --sidecar foo.mz.mzs  "pattern"  foo.mz                 # search via sidecar
+```
+
+`mz sidecar build` accepts most of the same `-search.*` flags as
+`mz c -search` (match length, prefixes, compression, population limits).
+The `-search.lens` flag is comma-separated to request multiple configs in
+one sidecar.
+
+### Sidecar format at a glance
+
+A sidecar stream contains, in order:
+
+1. Stream identifier (`0xff`) — same maximum block size as the main stream.
+2. One or more **Search Table Info** chunks (`0x44`) — one per embedded config.
+3. For each data block in the main stream:
+   - Zero or more **Search Table** chunks (`0x45`/`0x46`) — one per config
+     that produced a usable table for that block.
+   - One **Remote Block Reference** chunk (`0x47`) carrying the block's
+     offset in the main stream and its uncompressed size.
+4. EOF chunk (`0x20`).
+
+For format details see [SPEC_SEARCH.md §1.1 / §2.3](SPEC_SEARCH.md).
+
 ## Commandline
 
 The `mz` tool supports search table generation during compression and pattern search
@@ -249,20 +423,21 @@ on compressed files.
 
 **Compression with search tables:**
 ```
-mz c -search file.log                              # default matchLen=6, no prefix
+mz c -search file.log                              # default matchLen=6, no prefix, compressed tables
 mz c -search -search.len=4 file.log                # matchLen=4
 mz c -search -search.prefixes='":'  file.log       # byte prefixes " and :
 mz c -search -search.prefix='id:"' file.log        # long prefix
+mz c -search -search.prefix='"timestamp":' -search.extras=8 -search.len=8 file.log
+                                                    # long prefix + 9 hashes per occurrence (matchLen+extras ≤ 16)
 mz c -search -search.max=50 -search.lim=30 file.log # custom population limits
 mz c -bs=1MB -search file.log                       # 1MB blocks (more granular skipping)
-mz c -search -search.compress file.log              # also compress the search tables
-mz c -search -search.compress -search.compress.skip=5 file.log # tighter popcount band
+mz c -search -search.uncompressed file.log          # disable per-block table compression
+mz c -search -search.compress.skip=5 file.log       # tighter popcount band around 50%
 ```
 
-When `-search.compress` is set, `-search.lim` is automatically tightened
-(divided by 2 with a prefix or compression, by 3 with both) so the encoder
-keeps larger, sparser bitmaps that compress better. Override `-search.lim`
-to taste — lower values produce sparser, more compressible tables.
+`-search.lim` defaults to 25 %, auto-tightened to 10 % when a prefix is set.
+Pass the flag explicitly to override (lower = sparser tables, more
+compressible).
 
 **Searching compressed files:**
 ```
@@ -310,15 +485,17 @@ serialization automatically.
 
 Configuration methods:
 
-| Method                          | Description                                         |
-|---------------------------------|-----------------------------------------------------|
-| `NewSearchTableConfig()`        | Create config with defaults (matchLen=6, no prefix) |
-| `WithMatchLen(n)`               | Set match length 1–8                                |
-| `WithBytePrefix(b...)`          | Set 1–8 prefix bytes (>8 auto-promotes to bitmask)  |
-| `WithMaskPrefix(mask)`          | Set a 256-bit prefix bitmask                        |
-| `WithLongPrefix(p)`             | Set a multi-byte prefix (1–256 bytes)               |
-| `WithMaxPopulation(pct)`        | Discard tables above this population % (default 70) |
-| `WithMaxReducedPopulation(pct)` | Stop reducing above this population % (default 25)  |
+| Method                          | Description                                                    |
+|---------------------------------|----------------------------------------------------------------|
+| `NewSearchTableConfig()`        | Create config with defaults (matchLen=6, no prefix, compressed)|
+| `WithMatchLen(n)`               | Set match length 1–8                                           |
+| `WithBytePrefix(b...)`          | Set 1–8 prefix bytes (>8 auto-promotes to bitmask)             |
+| `WithMaskPrefix(mask)`          | Set a 256-bit prefix bitmask                                   |
+| `WithLongPrefix(p)`             | Set a multi-byte prefix (1–256 bytes)                          |
+| `WithMaxPopulation(pct)`        | Discard tables above this population % (default 70)            |
+| `WithMaxReducedPopulation(pct)` | Stop reducing above this population % (default 25, 10 w/prefix)|
+| `WithCompression(opts...)`      | Tune the per-block table compression (on by default)           |
+| `WithoutCompression()`          | Disable per-block table compression (emit 0x45 only)           |
 
 Decompressing the stream will ignore the search tables.
 
