@@ -80,7 +80,8 @@ type SidecarSearcher struct {
 	bail         bool
 	ignoreCRC    bool
 	collectStats bool
-	maxBlock     int
+	maxBlock     int // per-stream effective cap = min(maxBlockCfg, stream's declared max)
+	maxBlockCfg  int // configured ceiling, set once at construction
 
 	// Cumulative state during a single Search call.
 	blockStart   int64 // uncompressed offset where the next block begins
@@ -128,6 +129,7 @@ func NewSidecarSearcher(main io.ReaderAt, sidecar io.Reader, opts ...BlockSearch
 	s.collectStats = tmp.collectStats
 	s.infoCB = tmp.infoCallback
 	s.maxBlock = tmp.maxBlock
+	s.maxBlockCfg = s.maxBlock
 	return s
 }
 
@@ -200,10 +202,8 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 		return err
 	}
 	s.sideMaxBlk = mb
-	if s.maxBlock > mb {
-		// Cap to sidecar's max block size (matches the main stream's).
-		s.maxBlock = mb
-	}
+	// Effective cap = min(configured ceiling, this stream's declared max).
+	s.maxBlock = min(s.maxBlockCfg, mb)
 
 	// Pending decode batch — list of refs whose pending tables don't prove
 	// absence, accumulated so the I/O can be coalesced.
@@ -382,7 +382,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 				// via a straddling match into the next block, postpone the
 				// decision until the next block's table arrives. Restricted
 				// to single-config tables and no boundary risk from prev.
-				if !skip && i == 0 && len(tables) == 1 && tables[0].table != nil && s.sideDeferred == nil &&
+				if !skip && i == 0 && len(tables) == 1 && len(s.streamInfos) == 1 && tables[0].table != nil && s.sideDeferred == nil &&
 					(s.prevBlock == nil || !canBoundaryMatch(s.prevBlock, pattern)) {
 					t := &tables[0]
 					if hashes := patternDeferHashes(&t.cfg, t.table, t.reductions, pattern); hashes != nil {
@@ -485,6 +485,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 				return err
 			}
 			s.sideMaxBlk = mb
+			s.maxBlock = min(s.maxBlockCfg, mb)
 			// New stream — offsets/context don't cross stream boundaries.
 			s.blockStart = 0
 

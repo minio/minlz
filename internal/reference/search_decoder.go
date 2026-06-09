@@ -95,12 +95,18 @@ func ParseSearchTableCompressedChunk(payload []byte) (ParsedSearchTable, error) 
 	if log2bs < huff0BlockSizeLog2Min || log2bs > huff0BlockSizeLog2Max {
 		return ParsedSearchTable{}, fmt.Errorf("minlz: invalid huff0 block log2 %d", log2bs)
 	}
+	if tc > 16 {
+		return ParsedSearchTable{}, fmt.Errorf("minlz: huff0 table count %d exceeds 16", tc)
+	}
 	expectedSize := 1 << (cfg.BaseTableSize - reductions - 3)
 	blockSize := 1 << log2bs
 	if expectedSize%blockSize != 0 {
 		return ParsedSearchTable{}, fmt.Errorf("minlz: bitmap size %d not divisible by huff0 block size %d", expectedSize, blockSize)
 	}
 	nBlocks := expectedSize / blockSize
+	if nBlocks > 16 {
+		return ParsedSearchTable{}, fmt.Errorf("minlz: huff0 block count %d exceeds 16", nBlocks)
+	}
 
 	// Parse huff0 tables.
 	scratches := make([]*huff0.Scratch, tc)
@@ -184,6 +190,9 @@ func ParseSearchTableCompressedChunk(payload []byte) (ParsedSearchTable, error) 
 // are positive deltas (SPEC_SEARCH.md section 2.3). Returned Offset values
 // are absolute.
 func ParseRemoteBlockRefChunk(payload []byte) ([]RemoteBlockRef, error) {
+	if len(payload) == 0 {
+		return nil, fmt.Errorf("minlz: 0x47 empty payload")
+	}
 	var refs []RemoteBlockRef
 	var prev uint64
 	first := true

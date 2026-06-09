@@ -107,6 +107,9 @@ func NewSearchTableConfig() SearchTableConfig {
 // Shorter values use less of the search pattern but are more likely to collide.
 // Default is 6.
 func (c SearchTableConfig) WithMatchLen(n int) SearchTableConfig {
+	if n < 0 || n > 255 {
+		n = 255 // out of uint8 range: let validate() reject instead of silently wrapping
+	}
 	c.matchLen = uint8(n)
 	return c
 }
@@ -154,6 +157,9 @@ func (c SearchTableConfig) WithLongPrefix(prefix []byte) SearchTableConfig {
 // Extras only applies to type 4 (long prefix). Setting extras > 0 on any other
 // table type produces a validation error.
 func (c SearchTableConfig) WithExtras(n int) SearchTableConfig {
+	if n < 0 || n > 255 {
+		n = 255 // out of uint8 range: let validate() reject instead of silently wrapping
+	}
 	c.extras = uint8(n)
 	return c
 }

@@ -220,9 +220,9 @@ Options:`)
 			}
 			dstFile, err := os.OpenFile(*out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
 			exitErr(err)
-			defer dstFile.Close()
+			defer func() { exitErr(dstFile.Close()) }()
 			bw := bufio.NewWriterSize(dstFile, blockSizeInt*2)
-			defer bw.Flush()
+			defer func() { exitErr(bw.Flush()) }()
 			wr.Reset(bw)
 			if *searchSidecar {
 				sideName := *out + minlzSidecarExt
@@ -233,9 +233,9 @@ Options:`)
 				}
 				sideFile, err := os.OpenFile(sideName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
 				exitErr(err)
-				defer sideFile.Close()
+				defer func() { exitErr(sideFile.Close()) }()
 				sbw := bufio.NewWriterSize(sideFile, 64<<10)
-				defer sbw.Flush()
+				defer func() { exitErr(sbw.Flush()) }()
 				exitErr(wr.SetSidecar(sbw))
 			}
 		}

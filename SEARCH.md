@@ -390,7 +390,7 @@ own sidecar `io.Reader` and the underlying `ReadAt` is shared safely.
 
 ### Commandline
 
-```
+```bash
 mz sidecar build   [-search.lens=4,6] [-search.compress] foo.mz   # -> foo.mz.mzs
 mz sidecar extract [-newstream stripped.mz]              foo.mz   # -> foo.mz.mzs (+ stripped.mz)
 mz search --sidecar foo.mz.mzs  "pattern"  foo.mz                 # search via sidecar

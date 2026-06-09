@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/minio/minlz"
@@ -105,6 +106,9 @@ Options:`)
 	dst := *outFile
 	if dst == "" {
 		dst = src + minlzSidecarExt
+	}
+	if samePath(src, dst) {
+		exitErr(fmt.Errorf("sidecar destination %q would overwrite the input %q", dst, src))
 	}
 
 	// Build the configs.
@@ -241,6 +245,17 @@ Options:`)
 	if dst == "" {
 		dst = src + minlzSidecarExt
 	}
+	if samePath(src, dst) {
+		exitErr(fmt.Errorf("sidecar destination %q would overwrite the input %q", dst, src))
+	}
+	if *newStream != "" {
+		if samePath(src, *newStream) {
+			exitErr(fmt.Errorf("--newstream %q would overwrite the input %q", *newStream, src))
+		}
+		if samePath(dst, *newStream) {
+			exitErr(fmt.Errorf("--newstream %q and sidecar %q are the same file", *newStream, dst))
+		}
+	}
 
 	in, err := os.Open(src)
 	exitErr(err)
@@ -283,4 +298,12 @@ Options:`)
 	if err := minlz.ExtractSidecar(sideOut, newDst, in); err != nil {
 		exitErr(err)
 	}
+}
+
+// samePath reports whether a and b resolve to the same filesystem path. Used
+// to refuse outputs that would truncate the input or collide with each other.
+func samePath(a, b string) bool {
+	pa, ea := filepath.Abs(a)
+	pb, eb := filepath.Abs(b)
+	return ea == nil && eb == nil && pa == pb
 }

@@ -680,7 +680,7 @@ func TestCompressedStatsHook(t *testing.T) {
 	if got.SubBlocks != 1 || got.SubBlockSize != 8192 {
 		t.Fatalf("SubBlocks=%d size=%d", got.SubBlocks, got.SubBlockSize)
 	}
-	totalBlocks := got.BlocksOwnTable + got.BlocksGlobalTable + got.BlocksRaw + got.BlocksRLE
+	totalBlocks := got.BlocksOwnTable + got.BlocksGlobalTable + got.BlocksRaw + got.BlocksRLE + got.BlocksSparse
 	if totalBlocks != got.SubBlocks {
 		t.Fatalf("sub-block counts %d do not sum to SubBlocks %d", totalBlocks, got.SubBlocks)
 	}

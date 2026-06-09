@@ -11,7 +11,7 @@ checking if a pattern is present in the block.
 This can be used to determine if a block may, or definitely does *not* contain a specific pattern.
 With this information, blocks can be skipped if searching for specific patterns.
 
-### 1.1 Sidecar Search Index Streams
+## 1.1 Sidecar Search Index Streams
 
 A stream can contain search indexes only. This means that blocks are referenced into another stream.
 
@@ -433,7 +433,7 @@ present for that occurrence to remain a candidate.
 
 For pattern `P` of length `L`, prefix `pfx` of length `K`, matchLen = `M`, extras = `E`:
 
-```
+```text
 checked = 0
 for i = 0 to L - K - M - E:
     if P[i : i+K] == pfx:

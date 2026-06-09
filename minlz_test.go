@@ -33,11 +33,6 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
-const (
-	maxUint = ^uint(0)
-	maxInt  = int(maxUint >> 1)
-)
-
 var (
 	download     = flag.Bool("download", false, "If true, download any missing files before running benchmarks")
 	testdataDir  = flag.String("testdataDir", "testdata", "Directory containing the test data")
@@ -1750,7 +1745,7 @@ func ExampleWriter_AddUserChunk() {
 	}
 	fmt.Println("Stream data:", string(b))
 
-	// OUTPUT:
+	// Output:
 	// Callback: Chunk Custom Data <nil>
 	// Stream data: some data
 }

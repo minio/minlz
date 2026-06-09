@@ -906,7 +906,7 @@ Reference code is provided in the `internal/reference` folder.
 This provides simplified, but explicit versions of the block de/encoder;
 stream and index decoders with minimal dependencies.
 
-Currently, there are no ports of MinLZ to other languages. 
+There are official Go and Rust ports, plus an experimental C port; see the table below. 
 If you are interested in porting MinLZ to another language, open a discussion topic.
 
 If you do a port, feel free to send in a PR for this table:
