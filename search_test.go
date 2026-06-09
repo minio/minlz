@@ -18,6 +18,31 @@ func withBaseTableSize(c SearchTableConfig, ts int) SearchTableConfig {
 	return c
 }
 
+// TestSearchTableConfigSetterOverflow locks in the uint8-cast guards in the
+// With* setters: an out-of-range int must surface as a validate() error, not
+// silently wrap into an accepted value (e.g. 256->0, 257->1). A validate()
+// assertion on [0,255] cannot do this — matchLen/extras are uint8, so the wrap
+// is already lost by the time validate() runs; this test is the regression
+// catcher instead.
+func TestSearchTableConfigSetterOverflow(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  SearchTableConfig
+	}{
+		{"matchLen=257", NewSearchTableConfig().WithMatchLen(257)},                           // wraps to 1
+		{"matchLen=-255", NewSearchTableConfig().WithMatchLen(-255)},                         // wraps to 1
+		{"extras=256", NewSearchTableConfig().WithLongPrefix([]byte("x")).WithExtras(256)},   // wraps to 0
+		{"extras=-256", NewSearchTableConfig().WithLongPrefix([]byte("x")).WithExtras(-256)}, // wraps to 0
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := tc.cfg
+			if err := cfg.validate(); err == nil {
+				t.Errorf("out-of-range setter produced a valid config: matchLen=%d extras=%d", cfg.matchLen, cfg.extras)
+			}
+		})
+	}
+}
+
 func TestHashValue(t *testing.T) {
 	// Verify HashValue matches per-matchLen helpers.
 	v := uint64(0x0102030405060708)

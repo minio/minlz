@@ -851,8 +851,11 @@ func parseSearchTableCompressedHeader(payload []byte) (cfg SearchTableConfig, re
 		return
 	}
 	off := 3 + cfg.prefixSize()
-	if off >= len(payload) {
-		err = fmt.Errorf("minlz: compressed search table chunk too short for reductions")
+	// Mirror parseSearchTableCompressed's structural check: require room for the
+	// full fixed header (reductions + crc + log2bs + tc) so a truncated chunk is
+	// rejected here rather than slipping past the caller's skip decision.
+	if off+1+4+2 > len(payload) {
+		err = fmt.Errorf("minlz: compressed search table chunk too short for header")
 		return
 	}
 	reductions = payload[off]
