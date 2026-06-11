@@ -32,6 +32,7 @@ compression ratio while retaining a high decompression speed.
 * Detailed control of memory under decompression
 * Fast detection of pre-compressed data
 * Powerful commandline utility
+* Customizable Bloom Filter Stream Search 
 
 This package implements the MinLZ specification v1.0 in Go.
 

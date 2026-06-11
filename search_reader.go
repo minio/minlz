@@ -1444,37 +1444,41 @@ func patternDeferHashes(cfg *SearchTableConfig, table []byte, reductions uint8, 
 		return deferHashesWithPrefixMask(cfg, table, mask, &cfg.prefixMask, pattern)
 
 	case searchTableTypeLongPrefix:
-		// TODO: re-enable deferred path for extras > 0. With E+1 windows per
-		// occurrence the threshold logic must be adjusted to account for the
-		// expanded boundary range.
-		if cfg.extras != 0 {
-			return nil
-		}
 		ml := int(cfg.matchLen)
+		ex := int(cfg.extras)
 		pl := len(cfg.longPrefix)
-		if len(pattern) < ml {
+		if len(pattern) < pl+ml+ex {
 			return nil
 		}
+		// Defer every absent window after the first occurrence whose windows are
+		// all present. The encoder records an occurrence in the block where its
+		// prefix starts — including a prefix that straddles into the next block
+		// (SPEC_SEARCH.md 2.1 / B.1) — so a real straddle's absent windows are all
+		// present in the next block's table. Handles extras (E+1 windows each).
 		first := true
-		firstPresent := false
-		safeThreshold := 0
+		firstAllPresent := false
 		var absent []uint32
-		for i := 0; i <= len(pattern)-pl-ml; i++ {
+		for i := 0; i <= len(pattern)-pl-ml-ex; i++ {
 			if !bytes.Equal(pattern[i:i+pl], cfg.longPrefix) {
 				continue
 			}
-			h := hashValue(readLE64Pad(pattern[i+pl:]), cfg.baseTableSize, cfg.matchLen)
-			present := table[(h&mask)>>3]&(1<<((h&mask)&7)) != 0
+			allPresent := true
+			var occAbsent []uint32
+			for j := 0; j <= ex; j++ {
+				h := hashValue(readLE64Pad(pattern[i+pl+j:]), cfg.baseTableSize, cfg.matchLen)
+				if table[(h&mask)>>3]&(1<<((h&mask)&7)) == 0 {
+					allPresent = false
+					occAbsent = append(occAbsent, h)
+				}
+			}
 			if first {
-				firstPresent = present
-				safeThreshold = ml + pl + i
+				firstAllPresent = allPresent
 				first = false
+				continue
 			}
-			if !present && i >= safeThreshold {
-				absent = append(absent, h)
-			}
+			absent = append(absent, occAbsent...)
 		}
-		if !firstPresent || len(absent) == 0 {
+		if !firstAllPresent || len(absent) == 0 {
 			return nil
 		}
 		return absent
@@ -1488,10 +1492,13 @@ func deferHashesWithPrefixMask(cfg *SearchTableConfig, table []byte, mask uint32
 		return nil
 	}
 
+	// Defer every absent window after the first present one. The encoder emits a
+	// table only for a block that had its full forward overlap (a flushed block
+	// without it emits no table and is always scanned), so for a real
+	// boundary-straddling match every window absent here is present in the next
+	// block's table — no window is recorded in neither block.
 	first := true
 	firstPresent := false
-	safeThreshold := 0  // pattern positions >= this are safe to defer
-	nearAbsent := false // any prefix window between iFirst and safeThreshold absent?
 	var absent []uint32
 	for i := 1; i <= len(pattern)-ml; i++ {
 		b := pattern[i-1]
@@ -1502,41 +1509,26 @@ func deferHashesWithPrefixMask(cfg *SearchTableConfig, table []byte, mask uint32
 		present := table[(h&mask)>>3]&(1<<((h&mask)&7)) != 0
 		if first {
 			firstPresent = present
-			// For a boundary match via overlap, at most matchLen-1+i pattern
-			// bytes are in block N. Continuation windows with prefix bytes in
-			// block N can't be verified against block N+1's table.
-			safeThreshold = ml + i
 			first = false
 			continue
 		}
 		if !present {
-			if i >= safeThreshold {
-				absent = append(absent, h)
-			} else {
-				// A "near" window is absent — the match can't be at K > overlap
-				// range (otherwise this window would be within block N and present).
-				nearAbsent = true
-			}
+			absent = append(absent, h)
 		}
 	}
 	if len(absent) == 0 {
 		return nil
 	}
 	if firstPresent {
-		// Only defer if a near window confirms K ≤ overlap range.
-		// If all near windows are present, K could exceed the overlap range
-		// and the far windows' prefix bytes could be at the block boundary.
-		if !nearAbsent {
-			return nil
-		}
 		return absent
 	}
-	// Raw fallback: first prefix window absent, check raw hash.
+	// First prefix window absent: a match is only possible anchored via the raw
+	// window (the leading prefix byte lies in the previous block).
 	hRaw := hashValue(readLE64Pad(pattern[:ml]), cfg.baseTableSize, cfg.matchLen)
 	if table[(hRaw&mask)>>3]&(1<<((hRaw&mask)&7)) != 0 {
 		return absent
 	}
-	return nil // raw fallback also absent → definite skip
+	return nil
 }
 
 // checkDeferredHashes checks if ALL deferred hashes are present in a table.

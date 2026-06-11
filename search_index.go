@@ -90,7 +90,16 @@ func (c *SearchTableConfig) buildSearchTable(blockData, overlap, dst []byte, pac
 		ex := int(c.extras)
 		var tmp [16]byte
 		start := max(0, len(blockData)-ml-ex+1)
-		for pos := start; pos < len(blockData); pos++ {
+		// Prefix tables additionally index position len(blockData): the window
+		// whose prefix byte is the block's LAST byte. It begins in the next
+		// block, and block N+1 cannot index it (that would be N+1's position 0,
+		// whose prefix byte is in block N), so block N records it to keep the
+		// index complete. See SPEC_SEARCH.md 3.3.1 / B.1.
+		end := len(blockData)
+		if c.tableType != searchTableTypeNoPrefix {
+			end = len(blockData) + 1
+		}
+		for pos := start; pos < end; pos++ {
 			// For prefix tables, only index if the preceding byte is a prefix.
 			if pos > 0 {
 				switch c.tableType {
@@ -123,6 +132,31 @@ func (c *SearchTableConfig) buildSearchTable(blockData, overlap, dst []byte, pac
 			copy(tmp[n:], overlap)
 			for j := 0; j <= ex; j++ {
 				setBit(table, hashValue(readLE64Pad(tmp[j:j+ml]), c.baseTableSize, c.matchLen))
+			}
+		}
+	}
+
+	// Long prefix: index occurrences whose prefix STARTS in this block but
+	// straddles into the next (window-start past the block end). The spec puts
+	// an occurrence in the block where its prefix starts; block N+1 can't index
+	// it (its prefix is partly here). Read the prefix tail and window(s) from
+	// the overlap. Single-byte prefixes (types 2/3) can't straddle.
+	if len(overlap) > 0 && c.tableType == searchTableTypeLongPrefix {
+		ex := int(c.extras)
+		pl := len(c.longPrefix)
+		s := len(blockData)
+		for q := max(0, s-pl+1); q < s; q++ {
+			k := s - q // prefix bytes inside this block (1..pl-1)
+			if !matchPrefix(blockData[q:s], c.longPrefix[:k]) {
+				continue
+			}
+			if pl-k > len(overlap) || !matchPrefix(overlap[:pl-k], c.longPrefix[k:]) {
+				continue
+			}
+			woff := q + pl - s // window start within overlap
+			for j := 0; j <= ex; j++ {
+				off := min(woff+j, len(overlap))
+				setBit(table, hashValue(readLE64Pad(overlap[off:]), c.baseTableSize, c.matchLen))
 			}
 		}
 	}

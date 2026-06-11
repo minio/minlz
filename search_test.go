@@ -6,11 +6,39 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/minio/minlz/internal/reference"
 )
+
+// loadTomSawyer returns the Tom Sawyer sample corpus.
+func loadTomSawyer(t testing.TB) []byte {
+	t.Helper()
+	b, err := os.ReadFile("testdata/Mark.Twain-Tom.Sawyer.txt")
+	if err != nil {
+		t.Fatalf("read testdata: %v", err)
+	}
+	return b
+}
+
+// tomSawyerCorpus builds a multi-block corpus by concatenating `copies`
+// rotations of the Tom Sawyer sample. Rotating each copy by a different byte
+// offset keeps every byte of text (so natural patterns stay searchable) while
+// shifting the content against the block grid, so block-boundary straddles are
+// exercised at many positions and no two copies are byte-identical. (A byte
+// XOR/offset transform would scramble the text and defeat both properties.)
+func tomSawyerCorpus(t testing.TB, copies int) []byte {
+	base := loadTomSawyer(t)
+	out := make([]byte, 0, copies*len(base))
+	for k := 0; k < copies; k++ {
+		off := (k * 257) % len(base)
+		out = append(out, base[off:]...)
+		out = append(out, base[:off]...)
+	}
+	return out
+}
 
 // withBaseTableSize sets baseTableSize directly for unit testing.
 func withBaseTableSize(c SearchTableConfig, ts int) SearchTableConfig {
@@ -2331,14 +2359,53 @@ func FuzzSearchRoundtrip(f *testing.F) {
 			return
 		}
 		cfg := NewSearchTableConfig().WithMatchLen(matchLen)
+		// usePrefix picks a prefix table; a second input bit selects a long
+		// (multi-byte) prefix when the pattern is long enough, so the fuzzer
+		// exercises the long-prefix boundary-straddle path too.
+		useLong := false
 		if usePrefix && len(pattern) > 0 {
-			cfg = cfg.WithBytePrefix(pattern[0])
+			if len(data) > 1 && data[1]&1 == 1 && len(pattern) >= 2+matchLen {
+				cfg = cfg.WithLongPrefix(pattern[:2])
+				useLong = true
+			} else {
+				cfg = cfg.WithBytePrefix(pattern[0])
+			}
 		}
 
+		// Exercise every writer mode and concurrency. The mode is keyed off the
+		// input (the corpus signature is fixed) so the coverage-guided fuzzer
+		// explores each branch — these are the paths that hid the streaming and
+		// concurrent-search bugs.
+		mode := data[0]
+		cpu := 1
+		if mode&1 != 0 {
+			cpu = 4
+		}
 		var buf bytes.Buffer
-		w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(1))
-		_, err := w.Write(data)
-		if err != nil {
+		w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(cpu))
+		var werr error
+		switch (mode >> 1) % 5 {
+		case 0:
+			werr = w.EncodeBuffer(append([]byte(nil), data...))
+		case 1:
+			_, werr = w.Write(data)
+		case 2: // block-aligned streaming writes
+			for i := 0; i < len(data) && werr == nil; i += minBlockSize {
+				_, werr = w.Write(data[i:min(i+minBlockSize, len(data))])
+			}
+		case 3: // odd-sized streaming writes
+			for i := 0; i < len(data) && werr == nil; i += 333 {
+				_, werr = w.Write(data[i:min(i+333, len(data))])
+			}
+		case 4: // write, mid-stream Flush, write
+			mid := len(data) / 2
+			if _, werr = w.Write(data[:mid]); werr == nil {
+				if werr = w.Flush(); werr == nil {
+					_, werr = w.Write(data[mid:])
+				}
+			}
+		}
+		if werr != nil {
 			return // some data may cause issues
 		}
 		if err := w.Close(); err != nil {
@@ -2356,7 +2423,21 @@ func FuzzSearchRoundtrip(f *testing.F) {
 
 		// Collect all expected match offsets from the original data.
 		var expected []int64
-		if usePrefix {
+		if useLong {
+			// Long prefix: count occurrences preceded by the long prefix
+			// (conservative subset that must always be found).
+			lp := pattern[:2]
+			needle := append(append([]byte{}, lp...), pattern...)
+			off := 0
+			for {
+				idx := bytes.Index(data[off:], needle)
+				if idx < 0 {
+					break
+				}
+				expected = append(expected, int64(off+idx+len(lp)))
+				off += idx + 1
+			}
+		} else if usePrefix {
 			// For prefix tables, only count occurrences preceded by the prefix byte.
 			pfx := pattern[0]
 			needle := append([]byte{pfx}, pattern...)
@@ -3726,5 +3807,435 @@ func TestExtrasBoundaryOverlap(t *testing.T) {
 	}
 	if found == 0 {
 		t.Fatalf("boundary-straddling needle not found; stats: %+v", searcher.Stats())
+	}
+}
+
+// TestSearchConcurrentStreamingRoundtrip guards a buffer-truncation bug in the
+// concurrent writer's search-table assembly (writer.go): a small/partial final
+// block whose compressed chunk exceeded len(uncompressed)+obufHeaderLen-smc had
+// its data copy truncated, corrupting the stream. Exercises Concurrency>1 +
+// streaming Write (block-by-block) + search — a combination the other tests miss.
+func TestSearchConcurrentStreamingRoundtrip(t *testing.T) {
+	for _, copies := range []int{1, 3, 12} {
+		data := tomSawyerCorpus(t, copies)
+		for _, cpu := range []int{2, 4} {
+			var buf bytes.Buffer
+			cfg := NewSearchTableConfig().WithMatchLen(6).WithBytePrefix(' ')
+			w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(cpu))
+			for i := 0; i < len(data); i += minBlockSize {
+				end := min(i+minBlockSize, len(data))
+				if _, err := w.Write(data[i:end]); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			dec, err := io.ReadAll(NewReader(bytes.NewReader(buf.Bytes())))
+			if err != nil {
+				t.Fatalf("copies=%d cpu=%d: decode failed: %v", copies, cpu, err)
+			}
+			if !bytes.Equal(dec, data) {
+				t.Fatalf("copies=%d cpu=%d: roundtrip mismatch (got %d want %d)", copies, cpu, len(dec), len(data))
+			}
+		}
+	}
+}
+
+// TestSearchLongPrefixStraddle guards the encoder fix for a multi-byte prefix
+// that itself straddles a block boundary: the occurrence is indexed in the block
+// where its prefix STARTS (reading the prefix tail + window from the overlap),
+// so the match is still found. Covers extras = 0 and extras > 0.
+func TestSearchLongPrefixStraddle(t *testing.T) {
+	for _, extras := range []int{0, 3} {
+		bs := minBlockSize
+		prefix := []byte("<<>")
+		ml := 4
+		filler := bytes.Repeat([]byte("the quick brown fox\n"), bs/20+2)
+		// Place the 3-byte prefix straddling the block-0/block-1 boundary:
+		// "<<" at the end of block 0, ">" + value at the start of block 1.
+		data := make([]byte, 0, bs*2)
+		data = append(data, filler[:bs-2]...)
+		data = append(data, '<', '<')              // block0[bs-2], block0[bs-1]
+		data = append(data, '>')                   // block1[0] -> prefix "<<>" straddles
+		data = append(data, []byte("NEEDLExyzabc")...)
+		data = append(data, filler...)
+		needle := append(append([]byte{}, prefix...), []byte("NEEDLE")...)
+		if bytes.Count(data, needle) != 1 {
+			t.Fatalf("extras=%d setup count=%d", extras, bytes.Count(data, needle))
+		}
+
+		var buf bytes.Buffer
+		cfg := NewSearchTableConfig().WithMatchLen(ml).WithLongPrefix(prefix).WithExtras(extras)
+		w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(bs), WriterConcurrency(1))
+		if err := w.EncodeBuffer(append([]byte(nil), data...)); err != nil {
+			t.Fatalf("extras=%d: %v", extras, err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatalf("extras=%d: %v", extras, err)
+		}
+		found := 0
+		if err := NewBlockSearcher(bytes.NewReader(buf.Bytes())).Search(needle, func(r SearchResult) error {
+			found++
+			return nil
+		}); err != nil {
+			t.Fatalf("extras=%d: %v", extras, err)
+		}
+		if found != 1 {
+			t.Errorf("extras=%d: long-prefix straddling-prefix match missed (found=%d)", extras, found)
+		}
+	}
+}
+
+// TestSearchLongPrefixNoFalseNegatives encodes a multi-block corpus with a long
+// prefix and verifies every occurrence of needles beginning with that prefix is
+// found, across encode methods and concurrency.
+func TestSearchLongPrefixNoFalseNegatives(t *testing.T) {
+	data := tomSawyerCorpus(t, 16)
+	prefix := []byte("the ")
+	needles := []string{"the adventures", "the boys", "the fence", "the river", "the cave"}
+	for _, cpu := range []int{1, 4} {
+		for _, stream := range []bool{false, true} {
+			var buf bytes.Buffer
+			cfg := NewSearchTableConfig().WithMatchLen(6).WithLongPrefix(prefix)
+			w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(cpu))
+			if stream {
+				for i := 0; i < len(data); i += 1024 {
+					w.Write(data[i:min(i+1024, len(data))])
+				}
+			} else if err := w.EncodeBuffer(append([]byte(nil), data...)); err != nil {
+				t.Fatal(err)
+			}
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			s := buf.Bytes()
+			for _, ns := range needles {
+				pat := []byte(ns)
+				want := map[int64]bool{}
+				for off := 0; ; {
+					i := bytes.Index(data[off:], pat)
+					if i < 0 {
+						break
+					}
+					want[int64(off+i)] = true
+					off += i + 1
+				}
+				got := map[int64]bool{}
+				if err := NewBlockSearcher(bytes.NewReader(s)).Search(pat, func(r SearchResult) error {
+					got[r.StreamOffset] = true
+					return nil
+				}); err != nil {
+					t.Fatalf("cpu%d stream=%v %q: %v", cpu, stream, ns, err)
+				}
+				for off := range want {
+					if !got[off] {
+						t.Errorf("cpu%d stream=%v %q: missing occurrence at %d (want %d, got %d)", cpu, stream, ns, off, len(want), len(got))
+					}
+				}
+			}
+		}
+	}
+}
+
+// TestSearchStreamingForwardStraddle guards the deferred-overlap fix: streaming
+// Write must not emit a non-last block without its forward overlap, or a match
+// straddling that boundary would be missed. The held block is emitted with
+// overlap once the next Write arrives.
+func TestSearchStreamingForwardStraddle(t *testing.T) {
+	for _, cpu := range []int{1, 2, 4} {
+		bs := minBlockSize
+		filler := bytes.Repeat([]byte("the quick brown fox jumps over\n"), bs/31+2)
+		first := make([]byte, bs)
+		copy(first, filler)
+		first[bs-1] = ' ' // last byte of block 0 is the prefix byte
+		pat := []byte(" zqxjvkmarker9")
+		second := append(append([]byte{}, pat[1:]...), filler...)
+
+		var buf bytes.Buffer
+		cfg := NewSearchTableConfig().WithMatchLen(6).WithBytePrefix(' ')
+		w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(bs), WriterConcurrency(cpu))
+		if _, err := w.Write(first); err != nil { // held (deferred)
+			t.Fatal(err)
+		}
+		if _, err := w.Write(second); err != nil { // supplies block 0's overlap
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		full := append(append([]byte{}, first...), second...)
+		if bytes.Count(full, pat) != 1 {
+			t.Fatalf("cpu%d: setup count=%d", cpu, bytes.Count(full, pat))
+		}
+		found := 0
+		if err := NewBlockSearcher(bytes.NewReader(buf.Bytes())).Search(pat, func(r SearchResult) error {
+			found++
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if found != 1 {
+			t.Errorf("cpu%d: straddling match across a streaming block boundary was missed (found=%d)", cpu, found)
+		}
+	}
+}
+
+// TestSearchEncodeMethodsNoFalseNegatives runs the same corpus through every
+// encode path (EncodeBuffer, streaming Write at several chunk sizes, ReadFrom)
+// at Concurrency 1 and 4, and verifies the searcher reports exactly the true
+// occurrences of each pattern — no false negatives, no corruption.
+func TestSearchEncodeMethodsNoFalseNegatives(t *testing.T) {
+	data := tomSawyerCorpus(t, 12)
+	cfg := NewSearchTableConfig().WithMatchLen(6).WithBytePrefix(' ', '\n')
+	patterns := []string{" the ", " Tom Sawyer", " whitewash", "\nCHAPTER", " graveyard at"}
+	gt := func(pat []byte) map[int64]bool {
+		m := map[int64]bool{}
+		for off := 0; ; {
+			i := bytes.Index(data[off:], pat)
+			if i < 0 {
+				break
+			}
+			m[int64(off+i)] = true
+			off += i + 1
+		}
+		return m
+	}
+	encode := func(method string, cpu int) []byte {
+		var buf bytes.Buffer
+		w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(cpu))
+		switch method {
+		case "EncodeBuffer":
+			if err := w.EncodeBuffer(append([]byte(nil), data...)); err != nil {
+				t.Fatal(err)
+			}
+		case "Write-1":
+			for i := range data {
+				w.Write(data[i : i+1])
+			}
+		case "Write-block":
+			for i := 0; i < len(data); i += minBlockSize {
+				w.Write(data[i:min(i+minBlockSize, len(data))])
+			}
+		case "Write-odd":
+			for i := 0; i < len(data); i += 997 {
+				w.Write(data[i:min(i+997, len(data))])
+			}
+		case "ReadFrom":
+			w.ReadFrom(bytes.NewReader(data))
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return buf.Bytes()
+	}
+	for _, method := range []string{"EncodeBuffer", "Write-1", "Write-block", "Write-odd", "ReadFrom"} {
+		for _, cpu := range []int{1, 4} {
+			stream := encode(method, cpu)
+			dec, err := io.ReadAll(NewReader(bytes.NewReader(stream)))
+			if err != nil || !bytes.Equal(dec, data) {
+				t.Errorf("%s/cpu%d: roundtrip failed (err=%v)", method, cpu, err)
+				continue
+			}
+			for _, ps := range patterns {
+				pat := []byte(ps)
+				want := gt(pat)
+				got := map[int64]bool{}
+				if err := NewBlockSearcher(bytes.NewReader(stream)).Search(pat, func(r SearchResult) error {
+					got[r.StreamOffset] = true
+					return nil
+				}); err != nil {
+					t.Errorf("%s/cpu%d %q: %v", method, cpu, ps, err)
+					continue
+				}
+				if len(got) != len(want) {
+					t.Errorf("%s/cpu%d %q: found %d occurrences, want %d", method, cpu, ps, len(got), len(want))
+				}
+			}
+		}
+	}
+}
+
+// TestSearchPrefixDeferralSkipsRealData is the regression guard for the prefix
+// deferral fix. The searcher's "might match" decision keys only off the FIRST
+// prefix-context window; the discriminating windows are used via the deferred
+// path. The sentinel begins with a common word, so its first window (" the") is
+// present in (nearly) every block — before the fix the deferred path bailed and
+// ~0 blocks were skipped. The unique remainder must now skip the blocks that
+// don't contain it.
+func TestSearchPrefixDeferralSkipsRealData(t *testing.T) {
+	data := tomSawyerCorpus(t, 32) // ~450 KB
+	sentinel := []byte(" the qzxjvk wbnmfp ldghqr zpopuli")
+	copy(data[len(data)/2:], sentinel)
+	if c := bytes.Count(data, sentinel); c != 1 {
+		t.Fatalf("sentinel not unique (count=%d)", c)
+	}
+
+	var buf bytes.Buffer
+	cfg := NewSearchTableConfig().WithMatchLen(4).WithBytePrefix(' ')
+	w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(1))
+	if err := w.EncodeBuffer(append([]byte(nil), data...)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
+	var found []int64
+	if err := searcher.Search(sentinel, func(r SearchResult) error {
+		found = append(found, r.StreamOffset)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st := searcher.Stats()
+	t.Logf("blocks total=%d skipped=%d searched=%d deferred=%d falsePos=%d missing=%d",
+		st.BlocksTotal, st.BlocksSkipped, st.BlocksSearched, st.BlocksDeferred, st.BlocksFalsePositive, st.TablesMissing)
+
+	if len(found) != 1 || found[0] != int64(len(data)/2) {
+		t.Fatalf("expected one match at %d, got %v", len(data)/2, found)
+	}
+	// Before the fix this was ~0. The discriminating windows must skip most blocks.
+	if st.BlocksSkipped < st.BlocksTotal/2 {
+		t.Errorf("prefix deferral ineffective: skipped %d/%d blocks", st.BlocksSkipped, st.BlocksTotal)
+	}
+}
+
+// TestSearchPrefixNoFalseNegativesRealData encodes a multi-block, byte-shifted
+// Tom Sawyer corpus with prefix tables and verifies the searcher reports exactly
+// the true occurrences of several patterns — exercising deferral and the
+// block-boundary path across many alignments with no false negatives.
+func TestSearchPrefixNoFalseNegativesRealData(t *testing.T) {
+	data := tomSawyerCorpus(t, 64) // ~900 KB, ~220 blocks
+	var buf bytes.Buffer
+	cfg := NewSearchTableConfig().WithMatchLen(6).WithBytePrefix(' ', '\n', '.', ',')
+	w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(1))
+	if err := w.EncodeBuffer(append([]byte(nil), data...)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	stream := buf.Bytes()
+
+	patterns := []string{
+		" the ", " Tom Sawyer", " whitewash", "\nCHAPTER", " said the", " graveyard at",
+	}
+	for _, ps := range patterns {
+		pat := []byte(ps)
+		want := map[int64]bool{}
+		for off := 0; ; {
+			i := bytes.Index(data[off:], pat)
+			if i < 0 {
+				break
+			}
+			want[int64(off+i)] = true
+			off += i + 1
+		}
+		searcher := NewBlockSearcher(bytes.NewReader(stream))
+		got := map[int64]bool{}
+		if err := searcher.Search(pat, func(r SearchResult) error {
+			got[r.StreamOffset] = true
+			return nil
+		}); err != nil {
+			t.Fatalf("%q: %v", ps, err)
+		}
+		if len(got) != len(want) {
+			t.Errorf("%q: found %d occurrences, want %d", ps, len(got), len(want))
+		}
+		for off := range want {
+			if !got[off] {
+				t.Errorf("%q: missing occurrence at stream offset %d", ps, off)
+			}
+		}
+	}
+}
+
+// TestSearchPrefixBoundaryWindowIndexed verifies the encoder records the
+// boundary window — the prefix-context window whose prefix byte is the block's
+// LAST byte (its value begins in the next block). Block N+1 cannot index it, so
+// block N records it from the overlap (SPEC_SEARCH.md 3.3.1, B.1).
+func TestSearchPrefixBoundaryWindowIndexed(t *testing.T) {
+	var mask [32]byte
+	mask['"'>>3] |= 1 << ('"' & 7)
+	cfg := withBaseTableSize(NewSearchTableConfig().WithMatchLen(8).WithMaskPrefix(mask), 16)
+	cfg.maxReducedPopPct = 0
+	ml := int(cfg.matchLen)
+
+	// P[:8] ends block N; P[8:] starts N+1. P[7]='"' makes offset-8 a prefix
+	// window whose prefix byte is N's last byte (the boundary window).
+	P := []byte(`"AAAAAA"CDEFGHIJ"KLMNOPQR`)
+	N := append(bytes.Repeat([]byte("x"), 56), P[:8]...)
+	N1 := append(append([]byte{}, P[8:]...), bytes.Repeat([]byte("y"), 32)...)
+	boundary := P[8:16] // "CDEFGHIJ"
+
+	has := func(table []byte, red uint8, w []byte) bool {
+		m := uint32(1<<(cfg.baseTableSize-red)) - 1
+		h := hashValue(readLE64Pad(w), cfg.baseTableSize, cfg.matchLen) & m
+		return table[h>>3]&(1<<(h&7)) != 0
+	}
+
+	if cfg.overlapBytes() < ml {
+		t.Fatalf("overlapBytes()=%d, want >= matchLen=%d", cfg.overlapBytes(), ml)
+	}
+	tN, redN := cfg.buildSearchTable(N, N1[:cfg.overlapBytes()], nil, false)
+	if !has(tN, redN, boundary) {
+		t.Error("boundary window not recorded in block N with full overlap")
+	}
+	tN1, redN1 := cfg.buildSearchTable(N1, nil, nil, false)
+	if has(tN1, redN1, boundary) {
+		t.Error("boundary window unexpectedly recorded in block N+1")
+	}
+}
+
+// TestSearchFlushOmitsTable verifies that a mid-stream Flush emits its block
+// without a search table (no forward overlap is available), so the block is
+// always scanned and a match straddling the flush boundary is still found,
+// while Close keeps the stream-final block's table.
+func TestSearchFlushOmitsTable(t *testing.T) {
+	bs := minBlockSize
+	cfg := NewSearchTableConfig().WithMatchLen(6).WithBytePrefix(' ')
+	filler := bytes.Repeat([]byte("the quick brown fox jumps\n"), bs/26+2)
+	pat := []byte(" zqxjvkmarker9")
+
+	first := make([]byte, bs)
+	copy(first, filler)
+	first[bs-1] = ' ' // last byte of the flushed block is the prefix byte
+
+	var buf bytes.Buffer
+	w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(bs), WriterConcurrency(1))
+	if _, err := w.Write(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Flush(); err != nil { // flushes block 0 WITHOUT a table
+		t.Fatal(err)
+	}
+	if _, err := w.Write(pat[1:]); err != nil { // continuation of the straddle
+		t.Fatal(err)
+	}
+	if _, err := w.Write(filler); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	full := append(append(append([]byte{}, first...), pat[1:]...), filler...)
+	if c := bytes.Count(full, pat); c != 1 {
+		t.Fatalf("setup: pattern count = %d", c)
+	}
+
+	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
+	found := 0
+	if err := searcher.Search(pat, func(r SearchResult) error { found++; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	st := searcher.Stats()
+	if found != 1 {
+		t.Errorf("straddle across flush boundary missed (found=%d); stats %+v", found, st)
+	}
+	if st.TablesMissing == 0 {
+		t.Errorf("expected the flushed block to carry no table (TablesMissing>0), got %d", st.TablesMissing)
 	}
 }

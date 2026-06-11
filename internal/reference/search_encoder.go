@@ -112,7 +112,7 @@ func HashValue(val uint64, tableSize, matchLen uint8) uint32 {
 }
 
 // BuildSearchTable produces the packed bitmap and the chosen reductions count
-// for blockData. overlap is up to MatchLen+Extras-1 bytes from the start of
+// for blockData. overlap is up to MatchLen+Extras bytes from the start of
 // the next block (empty for the last block in a stream).
 //
 // The returned table length is 1 << (BaseTableSize - reductions - 3) bytes,
@@ -162,9 +162,51 @@ func BuildSearchTable(cfg SearchConfig, blockData, overlap []byte) (table []byte
 	// Overlap tail: positions whose windows extend into the next block.
 	// Only emitted when overlap data is available — the last block of a stream
 	// has no overlap, so its tail positions are not indexed.
+	//
+	// Prefix tables also index position len(blockData): the window whose prefix
+	// byte is the block's last byte begins in the next block and cannot be
+	// indexed there (it would be position 0), so block N records it (3.3.1).
 	if len(overlap) > 0 {
-		for pos := last; pos < len(blockData); pos++ {
+		end := len(blockData)
+		if cfg.TableType != TableTypeNoPrefix {
+			end = len(blockData) + 1
+		}
+		for pos := last; pos < end; pos++ {
 			indexAt(pos)
+		}
+	}
+
+	// Long prefix: index occurrences whose prefix starts in this block but
+	// straddles into the next (window-start past the block end). The spec puts
+	// an occurrence in the block where its prefix starts; block N+1 can't index
+	// it (its prefix is partly here). Read the prefix tail and window(s) from
+	// the overlap. Single-byte prefixes can't straddle.
+	if len(overlap) > 0 && cfg.TableType == TableTypeLongPrefix {
+		pl := len(cfg.LongPrefix)
+		s := len(blockData)
+		for q := max(0, s-pl+1); q < s; q++ {
+			k := s - q // prefix bytes inside this block (1..pl-1)
+			if pl-k > len(overlap) {
+				continue
+			}
+			ok := true
+			for i := 0; i < k && ok; i++ {
+				ok = blockData[q+i] == cfg.LongPrefix[i]
+			}
+			for i := 0; i < pl-k && ok; i++ {
+				ok = overlap[i] == cfg.LongPrefix[k+i]
+			}
+			if !ok {
+				continue
+			}
+			woff := q + pl - s // window start within overlap
+			for j := 0; j <= ex; j++ {
+				off := woff + j
+				if off > len(overlap) {
+					off = len(overlap)
+				}
+				setBit(table, HashValue(readLE64Pad(overlap[off:]), cfg.BaseTableSize, cfg.MatchLen))
+			}
 		}
 	}
 

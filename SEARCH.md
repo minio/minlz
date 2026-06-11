@@ -55,6 +55,17 @@ and searching will have to fall back to decompression.
 
 MinLZ will not attempt to generate tables for incompressible blocks.
 
+### Streaming, concurrency and flushing
+
+Search tables work with every writer mode (`Write`, `EncodeBuffer`, `ReadFrom`,
+any `WriterConcurrency`). To index a block's boundary windows the encoder needs
+the first few bytes of the *next* block, so a streaming `Write` holds one block
+back until the following data arrives (or `Close`). A block forced out by an
+explicit mid-stream `Flush` has no following bytes yet, so it is written
+**without** a search table — it stays fully searchable but is always scanned
+(never skipped). `EncodeBuffer` and ordinary streaming index every non-final
+block, so skipping is unaffected.
+
 ## Parameters
 
 ### Match Length
