@@ -260,6 +260,15 @@ type BlockSearcher struct {
 	decoded   [2][]byte // alternating decode buffers
 	decIdx    int       // which buffer was last used (0 or 1)
 	prevBlock []byte    // points into decoded[(decIdx+1)&1], nil if skipped
+	// tailBuf holds the last len(pattern)-1 bytes of the current contiguous run
+	// of scanned blocks, so a match straddling 3+ blocks (e.g. across a short
+	// Flush block whose length is < len(pattern)-1) is still found by the
+	// boundary scan. tailOff is its stream offset; bbuf is reused scratch for
+	// the boundary region. Reset whenever a block is skipped or deferred
+	// (i.e. not decoded), which breaks contiguity with the next block.
+	tailBuf []byte
+	tailOff int64
+	bbuf    []byte
 	// prevLazy is *lazyBlock so it can carry a nil sentinel meaning "no
 	// lazy prev." When set by bufferSkippedBlock / resolvePending, it
 	// always points at &prevLazyStore — the backing storage is reused
@@ -365,6 +374,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 	s.deferred = nil
 	s.pending = nil
 	s.prevLazy = nil
+	s.tailBuf = s.tailBuf[:0]
 
 	if s.collectStats {
 		defer func() { s.stats.UncompressedSize = s.blockStart }()
@@ -592,7 +602,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				canUse, match := patternCanMatch(&savedInfo, savedTable, savedReductions, pattern)
 				s.blockTable = nil
 				if canUse && !match {
-					if s.prevBlock == nil || !canBoundaryMatch(s.prevBlock, pattern) {
+					if len(s.tailBuf) == 0 || !canBoundaryMatch(s.tailBuf, pattern) {
 						// Definite skip — buffer compressed data for lazy PrevBlock.
 						decompLen, err := s.bufferSkippedBlock(chunkType, chunkLen)
 						if err != nil {
@@ -609,6 +619,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 							}
 						}
 						s.prevBlock = nil
+						s.tailBuf = s.tailBuf[:0]
 						continue
 					}
 					tableNoMatch = true
@@ -617,7 +628,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 					// Don't defer if the previous block could have a boundary
 					// match into this block — deferral would skip that check.
 					dh := patternDeferHashes(&savedInfo, savedTable, savedReductions, pattern)
-					if dh != nil && (s.prevBlock == nil || !canBoundaryMatch(s.prevBlock, pattern)) {
+					if dh != nil && (len(s.tailBuf) == 0 || !canBoundaryMatch(s.tailBuf, pattern)) {
 						deferrable = true
 						// Buffer compressed data and defer decode.
 						decompLen, err := s.bufferSkippedBlock(chunkType, chunkLen)
@@ -635,6 +646,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 							s.stats.BlocksDeferred++
 						}
 						s.prevBlock = nil
+						s.tailBuf = s.tailBuf[:0]
 						continue
 					}
 				}
@@ -741,7 +753,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				canUse, match := patternCanMatch(&s.blockInfo, s.blockTable, s.blockReductions, pattern)
 				s.blockTable = nil
 				if canUse && !match {
-					if s.prevBlock == nil || !canBoundaryMatch(s.prevBlock, pattern) {
+					if len(s.tailBuf) == 0 || !canBoundaryMatch(s.tailBuf, pattern) {
 						decompLen, err := s.bufferSkippedBlock(chunkType, chunkLen)
 						if err != nil {
 							return err
@@ -757,6 +769,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 							}
 						}
 						s.prevBlock = nil
+						s.tailBuf = s.tailBuf[:0]
 						continue
 					}
 					tableNoMatch = true
@@ -856,6 +869,26 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 	}
 }
 
+// updateTail records blk (ending at stream offset endOff) as the most recent
+// contiguous decoded data, retaining its last keep bytes for the next block's
+// boundary scan. Short blocks accumulate so the tail always spans keep bytes
+// when that much contiguous data exists.
+func (s *BlockSearcher) updateTail(blk []byte, endOff int64, keep int) {
+	if keep <= 0 {
+		s.tailBuf = s.tailBuf[:0]
+		return
+	}
+	if len(blk) >= keep {
+		s.tailBuf = append(s.tailBuf[:0], blk[len(blk)-keep:]...)
+	} else {
+		if drop := len(s.tailBuf) + len(blk) - keep; drop > 0 {
+			s.tailBuf = append(s.tailBuf[:0], s.tailBuf[min(drop, len(s.tailBuf)):]...)
+		}
+		s.tailBuf = append(s.tailBuf, blk...)
+	}
+	s.tailOff = endOff - int64(len(s.tailBuf))
+}
+
 // dispatchMatches finds all pattern occurrences in blk and calls fn for each.
 // If fn returns ErrSearchForward, the match is saved as s.deferred for the main
 // loop to re-dispatch after loading the next block. Remaining matches in this
@@ -870,42 +903,67 @@ func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []by
 		}
 	}
 
-	// Check for matches spanning the boundary between prevBlock and blk.
-	if s.prevBlock != nil && len(pattern) > 1 {
-		tail := s.prevBlock[max(0, len(s.prevBlock)-len(pattern)+1):]
+	// Check for matches spanning the boundary into blk. tailBuf holds the last
+	// len(pattern)-1 decoded bytes of the contiguous run ending at blk's start,
+	// so this also finds matches that straddle 3+ blocks across a short interior
+	// block (e.g. a 1-byte Flush block) — prevBlock alone may be too short.
+	if len(s.tailBuf) > 0 && len(pattern) > 1 {
+		tail := s.tailBuf
 		head := blk[:min(len(blk), len(pattern)-1)]
-		boundary := append(tail, head...)
+		s.bbuf = append(append(s.bbuf[:0], tail...), head...)
 		bOff := 0
 		for {
-			idx := bytes.Index(boundary[bOff:], pattern)
+			idx := bytes.Index(s.bbuf[bOff:], pattern)
 			if idx < 0 {
 				break
 			}
-			// Only report matches that actually straddle the boundary
-			// (start in prevBlock, end in blk).
+			// Only report matches that actually straddle (start in the tail,
+			// end in blk).
 			absIdx := bOff + idx
-			matchInPrev := len(tail) - absIdx
-			if matchInPrev <= 0 || matchInPrev >= len(pattern) {
+			matchInTail := len(tail) - absIdx
+			if matchInTail <= 0 || matchInTail >= len(pattern) {
 				bOff = absIdx + 1
 				continue
 			}
-			streamOff := blockOff - int64(matchInPrev)
-			result := SearchResult{
-				Blocks:       [2][]byte{s.prevBlock, blk},
-				Offset:       len(s.prevBlock) - matchInPrev,
-				StreamOffset: streamOff,
-				BlockStart:   prevBlockStart,
-				PrevBlockLen: len(s.prevBlock),
+			streamOff := s.tailOff + int64(absIdx)
+			// Prefer the full previous block for context; fall back to the tail
+			// when the match starts before prevBlock (a 3+ block straddle).
+			var result SearchResult
+			var defOff int
+			var defStart int64
+			var defBlk []byte
+			if s.prevBlock != nil && streamOff >= prevBlockStart {
+				off := int(streamOff - prevBlockStart)
+				result = SearchResult{
+					Blocks:       [2][]byte{s.prevBlock, blk},
+					Offset:       off,
+					StreamOffset: streamOff,
+					BlockStart:   prevBlockStart,
+					PrevBlockLen: len(s.prevBlock),
+				}
+				defOff, defStart, defBlk = off, prevBlockStart, s.prevBlock
+			} else {
+				result = SearchResult{
+					Blocks:       [2][]byte{tail, blk},
+					Offset:       absIdx,
+					StreamOffset: streamOff,
+					BlockStart:   s.tailOff,
+					PrevBlockLen: len(tail),
+				}
+				defOff, defStart = absIdx, s.tailOff
 			}
 			s.blockMatches++
 			err := fn(result)
 			if err != nil {
 				if errors.Is(err, ErrSearchForward) {
+					if defBlk == nil { // tailBuf is reused next block; copy it
+						defBlk = append([]byte(nil), tail...)
+					}
 					s.deferred = &deferredMatch{
 						streamOff: streamOff,
-						blockOff:  blockOff - int64(len(s.prevBlock)),
-						matchOff:  len(s.prevBlock) - matchInPrev,
-						blk:       s.prevBlock,
+						blockOff:  defStart,
+						matchOff:  defOff,
+						blk:       defBlk,
 					}
 				} else {
 					return err
@@ -919,6 +977,7 @@ func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []by
 	for {
 		idx := bytes.Index(blk[off:], pattern)
 		if idx < 0 {
+			s.updateTail(blk, blockOff+int64(len(blk)), len(pattern)-1)
 			return nil
 		}
 		matchOff := off + idx
@@ -1116,6 +1175,7 @@ func (s *BlockSearcher) resolvePending(pattern []byte, fn func(SearchResult) err
 		s.prevLazyStore = p.lazy
 		s.prevLazy = &s.prevLazyStore
 		s.prevBlock = nil
+		s.tailBuf = s.tailBuf[:0]
 		return nil
 	}
 

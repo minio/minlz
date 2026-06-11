@@ -3856,8 +3856,8 @@ func TestSearchLongPrefixStraddle(t *testing.T) {
 		// "<<" at the end of block 0, ">" + value at the start of block 1.
 		data := make([]byte, 0, bs*2)
 		data = append(data, filler[:bs-2]...)
-		data = append(data, '<', '<')              // block0[bs-2], block0[bs-1]
-		data = append(data, '>')                   // block1[0] -> prefix "<<>" straddles
+		data = append(data, '<', '<') // block0[bs-2], block0[bs-1]
+		data = append(data, '>')      // block1[0] -> prefix "<<>" straddles
 		data = append(data, []byte("NEEDLExyzabc")...)
 		data = append(data, filler...)
 		needle := append(append([]byte{}, prefix...), []byte("NEEDLE")...)
@@ -3977,6 +3977,69 @@ func TestSearchStreamingForwardStraddle(t *testing.T) {
 		}
 		if found != 1 {
 			t.Errorf("cpu%d: straddling match across a streaming block boundary was missed (found=%d)", cpu, found)
+		}
+	}
+}
+
+// TestSearchStraddleShortInteriorBlock covers a match that spans three blocks
+// because a mid-stream Flush emits an interior block shorter than len(pattern)-1.
+// Regression for a boundary scan that only spanned prevBlock+current and lost
+// the bytes before a tiny flushed block (found by FuzzSearchRoundtrip:
+// data="…sss…", flush leaving a 1-byte block, match straddling it).
+func TestSearchStraddleShortInteriorBlock(t *testing.T) {
+	const bs = minBlockSize
+	pat := []byte("NEEDLE") // len 6, so len(pattern)-1 = 5
+	for _, cpu := range []int{1, 4} {
+		for _, ml := range []int{4, 6, 8} { // 8 > len(pat): unusable table (all decoded)
+			for _, tiny := range []int{1, 2, 3} { // interior block shorter than 5
+				// Region of repeated pattern straddling the block0 / tiny / block2
+				// seams, with skippable 'x' filler elsewhere.
+				data := bytes.Repeat([]byte("x"), 3*bs)
+				copy(data[bs-2*len(pat):], bytes.Repeat(pat, 4)) // crosses block0 end
+				copy(data[bs+tiny-2:], bytes.Repeat(pat, 4))     // crosses tiny block end
+				copy(data[7:], pat)                              // control: inside block0
+				copy(data[2*bs+9:], pat)                         // control: inside block2
+
+				cfg := NewSearchTableConfig().WithMatchLen(ml)
+				var buf bytes.Buffer
+				w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(bs), WriterConcurrency(cpu))
+				cut := bs + tiny // Flush after one full block + tiny bytes
+				if _, err := w.Write(data[:cut]); err != nil {
+					t.Fatal(err)
+				}
+				if err := w.Flush(); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := w.Write(data[cut:]); err != nil {
+					t.Fatal(err)
+				}
+				if err := w.Close(); err != nil {
+					t.Fatal(err)
+				}
+
+				var want []int64
+				for off := 0; ; {
+					i := bytes.Index(data[off:], pat)
+					if i < 0 {
+						break
+					}
+					want = append(want, int64(off+i))
+					off += i + 1
+				}
+				got := map[int64]bool{}
+				if err := NewBlockSearcher(bytes.NewReader(buf.Bytes())).Search(pat, func(r SearchResult) error {
+					got[r.StreamOffset] = true
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				for _, off := range want {
+					if !got[off] {
+						t.Fatalf("cpu=%d ml=%d tiny=%d: missed match at offset %d (want %d, got %d)",
+							cpu, ml, tiny, off, len(want), len(got))
+					}
+				}
+			}
 		}
 	}
 }

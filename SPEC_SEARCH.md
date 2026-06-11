@@ -579,20 +579,25 @@ block can check the boundary region. If a block is skipped, the previous block
 reference should be cleared.
 
 For each decoded block, the boundary check examines:
-- The last `len(pattern)-1` bytes of the previous block
+- The last `len(pattern)-1` bytes of the contiguously decoded data preceding the block
 - The first `len(pattern)-1` bytes of the current block
 
 If the concatenation of these regions contains the pattern, it is a boundary match.
-This requires the previous block to have been decoded (not skipped). The overlap
+The preceding region is a rolling tail of the most recent contiguous run of decoded
+blocks — **not** just the single previous block. A short interior block (e.g. one
+emitted by a mid-stream `Flush`) may be shorter than `len(pattern)-1`, so a single
+match can straddle three or more blocks; the tail must therefore span as many prior
+blocks as needed to cover `len(pattern)-1` bytes. The tail is reset whenever a block
+is skipped or deferred (its bytes are not decoded, breaking contiguity). The overlap
 indexing in B.1 ensures that if a pattern starts in block N, block N's table has
 the first window set (for type 1) or the raw first window set (for prefix types,
-via the overlap tail), so block N is decoded and available as PrevBlock for block N+1.
+via the overlap tail), so block N is decoded and contributes to the tail for block N+1.
 
-A searcher should not skip a block if the previous block was decoded and a
-boundary match is possible. A boundary match is possible only when some suffix
-of the previous block's tail (`last len(pattern)-1 bytes`) is a prefix of the
-search pattern. If no such overlap exists, the block can safely be skipped and
-the previous block reference cleared.
+A searcher should not skip a block if the boundary tail could start a match reaching
+into it. A boundary match is possible only when some suffix of that tail
+(`last len(pattern)-1 bytes` of the preceding contiguous decoded data) is a prefix of
+the search pattern. If no such overlap exists, the block can safely be skipped and the
+tail cleared.
 
 When a block is decoded solely for a boundary check (the table indicates no
 match within the block), the previous block reference should be cleared
