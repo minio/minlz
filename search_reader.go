@@ -354,9 +354,12 @@ type BlockSearcher struct {
 	stats         SearchStats
 	// searchWindows is the pattern's matchLen-windows, enumerated once when the
 	// first usable table is seen; per-table presence is tallied into
-	// stats.Windows. Only populated under collectStats.
+	// stats.Windows. Only populated under collectStats. winCfg is the layout
+	// they were enumerated for; tallying stops if a later table's config differs
+	// (mixing layouts would mislabel the counts).
 	searchWindows []windowSpec
 	winInit       bool
+	winCfg        SearchTableConfig
 }
 
 // BlockSearchOption configures a BlockSearcher.
@@ -495,10 +498,20 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if blockSize > maxBlockSize {
 				return ErrCorrupt
 			}
+			// A concatenated stream starts here. Flush any pending forward-context
+			// dispatch and drop per-stream boundary state so matches and offsets
+			// don't straddle into the new stream (which restarts at offset 0).
+			if s.deferred != nil {
+				if err := s.flushDeferred(nil, fn); err != nil {
+					return err
+				}
+			}
 			s.maxBlock = blockSize
 			s.blockStart = 0
 			s.pending = nil
+			s.prevBlock = nil
 			s.prevLazy = nil
+			s.tailBuf = s.tailBuf[:0]
 			s.blockTable = nil
 			s.blockTableUnusable = false
 			continue
@@ -551,8 +564,11 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			}
 			if s.collectStats {
 				if !s.winInit {
+					s.winCfg = cfg
 					s.searchWindows = s.stats.initWindows(&cfg, pattern)
 					s.winInit = true
+				} else if s.searchWindows != nil && !sameSearchLayout(&s.winCfg, &cfg) {
+					s.searchWindows = nil // config drift: stop, mixed layouts would mislabel
 				}
 				s.stats.tallyWindows(s.searchWindows, cfg.baseTableSize, reductions, table)
 				s.stats.TablesPresent++
@@ -624,8 +640,11 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			}
 			if s.collectStats {
 				if !s.winInit {
+					s.winCfg = cfg
 					s.searchWindows = s.stats.initWindows(&cfg, pattern)
 					s.winInit = true
+				} else if s.searchWindows != nil && !sameSearchLayout(&s.winCfg, &cfg) {
+					s.searchWindows = nil // config drift: stop, mixed layouts would mislabel
 				}
 				s.stats.tallyWindows(s.searchWindows, cfg.baseTableSize, reductions, table)
 				s.stats.TablesPresent++
@@ -1789,4 +1808,24 @@ func (st *SearchStats) tallyWindows(windows []windowSpec, baseTableSize, reducti
 			st.Windows[i].Absent++
 		}
 	}
+}
+
+// sameSearchLayout reports whether two configs produce the same per-window
+// layout (and hashes), i.e. whether their tables can be tallied into the same
+// SearchStats.Windows. matchLen, baseTableSize and the prefix all affect the
+// enumerated windows; per-block reductions do not (they only mask at lookup).
+func sameSearchLayout(a, b *SearchTableConfig) bool {
+	if a.tableType != b.tableType || a.matchLen != b.matchLen ||
+		a.baseTableSize != b.baseTableSize || a.extras != b.extras {
+		return false
+	}
+	switch a.tableType {
+	case searchTableTypeBytePrefix:
+		return a.prefixBytes == b.prefixBytes
+	case searchTableTypeMaskPrefix:
+		return a.prefixMask == b.prefixMask
+	case searchTableTypeLongPrefix:
+		return bytes.Equal(a.longPrefix, b.longPrefix)
+	}
+	return true
 }

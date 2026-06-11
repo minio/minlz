@@ -1318,3 +1318,122 @@ func BenchmarkSidecarSearchCompressedVsUncompressed(b *testing.B) {
 	b.Run("uncompressed", func(b *testing.B) { run(b, mainU, sideU) })
 	b.Run("compressed", func(b *testing.B) { run(b, mainC, sideC) })
 }
+
+// TestSearchConcatenatedNoCrossStreamStraddle verifies a pattern straddling the
+// boundary between two concatenated streams is NOT reported: concatenated
+// streams are independent and offsets restart at 0. d1 ends with the full
+// pattern (one real match) followed by the pattern's head; d2 begins with the
+// pattern's tail. A searcher that leaked boundary state (prevBlock/tailBuf)
+// across the stream identifier would report a spurious second, straddling
+// match. Covers both the inline and sidecar searchers.
+func TestSearchConcatenatedNoCrossStreamStraddle(t *testing.T) {
+	pattern := []byte("QWERTYUIOPASDFGH")
+	filler := bytes.Repeat([]byte("the quick brown fox 0123456789\n"), 500)
+	d1 := append(append(append([]byte{}, filler...), pattern...), pattern[:10]...)
+	d2 := append(append([]byte{}, pattern[10:]...), filler...)
+	if countOccurrences(d1, pattern) != 1 || countOccurrences(d2, pattern) != 0 {
+		t.Fatalf("setup: d1=%d d2=%d, want 1,0", countOccurrences(d1, pattern), countOccurrences(d2, pattern))
+	}
+	cfg := NewSearchTableConfig().WithMatchLen(6)
+
+	type searcher interface {
+		Search([]byte, func(SearchResult) error) error
+	}
+	count := func(s searcher) int {
+		n := 0
+		if err := s.Search(pattern, func(SearchResult) error { n++; return nil }); err != nil {
+			t.Fatalf("search: %v", err)
+		}
+		return n
+	}
+
+	// Inline: two concatenated tabled streams in one buffer.
+	var inline bytes.Buffer
+	w := NewWriter(&inline, WriterBlockSize(minBlockSize), WriterConcurrency(1), WriterSearchTable(cfg))
+	if _, err := w.Write(d1); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	w.Reset(&inline)
+	if _, err := w.Write(d2); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Decoded output is d1||d2 and contains the pattern twice (real + straddle).
+	dec, err := io.ReadAll(NewReader(bytes.NewReader(inline.Bytes())))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got := countOccurrences(dec, pattern); got != 2 {
+		t.Fatalf("decoded output has %d occurrences, want 2 (real + straddle)", got)
+	}
+	if got := count(NewBlockSearcher(bytes.NewReader(inline.Bytes()))); got != 1 {
+		t.Fatalf("inline concatenated search: got %d matches, want 1 (no cross-stream straddle)", got)
+	}
+
+	// Sidecar: the same two streams with tables in the sidecar.
+	var main, side bytes.Buffer
+	w2 := NewWriter(&main, WriterBlockSize(minBlockSize), WriterConcurrency(1), WriterSearchTable(cfg), WriterSidecar(&side))
+	if _, err := w2.Write(d1); err != nil {
+		t.Fatal(err)
+	}
+	if err := w2.Close(); err != nil {
+		t.Fatal(err)
+	}
+	w2.Reset(&main)
+	if _, err := w2.Write(d2); err != nil {
+		t.Fatal(err)
+	}
+	if err := w2.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := count(NewSidecarSearcher(bytes.NewReader(main.Bytes()), bytes.NewReader(side.Bytes()))); got != 1 {
+		t.Fatalf("sidecar concatenated search: got %d matches, want 1 (no cross-stream straddle)", got)
+	}
+}
+
+// TestSidecarSearchWindowStatsConfigDrift verifies per-window stats collection
+// stops on config drift (a multi-config sidecar presents tables with different
+// window layouts) rather than mixing incompatible tables into one set of
+// counts. Without the guard, every table of every config is tallied, pushing
+// the per-window denominator above the block count.
+func TestSidecarSearchWindowStatsConfigDrift(t *testing.T) {
+	data := makeTestData(120 << 10)
+	var main bytes.Buffer
+	w := NewWriter(&main, WriterBlockSize(32<<10), WriterConcurrency(1))
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var side bytes.Buffer
+	if err := BuildSidecar(&side, bytes.NewReader(main.Bytes()),
+		SidecarSearchTable(NewSearchTableConfig().WithMatchLen(6)),
+		SidecarSearchTable(NewSearchTableConfig().WithMatchLen(4).WithBytePrefix('"', ':')),
+	); err != nil {
+		t.Fatalf("BuildSidecar: %v", err)
+	}
+
+	ss := NewSidecarSearcher(bytes.NewReader(main.Bytes()), bytes.NewReader(side.Bytes()), BlockSearchCollectStats())
+	if err := ss.Search([]byte(`"level":"INFO"`), func(SearchResult) error { return nil }); err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	st := ss.Stats()
+	if len(st.Windows) == 0 {
+		t.Fatal("no pattern windows enumerated")
+	}
+	denom := st.Windows[0].Present + st.Windows[0].Absent
+	for i, ws := range st.Windows {
+		if ws.Present+ws.Absent != denom {
+			t.Fatalf("window %d tallied %d times, want %d (inconsistent)", i, ws.Present+ws.Absent, denom)
+		}
+	}
+	if denom > st.BlocksTotal {
+		t.Fatalf("window denominator %d exceeds %d blocks — incompatible configs were mixed into the counts", denom, st.BlocksTotal)
+	}
+}

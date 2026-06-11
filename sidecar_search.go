@@ -98,9 +98,12 @@ type SidecarSearcher struct {
 	stats        SearchStats
 	// searchWindows is the pattern's matchLen-windows, enumerated once when the
 	// first usable table is seen; per-table presence is tallied into
-	// stats.Windows. Only populated under collectStats.
+	// stats.Windows. Only populated under collectStats. winCfg is the layout
+	// they were enumerated for; tallying stops if a later table's config differs
+	// (mixing layouts — e.g. a multi-config sidecar — would mislabel the counts).
 	searchWindows []windowSpec
 	winInit       bool
+	winCfg        SearchTableConfig
 
 	// Sidecar reader scratch + buffers used between blocks.
 	scratch    []byte
@@ -281,8 +284,11 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			s.pending = append(s.pending, blockTableEntry{cfg: cfg, reductions: reductions, table: tcopy})
 			if s.collectStats {
 				if !s.winInit {
+					s.winCfg = cfg
 					s.searchWindows = s.stats.initWindows(&cfg, pattern)
 					s.winInit = true
+				} else if s.searchWindows != nil && !sameSearchLayout(&s.winCfg, &cfg) {
+					s.searchWindows = nil // config drift: stop, mixed layouts would mislabel
 				}
 				s.stats.tallyWindows(s.searchWindows, cfg.baseTableSize, reductions, tcopy)
 				s.statsAccumTable(cfg.baseTableSize, reductions, tcopy, cl, false)
@@ -324,8 +330,11 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			s.pending = append(s.pending, blockTableEntry{cfg: cfg, reductions: reductions, table: tcopy})
 			if s.collectStats {
 				if !s.winInit {
+					s.winCfg = cfg
 					s.searchWindows = s.stats.initWindows(&cfg, pattern)
 					s.winInit = true
+				} else if s.searchWindows != nil && !sameSearchLayout(&s.winCfg, &cfg) {
+					s.searchWindows = nil // config drift: stop, mixed layouts would mislabel
 				}
 				s.stats.tallyWindows(s.searchWindows, cfg.baseTableSize, reductions, tcopy)
 				s.statsAccumTable(cfg.baseTableSize, reductions, tcopy, cl, true)
