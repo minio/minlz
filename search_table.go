@@ -258,10 +258,17 @@ func (c *SearchTableConfig) maxChunkSize() int {
 
 // overlapBytes returns the number of bytes the search-table encoder needs
 // from the start of the next block to safely index positions near the end
-// of the current block. With extras=E (type 4), the encoder reads up to
-// matchLen+E-1 bytes past the block end.
+// of the current block. An occurrence is indexed in the block where its prefix
+// starts (SPEC_SEARCH.md 2.1), so the encoder reads the window(s) — and, for a
+// long prefix that starts in this block but straddles into the next, the rest
+// of the prefix — from the overlap: matchLen+extras bytes, plus len(prefix)-1
+// for a long prefix.
 func (c *SearchTableConfig) overlapBytes() int {
-	return max(0, int(c.matchLen)+int(c.extras)-1)
+	n := int(c.matchLen) + int(c.extras)
+	if c.tableType == searchTableTypeLongPrefix {
+		n += len(c.longPrefix) - 1
+	}
+	return max(0, n)
 }
 
 func (c *SearchTableConfig) prefixSize() int {

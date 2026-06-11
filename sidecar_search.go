@@ -75,6 +75,15 @@ type SidecarSearcher struct {
 	prevBlock []byte // decoded previous block (nil if not yet decoded / skipped)
 	prevLazy  *lazyMainBlock
 	deferred  *deferredMatch
+	// tailBuf holds the last len(pattern)-1 bytes of the current contiguous run
+	// of decoded blocks (mirrors BlockSearcher.tailBuf). It lets the boundary
+	// scan and the skip/defer guards see a match that straddles 3+ blocks — e.g.
+	// across a short Flush block shorter than len(pattern)-1 — where prevBlock
+	// alone is too short. tailOff is its stream offset; bbuf is reused scratch.
+	// Reset whenever a block is skipped or deferred (contiguity break).
+	tailBuf []byte
+	tailOff int64
+	bbuf    []byte
 
 	// Options.
 	bail         bool
@@ -87,6 +96,14 @@ type SidecarSearcher struct {
 	blockStart   int64 // uncompressed offset where the next block begins
 	blockMatches int
 	stats        SearchStats
+	// searchWindows is the pattern's matchLen-windows, enumerated once when the
+	// first usable table is seen; per-table presence is tallied into
+	// stats.Windows. Only populated under collectStats. winCfg is the layout
+	// they were enumerated for; tallying stops if a later table's config differs
+	// (mixing layouts — e.g. a multi-config sidecar — would mislabel the counts).
+	searchWindows []windowSpec
+	winInit       bool
+	winCfg        SearchTableConfig
 
 	// Sidecar reader scratch + buffers used between blocks.
 	scratch    []byte
@@ -175,6 +192,8 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 	s.deferred = nil
 	s.prevBlock = nil
 	s.prevLazy = nil
+	s.tailBuf = s.tailBuf[:0]
+	s.winInit = false
 	s.blockStart = 0
 	s.pending = s.pending[:0]
 	s.streamInfos = s.streamInfos[:0]
@@ -264,6 +283,14 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			tcopy := s.copyPendingTable(table)
 			s.pending = append(s.pending, blockTableEntry{cfg: cfg, reductions: reductions, table: tcopy})
 			if s.collectStats {
+				if !s.winInit {
+					s.winCfg = cfg
+					s.searchWindows = s.stats.initWindows(&cfg, pattern)
+					s.winInit = true
+				} else if s.searchWindows != nil && !sameSearchLayout(&s.winCfg, &cfg) {
+					s.searchWindows = nil // config drift: stop, mixed layouts would mislabel
+				}
+				s.stats.tallyWindows(s.searchWindows, cfg.baseTableSize, reductions, tcopy)
 				s.statsAccumTable(cfg.baseTableSize, reductions, tcopy, cl, false)
 			}
 
@@ -302,6 +329,14 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			tcopy := s.copyPendingTable(table)
 			s.pending = append(s.pending, blockTableEntry{cfg: cfg, reductions: reductions, table: tcopy})
 			if s.collectStats {
+				if !s.winInit {
+					s.winCfg = cfg
+					s.searchWindows = s.stats.initWindows(&cfg, pattern)
+					s.winInit = true
+				} else if s.searchWindows != nil && !sameSearchLayout(&s.winCfg, &cfg) {
+					s.searchWindows = nil // config drift: stop, mixed layouts would mislabel
+				}
+				s.stats.tallyWindows(s.searchWindows, cfg.baseTableSize, reductions, tcopy)
 				s.statsAccumTable(cfg.baseTableSize, reductions, tcopy, cl, true)
 				// Compressed sub-block stats live on the cstDecoder after parse.
 				s.stats.CompressedBlocksTotal += s.cstDec.lastBlocks
@@ -351,11 +386,17 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 				if s.bail && !anyUsable {
 					return ErrSearchTablesUnusable
 				}
-				if skip && (s.prevBlock == nil || !canBoundaryMatch(s.prevBlock, pattern)) {
-					// Definite skip — first flush any prior decode batch.
+				if skip {
+					// Decode the coalesced batch now so tailBuf reflects the run
+					// of blocks immediately preceding this one. The boundary guard
+					// needs that real tail; batched decoding would otherwise leave
+					// it stale from an earlier flush, and if that stale tail
+					// happened to be a pattern prefix every skip would be vetoed.
 					if err := flushBatch(); err != nil {
 						return err
 					}
+				}
+				if skip && (len(s.tailBuf) == 0 || !canBoundaryMatch(s.tailBuf, pattern)) {
 					if s.collectStats {
 						s.stats.BlocksSkipped++
 					}
@@ -369,6 +410,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 						maxBlock:   s.maxBlock,
 					}
 					s.prevBlock = nil
+					s.tailBuf = s.tailBuf[:0]
 					if s.deferred != nil {
 						if err := s.flushDeferred(nil, fn); err != nil {
 							return err
@@ -382,32 +424,39 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 				// via a straddling match into the next block, postpone the
 				// decision until the next block's table arrives. Restricted
 				// to single-config tables and no boundary risk from prev.
-				if !skip && i == 0 && len(tables) == 1 && len(s.streamInfos) == 1 && tables[0].table != nil && s.sideDeferred == nil &&
-					(s.prevBlock == nil || !canBoundaryMatch(s.prevBlock, pattern)) {
+				if !skip && i == 0 && len(tables) == 1 && len(s.streamInfos) == 1 && tables[0].table != nil && s.sideDeferred == nil {
 					t := &tables[0]
 					if hashes := patternDeferHashes(&t.cfg, t.table, t.reductions, pattern); hashes != nil {
+						// Flush first so tailBuf reflects the immediately-preceding
+						// block before the boundary guard (same staleness reason as
+						// the skip path above).
 						if err := flushBatch(); err != nil {
 							return err
 						}
-						refCopy := ref
-						s.sideDeferred = &refCopy
-						s.sideDeferredHashes = hashes
-						s.sideDeferredBase = t.cfg.baseTableSize
-						if s.collectStats {
-							s.stats.BlocksDeferred++
+						if len(s.tailBuf) == 0 || !canBoundaryMatch(s.tailBuf, pattern) {
+							refCopy := ref
+							s.sideDeferred = &refCopy
+							s.sideDeferredHashes = hashes
+							s.sideDeferredBase = t.cfg.baseTableSize
+							if s.collectStats {
+								s.stats.BlocksDeferred++
+							}
+							s.prevBlock = nil
+							s.tailBuf = s.tailBuf[:0]
+							s.prevLazy = &lazyMainBlock{
+								main:       s.main,
+								offset:     ref.offset,
+								uncompSize: ref.uncompSize,
+								ignoreCRC:  s.ignoreCRC,
+								maxBlock:   s.maxBlock,
+							}
+							// Do NOT advance blockStart here — the deferred
+							// resolution path advances it: processBlock advances
+							// on decode; resolveSideDeferred advances on skip.
+							continue
 						}
-						s.prevBlock = nil
-						s.prevLazy = &lazyMainBlock{
-							main:       s.main,
-							offset:     ref.offset,
-							uncompSize: ref.uncompSize,
-							ignoreCRC:  s.ignoreCRC,
-							maxBlock:   s.maxBlock,
-						}
-						// Do NOT advance blockStart here — the deferred
-						// resolution path advances it: processBlock advances
-						// on decode; resolveSideDeferred advances on skip.
-						continue
+						// Boundary risk from the real previous block — fall
+						// through and decode this block now.
 					}
 				}
 				// Must decode. tableNoMatch is true when the table proved
@@ -454,6 +503,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			s.pending = nil
 			s.prevBlock = nil
 			s.prevLazy = nil
+			s.tailBuf = s.tailBuf[:0]
 			s.streamInfos = s.streamInfos[:0]
 
 		case ChunkTypeStreamIdentifier:
@@ -488,6 +538,9 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			s.maxBlock = min(s.maxBlockCfg, mb)
 			// New stream — offsets/context don't cross stream boundaries.
 			s.blockStart = 0
+			s.prevBlock = nil
+			s.prevLazy = nil
+			s.tailBuf = s.tailBuf[:0]
 
 		default:
 			if ct <= maxNonSkippableChunk {
@@ -702,12 +755,35 @@ func (s *SidecarSearcher) processBlock(chunkType byte, chunkLen int, payload []b
 		// Block was decoded only because the prev block forced a boundary
 		// check. The table already proved no match inside this block — do
 		// not keep it as prevBlock or the cascade continues unboundedly.
+		if s.collectStats {
+			s.stats.BlocksBoundaryScanned++
+		}
 		s.prevBlock = nil
 	} else {
 		s.prevBlock = decoded
 	}
 	s.prevLazy = nil
 	return nil
+}
+
+// updateTail records blk (ending at stream offset endOff) as the most recent
+// contiguous decoded data, retaining its last keep bytes for the next block's
+// boundary scan. Mirrors BlockSearcher.updateTail; short blocks accumulate so
+// the tail spans keep bytes whenever that much contiguous data exists.
+func (s *SidecarSearcher) updateTail(blk []byte, endOff int64, keep int) {
+	if keep <= 0 {
+		s.tailBuf = s.tailBuf[:0]
+		return
+	}
+	if len(blk) >= keep {
+		s.tailBuf = append(s.tailBuf[:0], blk[len(blk)-keep:]...)
+	} else {
+		if drop := len(s.tailBuf) + len(blk) - keep; drop > 0 {
+			s.tailBuf = append(s.tailBuf[:0], s.tailBuf[min(drop, len(s.tailBuf)):]...)
+		}
+		s.tailBuf = append(s.tailBuf, blk...)
+	}
+	s.tailOff = endOff - int64(len(s.tailBuf))
 }
 
 // dispatchSidecarMatches mirrors BlockSearcher.dispatchMatches but uses
@@ -719,40 +795,65 @@ func (s *SidecarSearcher) dispatchSidecarMatches(blk []byte, blockOff int64, pat
 	} else if s.prevLazy != nil {
 		prevBlockStart = blockOff - int64(s.prevLazy.uncompSize)
 	}
-	if s.prevBlock != nil && len(pattern) > 1 {
-		tail := s.prevBlock[max(0, len(s.prevBlock)-len(pattern)+1):]
+	// Boundary scan over the rolling tail of the contiguous decoded run, so a
+	// match straddling 3+ blocks (e.g. across a short Flush block shorter than
+	// len(pattern)-1) is found even when prevBlock alone is too short.
+	if len(s.tailBuf) > 0 && len(pattern) > 1 {
+		tail := s.tailBuf
 		head := blk[:min(len(blk), len(pattern)-1)]
-		boundary := append(append([]byte(nil), tail...), head...)
+		s.bbuf = append(append(s.bbuf[:0], tail...), head...)
 		bOff := 0
 		for {
-			idx := bytes.Index(boundary[bOff:], pattern)
+			idx := bytes.Index(s.bbuf[bOff:], pattern)
 			if idx < 0 {
 				break
 			}
 			absIdx := bOff + idx
-			matchInPrev := len(tail) - absIdx
-			if matchInPrev <= 0 || matchInPrev >= len(pattern) {
+			matchInTail := len(tail) - absIdx
+			if matchInTail <= 0 || matchInTail >= len(pattern) {
 				bOff = absIdx + 1
 				continue
 			}
-			streamOff := blockOff - int64(matchInPrev)
-			result := SearchResult{
-				Blocks:       [2][]byte{s.prevBlock, blk},
-				Offset:       len(s.prevBlock) - matchInPrev,
-				StreamOffset: streamOff,
-				BlockStart:   prevBlockStart,
-				PrevBlockLen: len(s.prevBlock),
+			streamOff := s.tailOff + int64(absIdx)
+			// Prefer the full previous block for context; fall back to the tail
+			// when the match starts before prevBlock (a 3+ block straddle).
+			var result SearchResult
+			var defOff int
+			var defStart int64
+			var defBlk []byte
+			if s.prevBlock != nil && streamOff >= prevBlockStart {
+				off := int(streamOff - prevBlockStart)
+				result = SearchResult{
+					Blocks:       [2][]byte{s.prevBlock, blk},
+					Offset:       off,
+					StreamOffset: streamOff,
+					BlockStart:   prevBlockStart,
+					PrevBlockLen: len(s.prevBlock),
+				}
+				defOff, defStart, defBlk = off, prevBlockStart, s.prevBlock
+			} else {
+				result = SearchResult{
+					Blocks:       [2][]byte{tail, blk},
+					Offset:       absIdx,
+					StreamOffset: streamOff,
+					BlockStart:   s.tailOff,
+					PrevBlockLen: len(tail),
+				}
+				defOff, defStart = absIdx, s.tailOff
 			}
 			s.blockMatches++
 			if err := fn(result); err != nil {
 				if !errors.Is(err, ErrSearchForward) {
 					return err
 				}
+				if defBlk == nil { // tailBuf is reused next block; copy it
+					defBlk = append([]byte(nil), tail...)
+				}
 				s.deferred = &deferredMatch{
 					streamOff: streamOff,
-					blockOff:  blockOff - int64(len(s.prevBlock)),
-					matchOff:  len(s.prevBlock) - matchInPrev,
-					blk:       s.prevBlock,
+					blockOff:  defStart,
+					matchOff:  defOff,
+					blk:       defBlk,
 				}
 			}
 			bOff = absIdx + 1
@@ -763,6 +864,7 @@ func (s *SidecarSearcher) dispatchSidecarMatches(blk []byte, blockOff int64, pat
 	for {
 		idx := bytes.Index(blk[off:], pattern)
 		if idx < 0 {
+			s.updateTail(blk, blockOff+int64(len(blk)), len(pattern)-1)
 			return nil
 		}
 		matchOff := off + idx
