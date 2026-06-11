@@ -24,6 +24,7 @@ func mainSearch(args []string) {
 		quiet     = fs.Bool("q", false, "Quiet: only set exit code (0=found, 1=not found)")
 		lines     = fs.Bool("l", true, "Print matching lines instead of whole blocks")
 		verbose   = fs.Bool("v", false, "Print data")
+		winStats  = fs.Bool("window-stats", false, "Print per-pattern-window table presence counts after the search (implies -v)")
 		sidecar   = fs.String("sidecar", "", "Search using the given sidecar (.mzs) file; the input must support random access. If empty, <input>"+minlzSidecarExt+" is auto-detected when present.")
 		noSidecar = fs.Bool("no-sidecar", false, "Disable sidecar auto-detection; force inline search")
 		help      = fs.Bool("help", false, "Display help")
@@ -50,6 +51,7 @@ Options:`)
 	_ = noColor
 	pattern := []byte(args[0])
 	files := args[1:]
+	verboseOut := *verbose || *winStats
 
 	exitCode := 1 // 1 = not found
 	multiFile := len(files) > 1
@@ -72,7 +74,7 @@ Options:`)
 				bail:      *bail,
 				quiet:     *quiet,
 				lines:     *lines,
-				verbose:   *verbose,
+				verbose:   verboseOut,
 				multiFile: multiFile,
 				sidecar:   *sidecar,
 				noSidecar: *noSidecar,
@@ -84,11 +86,15 @@ Options:`)
 			if found {
 				exitCode = 0
 			}
-			if *verbose {
+			if verboseOut {
 				elapsed := time.Since(start).Round(time.Millisecond)
 				mbps := float64(stats.UncompressedSize) / elapsed.Seconds() / 1e6
 				fmt.Fprintf(os.Stderr, "%s took %v %.01f MB/s\n", file, elapsed, mbps)
-				stats.Fprint(os.Stderr)
+				if *winStats {
+					stats.FprintExtended(os.Stderr)
+				} else {
+					stats.Fprint(os.Stderr)
+				}
 			}
 		}
 	}

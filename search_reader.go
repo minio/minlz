@@ -29,6 +29,7 @@ type SearchStats struct {
 	BlocksDeferred        int     // Blocks that entered the deferred path
 	BlocksDeferredSkipped int     // Deferred blocks ultimately skipped (subset of BlocksSkipped)
 	BlocksFalsePositive   int     // Blocks decoded due to table match but containing no actual matches
+	BlocksBoundaryScanned int     // Blocks the table proved free of the pattern but decoded anyway, to rule out a match straddling in from the previous block (subset of BlocksSearched). A high count means boundary checks are forcing scans that the tables alone would have skipped.
 	TablePopMin           float64 // Min population % across tables seen
 	TablePopMax           float64 // Max population % across tables seen
 	TablePopSum           float64 // Sum of population % (for computing average)
@@ -55,6 +56,26 @@ type SearchStats struct {
 	CompressedBytesRLE          int64
 	CompressedBytesSparse       int64
 	CompressedBytesTableHeaders int64 // bytes consumed by serialized tables
+
+	// Windows holds per-pattern-window table-presence counts, populated when
+	// stats collection is enabled. Each entry is one matchLen-window the
+	// searcher tests against every block's table; Present/Absent count the
+	// tables whose bitmap had that window's hash set/clear. Rendered by
+	// FprintExtended — useful for seeing how selective the chosen matchLen and
+	// prefix are for a given pattern (the first prefix window is the skip gate).
+	Windows []WindowStat
+}
+
+// WindowStat reports, across every per-block search table, how often one
+// pattern window's hash bit was set ("present", block might contain it) or
+// clear ("absent", block definitely lacks it).
+type WindowStat struct {
+	Pos        int    // start index of the window within the pattern
+	Prefix     int    // pattern index of the preceding prefix byte; -1 = raw / no-prefix anchor
+	PrefixByte byte   // the prefix byte (0 when Prefix < 0)
+	Bytes      []byte // the matchLen bytes that get hashed
+	Present    int    // tables with the bit set
+	Absent     int    // tables with the bit clear
 }
 
 // Fprint writes a human-readable summary of the search stats to w.
@@ -71,6 +92,10 @@ func (st SearchStats) Fprint(w io.Writer) {
 	fmt.Fprintf(w, "Blocks searched: %d (%.1f%%), false positive: %d (%.1f%%)\n",
 		st.BlocksSearched, pct(st.BlocksSearched, total),
 		st.BlocksFalsePositive, pct(st.BlocksFalsePositive, searched))
+	if st.BlocksBoundaryScanned > 0 {
+		fmt.Fprintf(w, "Blocks boundary-scanned: %d (%.1f%% of searched) — table-absent but decoded to rule out a prev-block straddle\n",
+			st.BlocksBoundaryScanned, pct(st.BlocksBoundaryScanned, searched))
+	}
 	fmt.Fprintf(w, "Bytes skipped: %d compressed, searched: %d uncompressed\n", st.CompBytesSkipped, st.UncompBytesSearched)
 	fmt.Fprintf(w, "Tables: %d present, %d missing, %d unusable\n", st.TablesPresent, st.TablesMissing, st.TablesUnusable)
 	if st.TablesPresent > 0 {
@@ -108,6 +133,46 @@ func (st SearchStats) Fprint(w io.Writer) {
 			fmt.Fprintf(w, " Payload bytes: tabled=%d raw=%d RLE=%d sparse=%d; table-header bytes=%d\n",
 				st.CompressedBytesTabled, st.CompressedBytesRaw, st.CompressedBytesRLE, st.CompressedBytesSparse, st.CompressedBytesTableHeaders)
 		}
+	}
+}
+
+// FprintExtended writes the standard Fprint summary followed by a per-window
+// breakdown of how often each of the pattern's matchLen-windows was present in
+// the per-block tables. The first prefix window is the skip "gate"; the raw
+// fallback (prefix < 0) anchors a match whose prefix byte sits in the previous
+// block. Requires stats collection to have populated Windows.
+func (st SearchStats) FprintExtended(w io.Writer) {
+	st.Fprint(w)
+	if len(st.Windows) == 0 {
+		return
+	}
+	denom := st.Windows[0].Present + st.Windows[0].Absent
+	if denom == 0 {
+		denom = 1
+	}
+	// The raw-fallback role only applies to prefix tables (where a separate
+	// Prefix<0 window is appended); for no-prefix tables every window has
+	// Prefix<0 and is just a sequential position, so don't label those.
+	hasPrefixWindows := false
+	for _, ws := range st.Windows {
+		if ws.Prefix >= 0 {
+			hasPrefixWindows = true
+			break
+		}
+	}
+	fmt.Fprintf(w, "Pattern windows (per-hash presence across %d tables):\n", st.Windows[0].Present+st.Windows[0].Absent)
+	fmt.Fprintf(w, "  win  pat-pos  window           present            role\n")
+	for i, ws := range st.Windows {
+		role := ""
+		switch {
+		case i == 0:
+			role = "gate"
+		case ws.Prefix < 0 && hasPrefixWindows:
+			role = "raw fallback"
+		}
+		fmt.Fprintf(w, "  %-4d %-8d %-16q %7d (%5.1f%%)   %s\n",
+			i, ws.Pos, string(ws.Bytes),
+			ws.Present, 100*float64(ws.Present)/float64(denom), role)
 	}
 }
 
@@ -287,6 +352,11 @@ type BlockSearcher struct {
 	blockStart    int64
 	blockMatches  int // matches found in current block (for false positive tracking)
 	stats         SearchStats
+	// searchWindows is the pattern's matchLen-windows, enumerated once when the
+	// first usable table is seen; per-table presence is tallied into
+	// stats.Windows. Only populated under collectStats.
+	searchWindows []windowSpec
+	winInit       bool
 }
 
 // BlockSearchOption configures a BlockSearcher.
@@ -375,6 +445,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 	s.pending = nil
 	s.prevLazy = nil
 	s.tailBuf = s.tailBuf[:0]
+	s.winInit = false
 
 	if s.collectStats {
 		defer func() { s.stats.UncompressedSize = s.blockStart }()
@@ -479,6 +550,11 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				}
 			}
 			if s.collectStats {
+				if !s.winInit {
+					s.searchWindows = s.stats.initWindows(&cfg, pattern)
+					s.winInit = true
+				}
+				s.stats.tallyWindows(s.searchWindows, cfg.baseTableSize, reductions, table)
 				s.stats.TablesPresent++
 				s.stats.TablesBytes += int64(chunkLen + 4) // +4 for chunk header
 				s.stats.TableBitsSum += int(cfg.baseTableSize - reductions)
@@ -547,6 +623,11 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				}
 			}
 			if s.collectStats {
+				if !s.winInit {
+					s.searchWindows = s.stats.initWindows(&cfg, pattern)
+					s.winInit = true
+				}
+				s.stats.tallyWindows(s.searchWindows, cfg.baseTableSize, reductions, table)
 				s.stats.TablesPresent++
 				s.stats.TablesBytes += int64(chunkLen + 4)
 				s.stats.TablesCompressed++
@@ -728,6 +809,9 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				s.stats.BlocksFalsePositive++
 			}
 			if tableNoMatch {
+				if s.collectStats {
+					s.stats.BlocksBoundaryScanned++
+				}
 				s.prevBlock = nil
 			} else {
 				s.prevBlock = blk
@@ -839,6 +923,9 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				s.stats.BlocksFalsePositive++
 			}
 			if tableNoMatch {
+				if s.collectStats {
+					s.stats.BlocksBoundaryScanned++
+				}
 				s.prevBlock = nil
 			} else {
 				s.prevBlock = blk
@@ -1200,6 +1287,9 @@ func (s *BlockSearcher) resolvePending(pattern []byte, fn func(SearchResult) err
 		s.stats.BlocksFalsePositive++
 	}
 	if p.tableNoMatch {
+		if s.collectStats {
+			s.stats.BlocksBoundaryScanned++
+		}
 		s.prevBlock = nil
 	} else {
 		s.prevBlock = blk
@@ -1603,4 +1693,100 @@ func checkDeferredHashes(table []byte, reductions, baseTableSize uint8, hashes [
 		}
 	}
 	return true
+}
+
+// windowSpec is one matchLen-window the searcher tests for a pattern, with its
+// full-resolution (un-reduced) hash precomputed once (baseTableSize is constant
+// per stream).
+type windowSpec struct {
+	prefix int // pattern index of the prefix byte; -1 for the raw / no-prefix anchor
+	pos    int // pattern index where the window starts
+	hash   uint32
+}
+
+// enumeratePatternWindows returns, in pattern order, every matchLen-window the
+// searcher tests for pattern under cfg, mirroring patternCanMatch /
+// patternDeferHashes. For byte/mask prefix tables the raw fallback window (the
+// leading matchLen bytes, anchoring a match whose prefix byte sits in the
+// previous block) is appended last.
+func enumeratePatternWindows(cfg *SearchTableConfig, pattern []byte) []windowSpec {
+	ml := int(cfg.matchLen)
+	if ml == 0 || len(pattern) < ml {
+		return nil
+	}
+	var out []windowSpec
+	add := func(prefix, pos int) {
+		h := hashValue(readLE64Pad(pattern[pos:]), cfg.baseTableSize, cfg.matchLen)
+		out = append(out, windowSpec{prefix: prefix, pos: pos, hash: h})
+	}
+	switch cfg.tableType {
+	case searchTableTypeNoPrefix:
+		for i := 0; i <= len(pattern)-ml; i++ {
+			add(-1, i)
+		}
+	case searchTableTypeBytePrefix:
+		var pfx [256]bool
+		for _, p := range cfg.prefixBytes {
+			pfx[p] = true
+		}
+		for i := 1; i <= len(pattern)-ml; i++ {
+			if pfx[pattern[i-1]] {
+				add(i-1, i)
+			}
+		}
+		add(-1, 0)
+	case searchTableTypeMaskPrefix:
+		for i := 1; i <= len(pattern)-ml; i++ {
+			b := pattern[i-1]
+			if cfg.prefixMask[b>>3]&(1<<(b&7)) != 0 {
+				add(i-1, i)
+			}
+		}
+		add(-1, 0)
+	case searchTableTypeLongPrefix:
+		pl := len(cfg.longPrefix)
+		ex := int(cfg.extras)
+		for i := 0; i <= len(pattern)-pl-ml-ex; i++ {
+			if bytes.Equal(pattern[i:i+pl], cfg.longPrefix) {
+				for j := 0; j <= ex; j++ {
+					add(i, i+pl+j)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// initWindows enumerates pattern windows under cfg and seeds st.Windows with
+// their metadata, returning the specs for per-table tallying via tallyWindows.
+func (st *SearchStats) initWindows(cfg *SearchTableConfig, pattern []byte) []windowSpec {
+	windows := enumeratePatternWindows(cfg, pattern)
+	ml := int(cfg.matchLen)
+	st.Windows = make([]WindowStat, len(windows))
+	for i, wd := range windows {
+		ws := WindowStat{Pos: wd.pos, Prefix: wd.prefix}
+		ws.Bytes = append(ws.Bytes, pattern[wd.pos:min(wd.pos+ml, len(pattern))]...)
+		if wd.prefix >= 0 {
+			ws.PrefixByte = pattern[wd.prefix]
+		}
+		st.Windows[i] = ws
+	}
+	return windows
+}
+
+// tallyWindows updates per-window present/absent counts against one block's
+// table. baseTableSize must match the value used to compute windows' hashes.
+func (st *SearchStats) tallyWindows(windows []windowSpec, baseTableSize, reductions uint8, table []byte) {
+	if len(windows) == 0 || len(table) == 0 {
+		return
+	}
+	mask := uint32(1<<(baseTableSize-reductions)) - 1
+	for i := range windows {
+		h := windows[i].hash & mask
+		if table[h>>3]&(1<<(h&7)) != 0 {
+			st.Windows[i].Present++
+		} else {
+			st.Windows[i].Absent++
+		}
+	}
 }

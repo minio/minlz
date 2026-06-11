@@ -2381,31 +2381,45 @@ func FuzzSearchRoundtrip(f *testing.F) {
 		if mode&1 != 0 {
 			cpu = 4
 		}
-		var buf bytes.Buffer
-		w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(cpu))
-		var werr error
-		switch (mode >> 1) % 5 {
-		case 0:
-			werr = w.EncodeBuffer(append([]byte(nil), data...))
-		case 1:
-			_, werr = w.Write(data)
-		case 2: // block-aligned streaming writes
-			for i := 0; i < len(data) && werr == nil; i += minBlockSize {
-				_, werr = w.Write(data[i:min(i+minBlockSize, len(data))])
-			}
-		case 3: // odd-sized streaming writes
-			for i := 0; i < len(data) && werr == nil; i += 333 {
-				_, werr = w.Write(data[i:min(i+333, len(data))])
-			}
-		case 4: // write, mid-stream Flush, write
-			mid := len(data) / 2
-			if _, werr = w.Write(data[:mid]); werr == nil {
-				if werr = w.Flush(); werr == nil {
-					_, werr = w.Write(data[mid:])
+		// writeMode replays the selected writer mode onto w. Shared so the same
+		// mode drives both the inline stream and the sidecar stream below.
+		writeMode := func(w *Writer) error {
+			switch (mode >> 1) % 5 {
+			case 0:
+				return w.EncodeBuffer(append([]byte(nil), data...))
+			case 1:
+				_, err := w.Write(data)
+				return err
+			case 2: // block-aligned streaming writes
+				for i := 0; i < len(data); i += minBlockSize {
+					if _, err := w.Write(data[i:min(i+minBlockSize, len(data))]); err != nil {
+						return err
+					}
 				}
+				return nil
+			case 3: // odd-sized streaming writes
+				for i := 0; i < len(data); i += 333 {
+					if _, err := w.Write(data[i:min(i+333, len(data))]); err != nil {
+						return err
+					}
+				}
+				return nil
+			default: // 4: write, mid-stream Flush, write
+				mid := len(data) / 2
+				if _, err := w.Write(data[:mid]); err != nil {
+					return err
+				}
+				if err := w.Flush(); err != nil {
+					return err
+				}
+				_, err := w.Write(data[mid:])
+				return err
 			}
 		}
-		if werr != nil {
+
+		var buf bytes.Buffer
+		w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(cpu))
+		if werr := writeMode(w); werr != nil {
 			return // some data may cause issues
 		}
 		if err := w.Close(); err != nil {
@@ -2494,6 +2508,51 @@ func FuzzSearchRoundtrip(f *testing.F) {
 			for i := 1; i < len(found); i++ {
 				if found[i] <= found[i-1] {
 					t.Fatalf("found offsets not in order: [%d]=%d <= [%d]=%d",
+						i, found[i], i-1, found[i-1])
+				}
+			}
+		}
+
+		// Sidecar path: same data/pattern/mode, but the search tables live in a
+		// separate stream and the searcher decodes blocks in coalesced batches.
+		// That gives it a distinct skip/defer/boundary path, so it must
+		// independently find every match and the main stream must still decode.
+		var main, side bytes.Buffer
+		ws := NewWriter(&main, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(cpu), WriterSidecar(&side))
+		if werr := writeMode(ws); werr != nil {
+			t.Fatalf("sidecar write failed (mode %d, inline succeeded): %v", (mode>>1)%5, werr)
+		}
+		if err := ws.Close(); err != nil {
+			t.Fatalf("sidecar close failed: %v", err)
+		}
+		if dec, derr := io.ReadAll(NewReader(bytes.NewReader(main.Bytes()))); derr != nil || !bytes.Equal(dec, data) {
+			t.Fatalf("sidecar main stream not decodable/equal: err=%v", derr)
+		}
+		if len(expected) > 0 {
+			ss := NewSidecarSearcher(bytes.NewReader(main.Bytes()), bytes.NewReader(side.Bytes()), BlockSearchCollectStats())
+			var found []int64
+			if serr := ss.Search(pattern, func(r SearchResult) error {
+				found = append(found, r.StreamOffset)
+				return nil
+			}); serr != nil {
+				t.Fatalf("sidecar search failed: %v", serr)
+			}
+			foundSet := make(map[int64]bool, len(found))
+			for _, fo := range found {
+				foundSet[fo] = true
+			}
+			for _, e := range expected {
+				if !foundSet[e] {
+					st := ss.Stats()
+					t.Fatalf("sidecar: expected match at offset %d not found (prefix=%v, expected=%d found=%d). "+
+						"blocks: total=%d skipped=%d searched=%d boundary=%d",
+						e, usePrefix, len(expected), len(found),
+						st.BlocksTotal, st.BlocksSkipped, st.BlocksSearched, st.BlocksBoundaryScanned)
+				}
+			}
+			for i := 1; i < len(found); i++ {
+				if found[i] <= found[i-1] {
+					t.Fatalf("sidecar found offsets not in order: [%d]=%d <= [%d]=%d",
 						i, found[i], i-1, found[i-1])
 				}
 			}
