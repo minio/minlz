@@ -71,7 +71,13 @@ func NewWriter(w io.Writer, opts ...WriterOption) *Writer {
 		w2.obufLen += w2.searchMaxChunk
 	}
 	w2.paramsOK = true
-	w2.ibuf = make([]byte, 0, w2.blockSize)
+	// With search tables, hold one block plus its overlap so the search table
+	// for a streaming block can be built once the next block's bytes arrive.
+	ibufCap := w2.blockSize
+	if w2.searchCfg != nil {
+		ibufCap += w2.searchCfg.overlapBytes()
+	}
+	w2.ibuf = make([]byte, 0, ibufCap)
 	w2.buffers.New = func() interface{} {
 		return make([]byte, w2.obufLen)
 	}
@@ -272,20 +278,22 @@ func (w *Writer) Write(p []byte) (nRet int, errRet error) {
 		return 0, err
 	}
 	if w.flushOnWrite {
-		return w.write(p)
+		return w.write(p, true, true)
 	}
 	// If we exceed the input buffer size, start writing
 	for len(p) > (cap(w.ibuf)-len(w.ibuf)) && w.err(nil) == nil {
 		var n int
 		if len(w.ibuf) == 0 {
-			// Large write, empty buffer.
-			// Write directly from p to avoid copy.
-			n, _ = w.write(p)
+			// Large write, empty buffer. Write directly from p to avoid a copy.
+			// write() retains a trailing block + overlap (deferred emission); the
+			// retained tail stays in p and is buffered into w.ibuf below.
+			n, _ = w.write(p, false, false)
 		} else {
 			n = copy(w.ibuf[len(w.ibuf):cap(w.ibuf)], p)
 			w.ibuf = w.ibuf[:len(w.ibuf)+n]
-			w.write(w.ibuf)
-			w.ibuf = w.ibuf[:0]
+			consumed, _ := w.write(w.ibuf, false, false)
+			// Slide the retained tail (held block + overlap) to the front.
+			w.ibuf = w.ibuf[:copy(w.ibuf, w.ibuf[consumed:])]
 		}
 		nRet += n
 		p = p[n:]
@@ -436,7 +444,7 @@ func (w *Writer) EncodeBuffer(buf []byte) (err error) {
 	}
 
 	if w.flushOnWrite {
-		_, err := w.write(buf)
+		_, err := w.write(buf, true, false)
 		return err
 	}
 	// Flush queued data first.
@@ -447,7 +455,7 @@ func (w *Writer) EncodeBuffer(buf []byte) (err error) {
 		}
 	}
 	if w.concurrency == 1 {
-		_, err := w.writeSync(buf)
+		_, err := w.writeSync(buf, true, false)
 		return err
 	}
 
@@ -593,16 +601,19 @@ func (w *Writer) encodeBlock(obuf, uncompressed []byte) int {
 	return n
 }
 
-func (w *Writer) write(p []byte) (nRet int, errRet error) {
+func (w *Writer) write(p []byte, final, omitTrailing bool) (nRet int, errRet error) {
 	if err := w.err(nil); err != nil {
 		return 0, err
 	}
 	if w.concurrency == 1 {
-		return w.writeSync(p)
+		return w.writeSync(p, final, omitTrailing)
 	}
 
 	// Spawn goroutine and write block to output channel.
 	for len(p) > 0 {
+		if !final && w.searchCfg != nil && len(p) < w.blockSize+w.searchCfg.overlapBytes() {
+			break // retain a block + its overlap for the next call (deferred emission)
+		}
 		if !w.wroteStreamHeader {
 			w.wroteStreamHeader = true
 			hWriter := make(chan result)
@@ -640,6 +651,14 @@ func (w *Writer) write(p []byte) (nRet int, errRet error) {
 		obuf := w.buffers.Get().([]byte)[:w.obufLen]
 		copy(inbuf[obufHeaderLen:], uncompressed)
 		uncompressed = inbuf[obufHeaderLen:]
+
+		// A flushed/final block without full overlap omits its table (pass a nil
+		// config to the goroutine): a boundary-incomplete table could hide a
+		// straddling match, so emit none and let the searcher always scan it.
+		gcfg := w.searchCfg
+		if omitTrailing && w.searchCfg != nil && len(overlap) < w.searchCfg.overlapBytes() {
+			gcfg = nil
+		}
 
 		output := make(chan result)
 		w.output <- output
@@ -700,8 +719,11 @@ func (w *Writer) write(p []byte) (nRet int, errRet error) {
 				res.b = dbuf
 				res.pooled = obuf
 			} else if searchLen > 0 {
-				// Search chunk in inbuf[:searchLen] (the unused buffer), data in dbuf.
-				// Slide into inbuf since it has capacity.
+				// Assemble [search chunk][data chunk] in inbuf. inbuf has capacity
+				// obufLen but was sliced to len(uncompressed)+obufHeaderLen, which is
+				// shorter than the smc-based offsets below for a small block — extend
+				// it to cap so the slices and the data copy aren't out of range.
+				inbuf = inbuf[:cap(inbuf)]
 				start := smc - searchLen
 				copy(inbuf[start:], inbuf[:searchLen])
 				copy(inbuf[smc:], dbuf)
@@ -715,7 +737,7 @@ func (w *Writer) write(p []byte) (nRet int, errRet error) {
 			output <- res
 
 			w.buffers.Put(inbuf)
-		}(w.searchCfg, overlap)
+		}(gcfg, overlap)
 		nRet += len(uncompressed)
 	}
 	return nRet, nil
@@ -731,7 +753,7 @@ func (w *Writer) writeFull(inbuf []byte) (errRet error) {
 	}
 
 	if w.concurrency == 1 {
-		_, err := w.writeSync(inbuf[obufHeaderLen:])
+		_, err := w.writeSync(inbuf[obufHeaderLen:], true, false)
 		return err
 	}
 
@@ -829,7 +851,7 @@ func (w *Writer) writeFull(inbuf []byte) (errRet error) {
 	return nil
 }
 
-func (w *Writer) writeSync(p []byte) (nRet int, errRet error) {
+func (w *Writer) writeSync(p []byte, final, omitTrailing bool) (nRet int, errRet error) {
 	if err := w.err(nil); err != nil {
 		return 0, err
 	}
@@ -851,6 +873,9 @@ func (w *Writer) writeSync(p []byte) (nRet int, errRet error) {
 	}
 
 	for len(p) > 0 {
+		if !final && w.searchCfg != nil && len(p) < w.blockSize+w.searchCfg.overlapBytes() {
+			break // retain a block + its overlap for the next call (deferred emission)
+		}
 		var uncompressed []byte
 		if len(p) > w.blockSize {
 			uncompressed, p = p[:w.blockSize], p[w.blockSize:]
@@ -892,7 +917,9 @@ func (w *Writer) writeSync(p []byte) (nRet int, errRet error) {
 			if err := w.writeSidecarStartIfNeeded(); err != nil {
 				return 0, err
 			}
-			if w.searchCfg != nil && n2 > 0 {
+			// Omit the table for a flushed block without full overlap (its 0x47
+			// ref is still written); the searcher always scans tableless blocks.
+			if w.searchCfg != nil && n2 > 0 && !(omitTrailing && len(p) < w.searchCfg.overlapBytes()) {
 				overlap := p[:min(len(p), w.searchCfg.overlapBytes())]
 				if err := w.writeSearchTableSync(uncompressed, overlap); err != nil {
 					return 0, err
@@ -901,7 +928,7 @@ func (w *Writer) writeSync(p []byte) (nRet int, errRet error) {
 			if err := w.writeSidecarRemoteRef(mainBlockOffset, len(uncompressed)); err != nil {
 				return 0, err
 			}
-		} else if w.searchCfg != nil && n2 > 0 {
+		} else if w.searchCfg != nil && n2 > 0 && !(omitTrailing && len(p) < w.searchCfg.overlapBytes()) {
 			overlap := p[:min(len(p), w.searchCfg.overlapBytes())]
 			if err := w.writeSearchTableSync(uncompressed, overlap); err != nil {
 				return 0, err
@@ -940,6 +967,14 @@ func (w *Writer) writeSync(p []byte) (nRet int, errRet error) {
 // AsyncFlush writes any buffered bytes to a block and starts compressing it.
 // It does not wait for the output has been written as Flush() does.
 func (w *Writer) AsyncFlush() error {
+	// A user-initiated flush emits the buffered block without forward overlap;
+	// omitTrailing makes it skip the (boundary-incomplete) search table so the
+	// block is always scanned. Close uses omitTrailing=false to keep the
+	// stream-final block's table.
+	return w.asyncFlush(true)
+}
+
+func (w *Writer) asyncFlush(omitTrailing bool) error {
 	if err := w.err(nil); err != nil {
 		return err
 	}
@@ -947,11 +982,11 @@ func (w *Writer) AsyncFlush() error {
 	// Queue any data still in input buffer.
 	if len(w.ibuf) != 0 {
 		if !w.wroteStreamHeader {
-			_, err := w.writeSync(w.ibuf)
+			_, err := w.writeSync(w.ibuf, true, omitTrailing)
 			w.ibuf = w.ibuf[:0]
 			return w.err(err)
 		} else {
-			_, err := w.write(w.ibuf)
+			_, err := w.write(w.ibuf, true, omitTrailing)
 			w.ibuf = w.ibuf[:0]
 			err = w.err(err)
 			if err != nil {
@@ -964,8 +999,16 @@ func (w *Writer) AsyncFlush() error {
 
 // Flush flushes the Writer to its underlying io.Writer.
 // This does not apply padding.
+//
+// When search tables are enabled, the block flushed here is written without a
+// search table (its following bytes aren't available yet to index boundary
+// windows); it remains fully searchable but is always scanned, not skipped.
 func (w *Writer) Flush() error {
-	if err := w.AsyncFlush(); err != nil {
+	return w.flush(true)
+}
+
+func (w *Writer) flush(omitTrailing bool) error {
+	if err := w.asyncFlush(omitTrailing); err != nil {
 		return err
 	}
 
@@ -1006,7 +1049,9 @@ func (w *Writer) CloseIndex() ([]byte, error) {
 }
 
 func (w *Writer) closeIndex(idx bool) ([]byte, error) {
-	err := w.Flush()
+	// omitTrailing=false: the stream-final block has no successor, so its
+	// no-overlap table is sound and worth keeping (unlike a mid-stream flush).
+	err := w.flush(false)
 	if w.output != nil {
 		close(w.output)
 		w.writerWg.Wait()

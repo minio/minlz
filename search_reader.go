@@ -29,6 +29,7 @@ type SearchStats struct {
 	BlocksDeferred        int     // Blocks that entered the deferred path
 	BlocksDeferredSkipped int     // Deferred blocks ultimately skipped (subset of BlocksSkipped)
 	BlocksFalsePositive   int     // Blocks decoded due to table match but containing no actual matches
+	BlocksBoundaryScanned int     // Blocks the table proved free of the pattern but decoded anyway, to rule out a match straddling in from the previous block (subset of BlocksSearched). A high count means boundary checks are forcing scans that the tables alone would have skipped.
 	TablePopMin           float64 // Min population % across tables seen
 	TablePopMax           float64 // Max population % across tables seen
 	TablePopSum           float64 // Sum of population % (for computing average)
@@ -55,6 +56,26 @@ type SearchStats struct {
 	CompressedBytesRLE          int64
 	CompressedBytesSparse       int64
 	CompressedBytesTableHeaders int64 // bytes consumed by serialized tables
+
+	// Windows holds per-pattern-window table-presence counts, populated when
+	// stats collection is enabled. Each entry is one matchLen-window the
+	// searcher tests against every block's table; Present/Absent count the
+	// tables whose bitmap had that window's hash set/clear. Rendered by
+	// FprintExtended — useful for seeing how selective the chosen matchLen and
+	// prefix are for a given pattern (the first prefix window is the skip gate).
+	Windows []WindowStat
+}
+
+// WindowStat reports, across every per-block search table, how often one
+// pattern window's hash bit was set ("present", block might contain it) or
+// clear ("absent", block definitely lacks it).
+type WindowStat struct {
+	Pos        int    // start index of the window within the pattern
+	Prefix     int    // pattern index of the preceding prefix byte; -1 = raw / no-prefix anchor
+	PrefixByte byte   // the prefix byte (0 when Prefix < 0)
+	Bytes      []byte // the matchLen bytes that get hashed
+	Present    int    // tables with the bit set
+	Absent     int    // tables with the bit clear
 }
 
 // Fprint writes a human-readable summary of the search stats to w.
@@ -71,6 +92,10 @@ func (st SearchStats) Fprint(w io.Writer) {
 	fmt.Fprintf(w, "Blocks searched: %d (%.1f%%), false positive: %d (%.1f%%)\n",
 		st.BlocksSearched, pct(st.BlocksSearched, total),
 		st.BlocksFalsePositive, pct(st.BlocksFalsePositive, searched))
+	if st.BlocksBoundaryScanned > 0 {
+		fmt.Fprintf(w, "Blocks boundary-scanned: %d (%.1f%% of searched) — table-absent but decoded to rule out a prev-block straddle\n",
+			st.BlocksBoundaryScanned, pct(st.BlocksBoundaryScanned, searched))
+	}
 	fmt.Fprintf(w, "Bytes skipped: %d compressed, searched: %d uncompressed\n", st.CompBytesSkipped, st.UncompBytesSearched)
 	fmt.Fprintf(w, "Tables: %d present, %d missing, %d unusable\n", st.TablesPresent, st.TablesMissing, st.TablesUnusable)
 	if st.TablesPresent > 0 {
@@ -108,6 +133,46 @@ func (st SearchStats) Fprint(w io.Writer) {
 			fmt.Fprintf(w, " Payload bytes: tabled=%d raw=%d RLE=%d sparse=%d; table-header bytes=%d\n",
 				st.CompressedBytesTabled, st.CompressedBytesRaw, st.CompressedBytesRLE, st.CompressedBytesSparse, st.CompressedBytesTableHeaders)
 		}
+	}
+}
+
+// FprintExtended writes the standard Fprint summary followed by a per-window
+// breakdown of how often each of the pattern's matchLen-windows was present in
+// the per-block tables. The first prefix window is the skip "gate"; the raw
+// fallback (prefix < 0) anchors a match whose prefix byte sits in the previous
+// block. Requires stats collection to have populated Windows.
+func (st SearchStats) FprintExtended(w io.Writer) {
+	st.Fprint(w)
+	if len(st.Windows) == 0 {
+		return
+	}
+	denom := st.Windows[0].Present + st.Windows[0].Absent
+	if denom == 0 {
+		denom = 1
+	}
+	// The raw-fallback role only applies to prefix tables (where a separate
+	// Prefix<0 window is appended); for no-prefix tables every window has
+	// Prefix<0 and is just a sequential position, so don't label those.
+	hasPrefixWindows := false
+	for _, ws := range st.Windows {
+		if ws.Prefix >= 0 {
+			hasPrefixWindows = true
+			break
+		}
+	}
+	fmt.Fprintf(w, "Pattern windows (per-hash presence across %d tables):\n", st.Windows[0].Present+st.Windows[0].Absent)
+	fmt.Fprintf(w, "  win  pat-pos  window           present            role\n")
+	for i, ws := range st.Windows {
+		role := ""
+		switch {
+		case i == 0:
+			role = "gate"
+		case ws.Prefix < 0 && hasPrefixWindows:
+			role = "raw fallback"
+		}
+		fmt.Fprintf(w, "  %-4d %-8d %-16q %7d (%5.1f%%)   %s\n",
+			i, ws.Pos, string(ws.Bytes),
+			ws.Present, 100*float64(ws.Present)/float64(denom), role)
 	}
 }
 
@@ -260,6 +325,15 @@ type BlockSearcher struct {
 	decoded   [2][]byte // alternating decode buffers
 	decIdx    int       // which buffer was last used (0 or 1)
 	prevBlock []byte    // points into decoded[(decIdx+1)&1], nil if skipped
+	// tailBuf holds the last len(pattern)-1 bytes of the current contiguous run
+	// of scanned blocks, so a match straddling 3+ blocks (e.g. across a short
+	// Flush block whose length is < len(pattern)-1) is still found by the
+	// boundary scan. tailOff is its stream offset; bbuf is reused scratch for
+	// the boundary region. Reset whenever a block is skipped or deferred
+	// (i.e. not decoded), which breaks contiguity with the next block.
+	tailBuf []byte
+	tailOff int64
+	bbuf    []byte
 	// prevLazy is *lazyBlock so it can carry a nil sentinel meaning "no
 	// lazy prev." When set by bufferSkippedBlock / resolvePending, it
 	// always points at &prevLazyStore — the backing storage is reused
@@ -278,6 +352,14 @@ type BlockSearcher struct {
 	blockStart    int64
 	blockMatches  int // matches found in current block (for false positive tracking)
 	stats         SearchStats
+	// searchWindows is the pattern's matchLen-windows, enumerated once when the
+	// first usable table is seen; per-table presence is tallied into
+	// stats.Windows. Only populated under collectStats. winCfg is the layout
+	// they were enumerated for; tallying stops if a later table's config differs
+	// (mixing layouts would mislabel the counts).
+	searchWindows []windowSpec
+	winInit       bool
+	winCfg        SearchTableConfig
 }
 
 // BlockSearchOption configures a BlockSearcher.
@@ -365,6 +447,8 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 	s.deferred = nil
 	s.pending = nil
 	s.prevLazy = nil
+	s.tailBuf = s.tailBuf[:0]
+	s.winInit = false
 
 	if s.collectStats {
 		defer func() { s.stats.UncompressedSize = s.blockStart }()
@@ -414,10 +498,20 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if blockSize > maxBlockSize {
 				return ErrCorrupt
 			}
+			// A concatenated stream starts here. Flush any pending forward-context
+			// dispatch and drop per-stream boundary state so matches and offsets
+			// don't straddle into the new stream (which restarts at offset 0).
+			if s.deferred != nil {
+				if err := s.flushDeferred(nil, fn); err != nil {
+					return err
+				}
+			}
 			s.maxBlock = blockSize
 			s.blockStart = 0
 			s.pending = nil
+			s.prevBlock = nil
 			s.prevLazy = nil
+			s.tailBuf = s.tailBuf[:0]
 			s.blockTable = nil
 			s.blockTableUnusable = false
 			continue
@@ -469,6 +563,14 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				}
 			}
 			if s.collectStats {
+				if !s.winInit {
+					s.winCfg = cfg
+					s.searchWindows = s.stats.initWindows(&cfg, pattern)
+					s.winInit = true
+				} else if s.searchWindows != nil && !sameSearchLayout(&s.winCfg, &cfg) {
+					s.searchWindows = nil // config drift: stop, mixed layouts would mislabel
+				}
+				s.stats.tallyWindows(s.searchWindows, cfg.baseTableSize, reductions, table)
 				s.stats.TablesPresent++
 				s.stats.TablesBytes += int64(chunkLen + 4) // +4 for chunk header
 				s.stats.TableBitsSum += int(cfg.baseTableSize - reductions)
@@ -537,6 +639,14 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				}
 			}
 			if s.collectStats {
+				if !s.winInit {
+					s.winCfg = cfg
+					s.searchWindows = s.stats.initWindows(&cfg, pattern)
+					s.winInit = true
+				} else if s.searchWindows != nil && !sameSearchLayout(&s.winCfg, &cfg) {
+					s.searchWindows = nil // config drift: stop, mixed layouts would mislabel
+				}
+				s.stats.tallyWindows(s.searchWindows, cfg.baseTableSize, reductions, table)
 				s.stats.TablesPresent++
 				s.stats.TablesBytes += int64(chunkLen + 4)
 				s.stats.TablesCompressed++
@@ -592,7 +702,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				canUse, match := patternCanMatch(&savedInfo, savedTable, savedReductions, pattern)
 				s.blockTable = nil
 				if canUse && !match {
-					if s.prevBlock == nil || !canBoundaryMatch(s.prevBlock, pattern) {
+					if len(s.tailBuf) == 0 || !canBoundaryMatch(s.tailBuf, pattern) {
 						// Definite skip — buffer compressed data for lazy PrevBlock.
 						decompLen, err := s.bufferSkippedBlock(chunkType, chunkLen)
 						if err != nil {
@@ -609,6 +719,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 							}
 						}
 						s.prevBlock = nil
+						s.tailBuf = s.tailBuf[:0]
 						continue
 					}
 					tableNoMatch = true
@@ -617,7 +728,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 					// Don't defer if the previous block could have a boundary
 					// match into this block — deferral would skip that check.
 					dh := patternDeferHashes(&savedInfo, savedTable, savedReductions, pattern)
-					if dh != nil && (s.prevBlock == nil || !canBoundaryMatch(s.prevBlock, pattern)) {
+					if dh != nil && (len(s.tailBuf) == 0 || !canBoundaryMatch(s.tailBuf, pattern)) {
 						deferrable = true
 						// Buffer compressed data and defer decode.
 						decompLen, err := s.bufferSkippedBlock(chunkType, chunkLen)
@@ -635,6 +746,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 							s.stats.BlocksDeferred++
 						}
 						s.prevBlock = nil
+						s.tailBuf = s.tailBuf[:0]
 						continue
 					}
 				}
@@ -716,6 +828,9 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				s.stats.BlocksFalsePositive++
 			}
 			if tableNoMatch {
+				if s.collectStats {
+					s.stats.BlocksBoundaryScanned++
+				}
 				s.prevBlock = nil
 			} else {
 				s.prevBlock = blk
@@ -741,7 +856,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				canUse, match := patternCanMatch(&s.blockInfo, s.blockTable, s.blockReductions, pattern)
 				s.blockTable = nil
 				if canUse && !match {
-					if s.prevBlock == nil || !canBoundaryMatch(s.prevBlock, pattern) {
+					if len(s.tailBuf) == 0 || !canBoundaryMatch(s.tailBuf, pattern) {
 						decompLen, err := s.bufferSkippedBlock(chunkType, chunkLen)
 						if err != nil {
 							return err
@@ -757,6 +872,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 							}
 						}
 						s.prevBlock = nil
+						s.tailBuf = s.tailBuf[:0]
 						continue
 					}
 					tableNoMatch = true
@@ -826,6 +942,9 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				s.stats.BlocksFalsePositive++
 			}
 			if tableNoMatch {
+				if s.collectStats {
+					s.stats.BlocksBoundaryScanned++
+				}
 				s.prevBlock = nil
 			} else {
 				s.prevBlock = blk
@@ -856,6 +975,26 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 	}
 }
 
+// updateTail records blk (ending at stream offset endOff) as the most recent
+// contiguous decoded data, retaining its last keep bytes for the next block's
+// boundary scan. Short blocks accumulate so the tail always spans keep bytes
+// when that much contiguous data exists.
+func (s *BlockSearcher) updateTail(blk []byte, endOff int64, keep int) {
+	if keep <= 0 {
+		s.tailBuf = s.tailBuf[:0]
+		return
+	}
+	if len(blk) >= keep {
+		s.tailBuf = append(s.tailBuf[:0], blk[len(blk)-keep:]...)
+	} else {
+		if drop := len(s.tailBuf) + len(blk) - keep; drop > 0 {
+			s.tailBuf = append(s.tailBuf[:0], s.tailBuf[min(drop, len(s.tailBuf)):]...)
+		}
+		s.tailBuf = append(s.tailBuf, blk...)
+	}
+	s.tailOff = endOff - int64(len(s.tailBuf))
+}
+
 // dispatchMatches finds all pattern occurrences in blk and calls fn for each.
 // If fn returns ErrSearchForward, the match is saved as s.deferred for the main
 // loop to re-dispatch after loading the next block. Remaining matches in this
@@ -870,42 +1009,67 @@ func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []by
 		}
 	}
 
-	// Check for matches spanning the boundary between prevBlock and blk.
-	if s.prevBlock != nil && len(pattern) > 1 {
-		tail := s.prevBlock[max(0, len(s.prevBlock)-len(pattern)+1):]
+	// Check for matches spanning the boundary into blk. tailBuf holds the last
+	// len(pattern)-1 decoded bytes of the contiguous run ending at blk's start,
+	// so this also finds matches that straddle 3+ blocks across a short interior
+	// block (e.g. a 1-byte Flush block) — prevBlock alone may be too short.
+	if len(s.tailBuf) > 0 && len(pattern) > 1 {
+		tail := s.tailBuf
 		head := blk[:min(len(blk), len(pattern)-1)]
-		boundary := append(tail, head...)
+		s.bbuf = append(append(s.bbuf[:0], tail...), head...)
 		bOff := 0
 		for {
-			idx := bytes.Index(boundary[bOff:], pattern)
+			idx := bytes.Index(s.bbuf[bOff:], pattern)
 			if idx < 0 {
 				break
 			}
-			// Only report matches that actually straddle the boundary
-			// (start in prevBlock, end in blk).
+			// Only report matches that actually straddle (start in the tail,
+			// end in blk).
 			absIdx := bOff + idx
-			matchInPrev := len(tail) - absIdx
-			if matchInPrev <= 0 || matchInPrev >= len(pattern) {
+			matchInTail := len(tail) - absIdx
+			if matchInTail <= 0 || matchInTail >= len(pattern) {
 				bOff = absIdx + 1
 				continue
 			}
-			streamOff := blockOff - int64(matchInPrev)
-			result := SearchResult{
-				Blocks:       [2][]byte{s.prevBlock, blk},
-				Offset:       len(s.prevBlock) - matchInPrev,
-				StreamOffset: streamOff,
-				BlockStart:   prevBlockStart,
-				PrevBlockLen: len(s.prevBlock),
+			streamOff := s.tailOff + int64(absIdx)
+			// Prefer the full previous block for context; fall back to the tail
+			// when the match starts before prevBlock (a 3+ block straddle).
+			var result SearchResult
+			var defOff int
+			var defStart int64
+			var defBlk []byte
+			if s.prevBlock != nil && streamOff >= prevBlockStart {
+				off := int(streamOff - prevBlockStart)
+				result = SearchResult{
+					Blocks:       [2][]byte{s.prevBlock, blk},
+					Offset:       off,
+					StreamOffset: streamOff,
+					BlockStart:   prevBlockStart,
+					PrevBlockLen: len(s.prevBlock),
+				}
+				defOff, defStart, defBlk = off, prevBlockStart, s.prevBlock
+			} else {
+				result = SearchResult{
+					Blocks:       [2][]byte{tail, blk},
+					Offset:       absIdx,
+					StreamOffset: streamOff,
+					BlockStart:   s.tailOff,
+					PrevBlockLen: len(tail),
+				}
+				defOff, defStart = absIdx, s.tailOff
 			}
 			s.blockMatches++
 			err := fn(result)
 			if err != nil {
 				if errors.Is(err, ErrSearchForward) {
+					if defBlk == nil { // tailBuf is reused next block; copy it
+						defBlk = append([]byte(nil), tail...)
+					}
 					s.deferred = &deferredMatch{
 						streamOff: streamOff,
-						blockOff:  blockOff - int64(len(s.prevBlock)),
-						matchOff:  len(s.prevBlock) - matchInPrev,
-						blk:       s.prevBlock,
+						blockOff:  defStart,
+						matchOff:  defOff,
+						blk:       defBlk,
 					}
 				} else {
 					return err
@@ -919,6 +1083,7 @@ func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []by
 	for {
 		idx := bytes.Index(blk[off:], pattern)
 		if idx < 0 {
+			s.updateTail(blk, blockOff+int64(len(blk)), len(pattern)-1)
 			return nil
 		}
 		matchOff := off + idx
@@ -1116,6 +1281,7 @@ func (s *BlockSearcher) resolvePending(pattern []byte, fn func(SearchResult) err
 		s.prevLazyStore = p.lazy
 		s.prevLazy = &s.prevLazyStore
 		s.prevBlock = nil
+		s.tailBuf = s.tailBuf[:0]
 		return nil
 	}
 
@@ -1140,6 +1306,9 @@ func (s *BlockSearcher) resolvePending(pattern []byte, fn func(SearchResult) err
 		s.stats.BlocksFalsePositive++
 	}
 	if p.tableNoMatch {
+		if s.collectStats {
+			s.stats.BlocksBoundaryScanned++
+		}
 		s.prevBlock = nil
 	} else {
 		s.prevBlock = blk
@@ -1444,37 +1613,41 @@ func patternDeferHashes(cfg *SearchTableConfig, table []byte, reductions uint8, 
 		return deferHashesWithPrefixMask(cfg, table, mask, &cfg.prefixMask, pattern)
 
 	case searchTableTypeLongPrefix:
-		// TODO: re-enable deferred path for extras > 0. With E+1 windows per
-		// occurrence the threshold logic must be adjusted to account for the
-		// expanded boundary range.
-		if cfg.extras != 0 {
-			return nil
-		}
 		ml := int(cfg.matchLen)
+		ex := int(cfg.extras)
 		pl := len(cfg.longPrefix)
-		if len(pattern) < ml {
+		if len(pattern) < pl+ml+ex {
 			return nil
 		}
+		// Defer every absent window after the first occurrence whose windows are
+		// all present. The encoder records an occurrence in the block where its
+		// prefix starts — including a prefix that straddles into the next block
+		// (SPEC_SEARCH.md 2.1 / B.1) — so a real straddle's absent windows are all
+		// present in the next block's table. Handles extras (E+1 windows each).
 		first := true
-		firstPresent := false
-		safeThreshold := 0
+		firstAllPresent := false
 		var absent []uint32
-		for i := 0; i <= len(pattern)-pl-ml; i++ {
+		for i := 0; i <= len(pattern)-pl-ml-ex; i++ {
 			if !bytes.Equal(pattern[i:i+pl], cfg.longPrefix) {
 				continue
 			}
-			h := hashValue(readLE64Pad(pattern[i+pl:]), cfg.baseTableSize, cfg.matchLen)
-			present := table[(h&mask)>>3]&(1<<((h&mask)&7)) != 0
+			allPresent := true
+			var occAbsent []uint32
+			for j := 0; j <= ex; j++ {
+				h := hashValue(readLE64Pad(pattern[i+pl+j:]), cfg.baseTableSize, cfg.matchLen)
+				if table[(h&mask)>>3]&(1<<((h&mask)&7)) == 0 {
+					allPresent = false
+					occAbsent = append(occAbsent, h)
+				}
+			}
 			if first {
-				firstPresent = present
-				safeThreshold = ml + pl + i
+				firstAllPresent = allPresent
 				first = false
+				continue
 			}
-			if !present && i >= safeThreshold {
-				absent = append(absent, h)
-			}
+			absent = append(absent, occAbsent...)
 		}
-		if !firstPresent || len(absent) == 0 {
+		if !firstAllPresent || len(absent) == 0 {
 			return nil
 		}
 		return absent
@@ -1488,10 +1661,13 @@ func deferHashesWithPrefixMask(cfg *SearchTableConfig, table []byte, mask uint32
 		return nil
 	}
 
+	// Defer every absent window after the first present one. The encoder emits a
+	// table only for a block that had its full forward overlap (a flushed block
+	// without it emits no table and is always scanned), so for a real
+	// boundary-straddling match every window absent here is present in the next
+	// block's table — no window is recorded in neither block.
 	first := true
 	firstPresent := false
-	safeThreshold := 0  // pattern positions >= this are safe to defer
-	nearAbsent := false // any prefix window between iFirst and safeThreshold absent?
 	var absent []uint32
 	for i := 1; i <= len(pattern)-ml; i++ {
 		b := pattern[i-1]
@@ -1502,41 +1678,26 @@ func deferHashesWithPrefixMask(cfg *SearchTableConfig, table []byte, mask uint32
 		present := table[(h&mask)>>3]&(1<<((h&mask)&7)) != 0
 		if first {
 			firstPresent = present
-			// For a boundary match via overlap, at most matchLen-1+i pattern
-			// bytes are in block N. Continuation windows with prefix bytes in
-			// block N can't be verified against block N+1's table.
-			safeThreshold = ml + i
 			first = false
 			continue
 		}
 		if !present {
-			if i >= safeThreshold {
-				absent = append(absent, h)
-			} else {
-				// A "near" window is absent — the match can't be at K > overlap
-				// range (otherwise this window would be within block N and present).
-				nearAbsent = true
-			}
+			absent = append(absent, h)
 		}
 	}
 	if len(absent) == 0 {
 		return nil
 	}
 	if firstPresent {
-		// Only defer if a near window confirms K ≤ overlap range.
-		// If all near windows are present, K could exceed the overlap range
-		// and the far windows' prefix bytes could be at the block boundary.
-		if !nearAbsent {
-			return nil
-		}
 		return absent
 	}
-	// Raw fallback: first prefix window absent, check raw hash.
+	// First prefix window absent: a match is only possible anchored via the raw
+	// window (the leading prefix byte lies in the previous block).
 	hRaw := hashValue(readLE64Pad(pattern[:ml]), cfg.baseTableSize, cfg.matchLen)
 	if table[(hRaw&mask)>>3]&(1<<((hRaw&mask)&7)) != 0 {
 		return absent
 	}
-	return nil // raw fallback also absent → definite skip
+	return nil
 }
 
 // checkDeferredHashes checks if ALL deferred hashes are present in a table.
@@ -1549,6 +1710,122 @@ func checkDeferredHashes(table []byte, reductions, baseTableSize uint8, hashes [
 		if table[h>>3]&(1<<(h&7)) == 0 {
 			return false
 		}
+	}
+	return true
+}
+
+// windowSpec is one matchLen-window the searcher tests for a pattern, with its
+// full-resolution (un-reduced) hash precomputed once (baseTableSize is constant
+// per stream).
+type windowSpec struct {
+	prefix int // pattern index of the prefix byte; -1 for the raw / no-prefix anchor
+	pos    int // pattern index where the window starts
+	hash   uint32
+}
+
+// enumeratePatternWindows returns, in pattern order, every matchLen-window the
+// searcher tests for pattern under cfg, mirroring patternCanMatch /
+// patternDeferHashes. For byte/mask prefix tables the raw fallback window (the
+// leading matchLen bytes, anchoring a match whose prefix byte sits in the
+// previous block) is appended last.
+func enumeratePatternWindows(cfg *SearchTableConfig, pattern []byte) []windowSpec {
+	ml := int(cfg.matchLen)
+	if ml == 0 || len(pattern) < ml {
+		return nil
+	}
+	var out []windowSpec
+	add := func(prefix, pos int) {
+		h := hashValue(readLE64Pad(pattern[pos:]), cfg.baseTableSize, cfg.matchLen)
+		out = append(out, windowSpec{prefix: prefix, pos: pos, hash: h})
+	}
+	switch cfg.tableType {
+	case searchTableTypeNoPrefix:
+		for i := 0; i <= len(pattern)-ml; i++ {
+			add(-1, i)
+		}
+	case searchTableTypeBytePrefix:
+		var pfx [256]bool
+		for _, p := range cfg.prefixBytes {
+			pfx[p] = true
+		}
+		for i := 1; i <= len(pattern)-ml; i++ {
+			if pfx[pattern[i-1]] {
+				add(i-1, i)
+			}
+		}
+		add(-1, 0)
+	case searchTableTypeMaskPrefix:
+		for i := 1; i <= len(pattern)-ml; i++ {
+			b := pattern[i-1]
+			if cfg.prefixMask[b>>3]&(1<<(b&7)) != 0 {
+				add(i-1, i)
+			}
+		}
+		add(-1, 0)
+	case searchTableTypeLongPrefix:
+		pl := len(cfg.longPrefix)
+		ex := int(cfg.extras)
+		for i := 0; i <= len(pattern)-pl-ml-ex; i++ {
+			if bytes.Equal(pattern[i:i+pl], cfg.longPrefix) {
+				for j := 0; j <= ex; j++ {
+					add(i, i+pl+j)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// initWindows enumerates pattern windows under cfg and seeds st.Windows with
+// their metadata, returning the specs for per-table tallying via tallyWindows.
+func (st *SearchStats) initWindows(cfg *SearchTableConfig, pattern []byte) []windowSpec {
+	windows := enumeratePatternWindows(cfg, pattern)
+	ml := int(cfg.matchLen)
+	st.Windows = make([]WindowStat, len(windows))
+	for i, wd := range windows {
+		ws := WindowStat{Pos: wd.pos, Prefix: wd.prefix}
+		ws.Bytes = append(ws.Bytes, pattern[wd.pos:min(wd.pos+ml, len(pattern))]...)
+		if wd.prefix >= 0 {
+			ws.PrefixByte = pattern[wd.prefix]
+		}
+		st.Windows[i] = ws
+	}
+	return windows
+}
+
+// tallyWindows updates per-window present/absent counts against one block's
+// table. baseTableSize must match the value used to compute windows' hashes.
+func (st *SearchStats) tallyWindows(windows []windowSpec, baseTableSize, reductions uint8, table []byte) {
+	if len(windows) == 0 || len(table) == 0 {
+		return
+	}
+	mask := uint32(1<<(baseTableSize-reductions)) - 1
+	for i := range windows {
+		h := windows[i].hash & mask
+		if table[h>>3]&(1<<(h&7)) != 0 {
+			st.Windows[i].Present++
+		} else {
+			st.Windows[i].Absent++
+		}
+	}
+}
+
+// sameSearchLayout reports whether two configs produce the same per-window
+// layout (and hashes), i.e. whether their tables can be tallied into the same
+// SearchStats.Windows. matchLen, baseTableSize and the prefix all affect the
+// enumerated windows; per-block reductions do not (they only mask at lookup).
+func sameSearchLayout(a, b *SearchTableConfig) bool {
+	if a.tableType != b.tableType || a.matchLen != b.matchLen ||
+		a.baseTableSize != b.baseTableSize || a.extras != b.extras {
+		return false
+	}
+	switch a.tableType {
+	case searchTableTypeBytePrefix:
+		return a.prefixBytes == b.prefixBytes
+	case searchTableTypeMaskPrefix:
+		return a.prefixMask == b.prefixMask
+	case searchTableTypeLongPrefix:
+		return bytes.Equal(a.longPrefix, b.longPrefix)
 	}
 	return true
 }

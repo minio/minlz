@@ -307,9 +307,15 @@ be satisfied. An overlap position is only indexed if its preceding byte in the b
 data is a valid prefix value. This means:
 
 - A prefix byte at the end of block N followed by a value starting in block N+1
-  WILL be indexed in block N's table (the prefix is in block N's data).
-- A value at the start of block N where the prefix byte is the last byte of block N-1
-  will NOT be indexed in block N's table, but only in block N-1's table.
+  WILL be indexed in block N's table (the prefix is in block N's data). This
+  includes the case where the prefix byte is block N's very last byte: the
+  encoder reads the value from the overlap (the first `matchLen` bytes of block
+  N+1) and records it in block N, because block N+1 cannot index it — its
+  position 0 has no preceding prefix byte. See Appendix B.1 and B.4.3.
+- For a multi-byte (long) prefix that STARTS in block N but straddles into block
+  N+1, the occurrence is likewise indexed in block N — the block where the prefix
+  starts — reading the remainder of the prefix and the value from the overlap.
+  Block N+1 cannot index it (its prefix is only partly in block N+1's data).
 
 An empty prefix table (all zero bits) indicates that no prefix bytes exist
 in the block, allowing the searcher to skip it entirely.
@@ -345,9 +351,11 @@ hashes are written for `Extra Matches + 1` consecutive overlapping windows at po
 windows collectively span bytes `[P+pl, P+pl+matchLen+Extra Matches)` of the data.
 
 All `Extra Matches + 1` hash entries for one prefix occurrence are stored in the same
-block's search table — the block containing the prefix bytes. The encoder's tail-overlap
-into the next block must therefore cover `matchLen + Extra Matches - 1` bytes (rather than
-`matchLen - 1`), so that all windows can be read for prefix positions near the block end.
+block's search table — the block where the prefix STARTS. The encoder's tail-overlap
+into the next block must therefore cover `len(prefix) - 1 + matchLen + Extra Matches`
+bytes (rather than `matchLen`), so that every occurrence whose prefix starts in this
+block can read its windows from the overlap — including a prefix that itself straddles
+the boundary, and the position whose last prefix byte is the block's last byte.
 
 The prefix (1 to 256 bytes) is stored after the length indication and the extras byte.
 
@@ -473,18 +481,27 @@ requires this (section 3: "The block table must include patterns that start in t
 upcoming block and continue into the next block").
 
 For block N of size S with matchLen M, the positions that need overlap are
-`S-M+1` through `S-1`. Each of these positions reads bytes from both block N
-and block N+1. The encoder should provide the first `M-1` bytes of block N+1
-as overlap when building block N's table.
+`S-M+1` through `S`. Each reads bytes from both block N and block N+1. Position
+`S` is the window whose prefix byte is block N's last byte; prefix tables index
+it (block N+1 cannot — see 3.3.1), while no-prefix tables stop at `S-1` because
+block N+1 indexes that window at its own position 0. The encoder should provide
+the first `M` bytes of block N+1 as overlap when building block N's table (`M-1`
+suffices for no-prefix tables).
 
-For type 4 tables with `Extra Matches = E > 0`, every indexed prefix occurrence
-contributes `E+1` consecutive windows. The encoder must therefore read up to
-`M + E - 1` bytes past the block end, so the overlap from block N+1 must extend
-to `M + E - 1` bytes for type 4 tables with extras.
+For type 4 (long prefix) tables the prefix is `pl` bytes and may itself straddle the
+boundary, and with `Extra Matches = E` every indexed occurrence contributes `E+1`
+consecutive windows. An occurrence is indexed in the block where its prefix STARTS
+(see 3.3.1). The encoder must therefore read up to `(pl-1) + M + E` bytes past the
+block end, so the overlap from block N+1 must extend to `pl - 1 + M + E` bytes for
+type 4 tables. (Types 2 and 3 have `pl = 1`, giving the `M + E` requirement above.)
 
 For contiguous buffers (`EncodeBuffer`), the overlap is directly available.
-For streaming writes, the overlap comes from the remaining data in the write buffer.
-The last block in a stream has no overlap — its tail positions cannot be indexed.
+For streaming writes the encoder **defers** a block until the next block's bytes
+are buffered, so every non-final block is tabled with its full overlap. A block
+forced out without that overlap — a mid-stream `Flush` — is emitted with **no
+search table** (it is always scanned at search time; see B.4.3). The final block
+in a stream has no successor, so its missing forward overlap is harmless and it
+keeps its table.
 
 **Prefix tables and overlap:** For prefix-filtered tables (types 2, 3, 4), the overlap
 tail positions must still respect the prefix context. An overlap position is only indexed
@@ -492,7 +509,7 @@ if its preceding byte in the block data is a valid prefix byte. This ensures tha
 tables remain accurate — an empty prefix table correctly indicates "no prefix bytes exist
 in this block" and the block can be skipped for any prefix-aware search.
 
-Implementation note: the overlap positions are few (at most `M-1 = 7` for matchLen 8)
+Implementation note: the overlap positions are few (at most `M = 8` for matchLen 8)
 and can be handled with a small stack buffer rather than concatenating the full block
 with the overlap bytes.
 
@@ -562,20 +579,25 @@ block can check the boundary region. If a block is skipped, the previous block
 reference should be cleared.
 
 For each decoded block, the boundary check examines:
-- The last `len(pattern)-1` bytes of the previous block
+- The last `len(pattern)-1` bytes of the contiguously decoded data preceding the block
 - The first `len(pattern)-1` bytes of the current block
 
 If the concatenation of these regions contains the pattern, it is a boundary match.
-This requires the previous block to have been decoded (not skipped). The overlap
+The preceding region is a rolling tail of the most recent contiguous run of decoded
+blocks — **not** just the single previous block. A short interior block (e.g. one
+emitted by a mid-stream `Flush`) may be shorter than `len(pattern)-1`, so a single
+match can straddle three or more blocks; the tail must therefore span as many prior
+blocks as needed to cover `len(pattern)-1` bytes. The tail is reset whenever a block
+is skipped or deferred (its bytes are not decoded, breaking contiguity). The overlap
 indexing in B.1 ensures that if a pattern starts in block N, block N's table has
 the first window set (for type 1) or the raw first window set (for prefix types,
-via the overlap tail), so block N is decoded and available as PrevBlock for block N+1.
+via the overlap tail), so block N is decoded and contributes to the tail for block N+1.
 
-A searcher should not skip a block if the previous block was decoded and a
-boundary match is possible. A boundary match is possible only when some suffix
-of the previous block's tail (`last len(pattern)-1 bytes`) is a prefix of the
-search pattern. If no such overlap exists, the block can safely be skipped and
-the previous block reference cleared.
+A searcher should not skip a block if the boundary tail could start a match reaching
+into it. A boundary match is possible only when some suffix of that tail
+(`last len(pattern)-1 bytes` of the preceding contiguous decoded data) is a prefix of
+the search pattern. If no such overlap exists, the block can safely be skipped and the
+tail cleared.
 
 When a block is decoded solely for a boundary check (the table indicates no
 match within the block), the previous block reference should be cleared
@@ -628,47 +650,39 @@ match to remain possible. If even one is absent, the match cannot exist.
 The savings come from avoiding decompression of false-positive blocks. The
 compressed data must still be read (or seeked past) to advance the stream.
 
-#### B.4.3 Prefix Tables: Safe Deferral Conditions
+#### B.4.3 Prefix Tables: Tabled Blocks Carry Full Overlap
 
-For prefix tables (types 2, 3, 4), not all absent windows can be safely
-deferred. The issue: block N+1's table builder cannot see prefix bytes that
-are in block N (section 3.3.1). For a boundary match, continuation windows
-whose prefix bytes fall within block N will NOT be indexed in block N+1's
-table, producing false negatives if checked.
+The deferred check (B.4.1) verifies absent windows against block N+1's table.
+For prefix tables (types 2, 3, 4) this is sound because of an encoder invariant:
+a block's search table is emitted **only when the encoder had the block's full
+forward overlap** (`len(prefix) - 1 + matchLen + Extra Matches` bytes of the next
+block; see B.1). The encoder records, for every prefix occurrence that STARTS in
+block N — including one whose prefix byte is its last byte, or whose multi-byte
+prefix straddles into block N+1 — all `Extra Matches + 1` windows that follow it
+(section 3.3.1, B.1). So a tabled block holds every prefix-context window of every
+occurrence starting in it; there is no boundary "blind spot".
 
-Two conditions must both be met for safe deferral:
+When the overlap is unavailable — a mid-stream `Flush`, where the next block's
+bytes don't exist yet — the block is emitted with **no search table** (its `0x47`
+ref, in sidecar mode, is still written). A tableless block is always scanned, so
+a match straddling that boundary is still found via the decoded-block boundary
+check (B.2/B.3); it simply can't be skipped. The stream's final block has no
+successor (hence no forward straddle), so it keeps its table.
 
-**Condition 1 — Position threshold.** Let `iFirst` be the pattern position
-of the first prefix-context window. For a boundary match via the overlap
-region, at most `matchLen - 1 + iFirst` pattern bytes can be in block N.
-A continuation window at pattern position `j` has its prefix byte at
-`pattern[j-1]`, which is in block N+1 only when `j >= matchLen + iFirst`.
-Only absent windows above this threshold may be deferred.
+**Deferral rule.** Because every tabled block carries full overlap, for a real
+match straddling N→N+1 every window absent from block N's table is present in
+block N+1's table. The searcher therefore defers **all** absent windows after the
+first present one and skips block N if any is missing from N+1 — the same rule as
+the no-prefix path (B.4.1), with no special boundary handling.
 
-For type 4 (long prefix) with prefix length `K`, the threshold is
-`matchLen + K + iFirst`.
+For type 4 (long prefix) with `Extra Matches = E` the same defer-all rule applies:
+each pattern occurrence contributes `E+1` windows, all stored together in the
+prefix-start block, so the absent windows of every occurrence after the first
+present one are deferred and checked against block N+1's table.
 
-**Condition 2 — Near window confirmation.** The position threshold is only
-valid when the match is within the overlap range (K ≤ matchLen - 1 + iFirst).
-If the first prefix window's hash was set by a normal (non-overlap) position
-deeper in the block, K can exceed the overlap range and the threshold is
-insufficient.
-
-To confirm the overlap range: check whether any prefix window between
-`iFirst` and the threshold ("near" windows) is absent from block N's table.
-If a near window is absent, K cannot exceed the overlap range — otherwise
-the near window would be at a normal position within block N and would be
-present. If ALL near windows are present, K might exceed the overlap range
-and deferral must be skipped (decode conservatively).
-
-**Raw fallback.** When the first prefix window is absent but the raw hash
-is present, K ≤ iFirst (the first prefix window would be within block N for
-larger K and would be present). The near-window condition is inherently
-satisfied (the first prefix window itself is absent). The position threshold
-still applies.
-
-If no windows meet the threshold, or the near-window condition is not met,
-deferral is not possible and the block must be decoded.
+**Raw fallback.** When the first prefix window is absent but the raw first window
+is present (the pattern's leading prefix byte lies in the previous block), the
+absent windows are deferred only when that raw window is set in block N's table.
 
 #### B.4.4 Limitations
 
