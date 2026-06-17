@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"os"
 	"runtime"
@@ -65,9 +66,7 @@ func testOptions(_ testing.TB) map[string][]WriterOption {
 			x[name+"-pad-max"] = cloneAdd(opt, WriterPadding(4<<20), WriterPaddingSrc(zeroReader{}))
 		}
 	}
-	for name, opt := range testOptions {
-		x[name] = opt
-	}
+	maps.Copy(x, testOptions)
 	testOptions = x
 	return testOptions
 }

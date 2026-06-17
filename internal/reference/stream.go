@@ -40,7 +40,7 @@ const (
 
 func ReadStream(r io.Reader, debugOut io.Writer) error {
 	// Print debug information to debugOut if it is not nil.
-	println := func(args ...interface{}) {
+	println := func(args ...any) {
 		if debugOut != nil {
 			_, _ = fmt.Fprintln(debugOut, args...)
 		}

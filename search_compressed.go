@@ -271,7 +271,7 @@ type cstEncoder struct {
 func newCSTEncoder() *cstEncoder { return &cstEncoder{} }
 
 func (e *cstEncoder) reset(n int) {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		e.hist[i] = [256]uint32{}
 		e.outTable[i] = e.outTable[i][:0]
 		e.outData[i] = e.outData[i][:0]
@@ -380,7 +380,7 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 		runOne(0)
 	} else {
 		var wg sync.WaitGroup
-		for i := 0; i < nBlocks; i++ {
+		for i := range nBlocks {
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()
@@ -407,7 +407,7 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 		return true
 	}
 	if nBlocks > 1 {
-		for i := 0; i < nBlocks; i++ {
+		for i := range nBlocks {
 			for j, v := range e.hist[i] {
 				sumHist[j] += v
 			}
@@ -444,7 +444,7 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 		}
 		return sym, count == 1
 	}
-	for i := 0; i < nBlocks; i++ {
+	for i := range nBlocks {
 		c := &costs[i]
 		c.rawPayload = 1 + bsize
 		if sym, ok := rleAble(&e.hist[i]); ok {
@@ -521,7 +521,7 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 	// recomputeGlobalCosts updates each block's globalEst/globalPayload from
 	// the currently installed global table (whatever it was last built from).
 	recomputeGlobalCosts := func() {
-		for i := 0; i < nBlocks; i++ {
+		for i := range nBlocks {
 			if globalAvailable && e.globalSc.CanUseTable(&e.hist[i]) {
 				costs[i].globalEst = e.globalSc.EstimateSize(&e.hist[i])
 				costs[i].globalPayload = 1 + uvarintLen(costs[i].globalEst) + costs[i].globalEst
@@ -534,7 +534,7 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 
 	picksNG := make([]pick, nBlocks)
 	totalNG := 0
-	for i := 0; i < nBlocks; i++ {
+	for i := range nBlocks {
 		var eff int
 		picksNG[i], eff = pickBest(i, false)
 		totalNG += eff
@@ -544,7 +544,7 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 		out := make([]pick, nBlocks)
 		total := globalSerSize
 		users := 0
-		for i := 0; i < nBlocks; i++ {
+		for i := range nBlocks {
 			var eff int
 			out[i], eff = pickBest(i, true)
 			total += eff
@@ -562,7 +562,7 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 	// when the rebuild improves total bytes AND keeps ≥2 users.
 	if globalAvailable && wgUsers >= 2 {
 		var subHist [256]uint32
-		for i := 0; i < nBlocks; i++ {
+		for i := range nBlocks {
 			if picksWG[i].kind == 1 {
 				for j, v := range e.hist[i] {
 					subHist[j] += v
@@ -601,7 +601,7 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 	if useGlobal {
 		e.workSc.TransferCTable(&e.globalSc)
 		e.workSc.Reuse = huff0.ReusePolicyMust
-		for i := 0; i < nBlocks; i++ {
+		for i := range nBlocks {
 			if finalPicks[i].kind != 1 {
 				continue
 			}
@@ -635,7 +635,7 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 	for i := range ownTableIdx {
 		ownTableIdx[i] = -1
 	}
-	for i := 0; i < nBlocks; i++ {
+	for i := range nBlocks {
 		if finalPicks[i].kind == 0 {
 			ownTableIdx[i] = len(tableList)
 			tableList = append(tableList, tableRef{ownBlock: i})
@@ -652,7 +652,7 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 		if useGlobal && len(tableList) == cstMaxHuff0Tables+1 {
 			globalTableIdx = -1
 			tableList = tableList[:cstMaxHuff0Tables]
-			for i := 0; i < nBlocks; i++ {
+			for i := range nBlocks {
 				if finalPicks[i].kind == 1 {
 					c := costs[i]
 					if c.ownPayload > 0 && c.ownPayload+c.ownTableSize < c.rawPayload {
@@ -674,7 +674,7 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 
 	// Pre-emit sparse blocks so we know the actual byte count (selection used
 	// an O(1) upper-bound estimate; emission needs the exact length).
-	for i := 0; i < nBlocks; i++ {
+	for i := range nBlocks {
 		if finalPicks[i].kind == cstDispSparse {
 			e.sparseBufs[i] = appendSparseBitTable(e.sparseBufs[i][:0], bitmap[i*bsize:(i+1)*bsize])
 			actual := len(e.sparseBufs[i])
@@ -692,14 +692,14 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 		}
 	}
 	payloadSize := 3 + cfg.prefixSize() + 1 /*reductions*/ + 4 /*crc*/ + 2 /*h0_bs+h0_tc*/ + tablesSize
-	for i := 0; i < nBlocks; i++ {
+	for i := range nBlocks {
 		payloadSize += finalPicks[i].size
 	}
 	totalChunkSize := 4 + payloadSize
 
 	stats.Tables = len(tableList)
 	stats.Chunk0x46Size = totalChunkSize
-	for i := 0; i < nBlocks; i++ {
+	for i := range nBlocks {
 		payload := finalPicks[i].size - 1 // exclude disposition byte
 		switch finalPicks[i].kind {
 		case 0:
@@ -746,7 +746,7 @@ func appendSearchTableCompressedChunk(dst []byte, cfg *SearchTableConfig, reduct
 			dst = append(dst, e.globalTableBytes...)
 		}
 	}
-	for i := 0; i < nBlocks; i++ {
+	for i := range nBlocks {
 		p := finalPicks[i]
 		switch p.kind {
 		case 0:
@@ -914,7 +914,7 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 	}
 	rem := payload[off:]
 	dec.lastBytesTableHeader = 0
-	for i := 0; i < tc; i++ {
+	for i := range tc {
 		dec.tableSc[i].Out = dec.tableSc[i].Out[:0]
 		before := len(rem)
 		_, after, err2 := huff0.ReadTable(rem, &dec.tableSc[i])
@@ -949,7 +949,7 @@ func parseSearchTableCompressed(payload []byte, dec *cstDecoder, ignoreCRC bool)
 	dec.lastBytesRaw = 0
 	dec.lastBytesRLE = 0
 	dec.lastBytesSparse = 0
-	for i := 0; i < nBlocks; i++ {
+	for i := range nBlocks {
 		if len(rem) < 1 {
 			err = fmt.Errorf("minlz: truncated chunk at block %d disposition", i)
 			return

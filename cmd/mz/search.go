@@ -241,10 +241,7 @@ func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats
 // Avoids allocating by searching Blocks[1] directly.
 func lineEndOffset(r minlz.SearchResult, pattern []byte) int {
 	posInBlk := r.Offset - r.PrevBlockLen
-	after := posInBlk + len(pattern)
-	if after < 0 {
-		after = 0
-	}
+	after := max(posInBlk+len(pattern), 0)
 	blk := r.Blocks[1]
 	if after < len(blk) {
 		if idx := bytes.IndexByte(blk[after:], '\n'); idx >= 0 {

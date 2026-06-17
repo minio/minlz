@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"slices"
 
 	"github.com/klauspost/compress/huff0"
 )
@@ -118,10 +119,7 @@ func HashValue(val uint64, tableSize, matchLen uint8) uint32 {
 // The returned table length is 1 << (BaseTableSize - reductions - 3) bytes,
 // rounded up to the 32-byte minimum.
 func BuildSearchTable(cfg SearchConfig, blockData, overlap []byte) (table []byte, reductions uint8) {
-	tableBytes := 1 << (cfg.BaseTableSize - 3)
-	if tableBytes < searchTableMinBytes {
-		tableBytes = searchTableMinBytes
-	}
+	tableBytes := max(1<<(cfg.BaseTableSize-3), searchTableMinBytes)
 	table = make([]byte, tableBytes)
 
 	// Index every starting position in blockData. The window read at each
@@ -130,10 +128,9 @@ func BuildSearchTable(cfg SearchConfig, blockData, overlap []byte) (table []byte
 	// matchLen+E-1 past the position.
 	ml := int(cfg.MatchLen)
 	ex := int(cfg.Extras)
-	last := len(blockData) - ml - ex + 1 // last position where all windows fit fully inside blockData
-	if last < 0 {
-		last = 0
-	}
+	last := max(
+		// last position where all windows fit fully inside blockData
+		len(blockData)-ml-ex+1, 0)
 
 	indexAt := func(pos int) {
 		// For prefix table types, the preceding byte must be a valid prefix.
@@ -201,10 +198,7 @@ func BuildSearchTable(cfg SearchConfig, blockData, overlap []byte) (table []byte
 			}
 			woff := q + pl - s // window start within overlap
 			for j := 0; j <= ex; j++ {
-				off := woff + j
-				if off > len(overlap) {
-					off = len(overlap)
-				}
+				off := min(woff+j, len(overlap))
 				setBit(table, HashValue(readLE64Pad(overlap[off:]), cfg.BaseTableSize, cfg.MatchLen))
 			}
 		}
@@ -219,12 +213,7 @@ func prefixOK(cfg SearchConfig, blockData []byte, pos int) bool {
 	prev := blockData[pos-1]
 	switch cfg.TableType {
 	case TableTypeBytePrefix:
-		for _, p := range cfg.PrefixBytes {
-			if prev == p {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(cfg.PrefixBytes, prev)
 	case TableTypeMaskPrefix:
 		return cfg.PrefixMask[prev>>3]&(1<<(prev&7)) != 0
 	case TableTypeLongPrefix:
@@ -232,7 +221,7 @@ func prefixOK(cfg SearchConfig, blockData []byte, pos int) bool {
 		if pos < k {
 			return false
 		}
-		for i := 0; i < k; i++ {
+		for i := range k {
 			if blockData[pos-k+i] != cfg.LongPrefix[i] {
 				return false
 			}
@@ -443,10 +432,7 @@ func AppendSearchTableCompressedChunk(dst []byte, cfg SearchConfig, reductions u
 // block size, otherwise split into max-sized blocks. bitmapLen is always a
 // power of two ≥ 32, so the result divides exactly.
 func pickHuff0BlockSize(bitmapLen int) (log2bs uint8, nBlocks int) {
-	log2bs = uint8(log2Pow2(bitmapLen))
-	if log2bs > huff0BlockSizeLog2Max {
-		log2bs = huff0BlockSizeLog2Max
-	}
+	log2bs = min(uint8(log2Pow2(bitmapLen)), huff0BlockSizeLog2Max)
 	if log2bs < huff0BlockSizeLog2Min {
 		panic(fmt.Sprintf("minlz: bitmap of %d bytes is below the 32-byte minimum", bitmapLen))
 	}

@@ -18,10 +18,10 @@ func makeBitmap(size int, popFrac float64, seed int64) []byte {
 	b := make([]byte, size)
 	totalBits := size * 8
 	target := int(float64(totalBits) * popFrac)
-	for i := 0; i < target; i++ {
+	for range target {
 		// Try to set a random unset bit. Retry on collisions; bounded retries
 		// keeps this test-only helper cheap even when popFrac is large.
-		for tries := 0; tries < 4; tries++ {
+		for range 4 {
 			bit := rng.Intn(totalBits)
 			byteIdx := bit >> 3
 			mask := byte(1 << uint(bit&7))
@@ -236,7 +236,7 @@ func TestCompressedGlobalSingleUserWasted(t *testing.T) {
 	bitmap := make([]byte, sz)
 	rng := rand.New(rand.NewSource(11))
 	// Block 0: skewed random data — Compress4X will succeed.
-	for i := 0; i < 32<<10; i++ {
+	for i := range 32 << 10 {
 		bitmap[i] = byte(rng.Intn(16))
 	}
 	// Block 1: all zeros → forced to RLE.
@@ -288,7 +288,7 @@ func TestCompressedGlobalShared(t *testing.T) {
 			template[i] = byte(40 + rng.Intn(8))
 		}
 	}
-	for blk := 0; blk < 4; blk++ {
+	for blk := range 4 {
 		copy(bitmap[blk*32<<10:], template)
 	}
 
@@ -337,9 +337,9 @@ func TestCompressedConcurrentDecode(t *testing.T) {
 	const workers = 8
 	const iters = 32
 	errCh := make(chan error, workers)
-	for w := 0; w < workers; w++ {
+	for range workers {
 		go func() {
-			for i := 0; i < iters; i++ {
+			for range iters {
 				dec := newCSTDecoder()
 				_, _, got, err := parseSearchTableCompressed(payload, dec, false)
 				if err != nil {
@@ -354,7 +354,7 @@ func TestCompressedConcurrentDecode(t *testing.T) {
 			errCh <- nil
 		}()
 	}
-	for w := 0; w < workers; w++ {
+	for range workers {
 		if err := <-errCh; err != nil {
 			t.Fatalf("worker: %v", err)
 		}
@@ -917,7 +917,7 @@ func BenchmarkCompressedSearchEncodeByPath(b *testing.B) {
 		// Skewed per-block (matchable by own table only): each block has its
 		// own set of frequent symbols.
 		bm := make([]byte, sz)
-		for i := 0; i < 32<<10; i++ {
+		for i := range 32 << 10 {
 			bm[i] = byte(rng.Intn(4)) // block 0: symbols 0..3
 		}
 		for i := 32 << 10; i < sz; i++ {

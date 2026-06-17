@@ -17,6 +17,7 @@ package reference
 import (
 	"bytes"
 	"encoding/binary"
+	"slices"
 	"testing"
 )
 
@@ -126,13 +127,7 @@ func TestRoundTripBytePrefix(t *testing.T) {
 	// Each needle has a prefix byte followed by content — that suffix must hash present.
 	for _, n := range needles {
 		for i := 1; i+int(cfg.MatchLen) <= len(n); i++ {
-			isPfx := false
-			for _, p := range cfg.PrefixBytes {
-				if n[i-1] == p {
-					isPfx = true
-					break
-				}
-			}
+			isPfx := slices.Contains(cfg.PrefixBytes, n[i-1])
 			if !isPfx {
 				continue
 			}

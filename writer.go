@@ -78,7 +78,7 @@ func NewWriter(w io.Writer, opts ...WriterOption) *Writer {
 		ibufCap += w2.searchCfg.overlapBytes()
 	}
 	w2.ibuf = make([]byte, 0, ibufCap)
-	w2.buffers.New = func() interface{} {
+	w2.buffers.New = func() any {
 		return make([]byte, w2.obufLen)
 	}
 	w2.Reset(w)

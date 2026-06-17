@@ -15,8 +15,8 @@ type HttpClient interface {
 }
 
 type Logger interface {
-	Infof(format string, args ...interface{})
-	Debugf(format string, args ...interface{})
+	Infof(format string, args ...any)
+	Debugf(format string, args ...any)
 }
 
 // SeekingHTTP uses a series of HTTP GETs with Range headers
@@ -120,10 +120,7 @@ func (s *SeekingHTTP) ReadAt(buf []byte, off int64) (n int, err error) {
 	}
 
 	// Minimum fetch size is 1 meg
-	wanted := 1024 * 1024
-	if wanted < len(buf) {
-		wanted = len(buf)
-	}
+	wanted := max(1024*1024, len(buf))
 
 	rng := fmtRange(off, int64(wanted))
 	req.Header.Add("Range", rng)
