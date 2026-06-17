@@ -32,7 +32,7 @@ func loadTomSawyer(t testing.TB) []byte {
 func tomSawyerCorpus(t testing.TB, copies int) []byte {
 	base := loadTomSawyer(t)
 	out := make([]byte, 0, copies*len(base))
-	for k := 0; k < copies; k++ {
+	for k := range copies {
 		off := (k * 257) % len(base)
 		out = append(out, base[off:]...)
 		out = append(out, base[:off]...)
@@ -405,7 +405,7 @@ func TestPatternCanMatch(t *testing.T) {
 
 		// Every 4+ byte substring in data should match.
 		rng2 := rand.New(rand.NewSource(123))
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			pos := rng2.Intn(len(data) - 8)
 			pattern := data[pos : pos+4+rng2.Intn(5)]
 			canUse, match := patternCanMatch(&cfg, table, reductions, pattern)
@@ -1137,12 +1137,12 @@ func TestPrefixInternalNoFalseNegative(t *testing.T) {
 	rng := rand.New(rand.NewSource(99))
 	blockSize := minBlockSize
 
-	for iter := 0; iter < 20; iter++ {
+	for iter := range 20 {
 		data := make([]byte, blockSize*4)
 		rng.Read(data)
 
 		// Insert structured data with prefix bytes in various blocks.
-		for b := 0; b < 4; b++ {
+		for b := range 4 {
 			line := fmt.Sprintf(`{"key%d":"value%d","num":%d}`, b, rng.Intn(1000), rng.Intn(99999))
 			copy(data[blockSize*b+200:], line)
 		}
@@ -1361,7 +1361,7 @@ func FuzzSearchNoFalseNegatives(f *testing.F) {
 			}
 			mask := uint32((1 << (cfg.baseTableSize - reductions)) - 1)
 			// Every position in data must have its bit set.
-			for i := 0; i < len(data); i++ {
+			for i := range data {
 				if i+int(cfg.matchLen) > len(combined) {
 					break
 				}
@@ -1959,7 +1959,7 @@ func TestSearchWriterReset(t *testing.T) {
 	cfg := NewSearchTableConfig().WithMatchLen(4)
 	w := NewWriter(nil, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(1))
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		var buf bytes.Buffer
 		w.Reset(&buf)
 		data := make([]byte, minBlockSize*2)
@@ -2000,7 +2000,7 @@ func TestSearchStopEarly(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	rng.Read(data)
 	// Place needle in every block.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		copy(data[blockSize*i+100:], needle)
 	}
 
@@ -2188,7 +2188,7 @@ func TestSearchBlockOffsets(t *testing.T) {
 // TestHashValueConsistency verifies HashValue matches inlined helpers for all matchLens.
 func TestHashValueConsistency(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		var buf [8]byte
 		rng.Read(buf[:])
 		v := readLE64Pad(buf[:])
@@ -3786,7 +3786,7 @@ func TestExtrasReferenceParity(t *testing.T) {
 	tableEq, refEq := table, refTable
 	for reductions < refReductions {
 		half := len(tableEq) / 2
-		for i := 0; i < half; i++ {
+		for i := range half {
 			tableEq[i] |= tableEq[half+i]
 		}
 		tableEq = tableEq[:half]
@@ -3794,7 +3794,7 @@ func TestExtrasReferenceParity(t *testing.T) {
 	}
 	for refReductions < reductions {
 		half := len(refEq) / 2
-		for i := 0; i < half; i++ {
+		for i := range half {
 			refEq[i] |= refEq[half+i]
 		}
 		refEq = refEq[:half]
@@ -3828,7 +3828,7 @@ func TestExtrasBoundaryOverlap(t *testing.T) {
 	copy(data[blockSize:], filler[:blockSize])
 
 	copy(data[P:], prefix)
-	for j := 0; j < ml+ex; j++ {
+	for j := range ml + ex {
 		data[P+len(prefix)+j] = byte('A' + j)
 	}
 
@@ -3850,7 +3850,7 @@ func TestExtrasBoundaryOverlap(t *testing.T) {
 	// either block.
 	needle := make([]byte, 0, len(prefix)+ml+ex)
 	needle = append(needle, prefix...)
-	for j := 0; j < ml+ex; j++ {
+	for j := range ml + ex {
 		needle = append(needle, byte('A'+j))
 	}
 	searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())

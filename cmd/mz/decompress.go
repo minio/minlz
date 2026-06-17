@@ -225,8 +225,8 @@ Options:`)
 	for _, filename := range files {
 		dstFilename := cleanFileName(filename)
 		block := *block
-		if strings.HasSuffix(dstFilename, minlzBlockExt) {
-			dstFilename = strings.TrimSuffix(dstFilename, minlzBlockExt)
+		if before, ok := strings.CutSuffix(dstFilename, minlzBlockExt); ok {
+			dstFilename = before
 			block = true
 		}
 

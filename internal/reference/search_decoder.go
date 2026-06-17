@@ -111,7 +111,7 @@ func ParseSearchTableCompressedChunk(payload []byte) (ParsedSearchTable, error) 
 	// Parse huff0 tables.
 	scratches := make([]*huff0.Scratch, tc)
 	rem := payload[off:]
-	for i := uint8(0); i < tc; i++ {
+	for i := range tc {
 		sc, after, herr := huff0.ReadTable(rem, nil)
 		if herr != nil {
 			return ParsedSearchTable{}, fmt.Errorf("minlz: huff0 ReadTable[%d]: %w", i, herr)
@@ -122,7 +122,7 @@ func ParseSearchTableCompressedChunk(payload []byte) (ParsedSearchTable, error) 
 
 	// Decode each sub-block.
 	bitmap := make([]byte, expectedSize)
-	for i := 0; i < nBlocks; i++ {
+	for i := range nBlocks {
 		if len(rem) < 1 {
 			return ParsedSearchTable{}, fmt.Errorf("minlz: 0x46 sub-block %d disposition truncated", i)
 		}

@@ -205,7 +205,7 @@ type fileReport struct {
 	InputSize        int64               `json:"inputSize"`
 	Format           string              `json:"format"`
 	Elapsed          string              `json:"elapsed"`
-	Stream           streamStats         `json:"stream,omitempty"`
+	Stream           streamStats         `json:"stream"`
 	OpTotals         [numOpTypes]opStats `json:"opTotals"`
 	Blocks           []blockStats        `json:"blocks,omitempty"`
 	TotalOps         uint64              `json:"totalOps"`
@@ -1083,7 +1083,7 @@ func buildJSONFile(rep *fileReport, opts statsOpts) jsonFile {
 		}
 	}
 
-	for i := 0; i < numOpTypes; i++ {
+	for i := range numOpTypes {
 		s := &rep.OpTotals[i]
 		if s.Count == 0 {
 			continue
@@ -1165,10 +1165,10 @@ func buildJSONFile(rep *fileReport, opts statsOpts) jsonFile {
 
 	if rep.OpTotals[opRepeat].Count > 0 {
 		var total uint64
-		for i := 0; i < numOpTypes; i++ {
+		for i := range numOpTypes {
 			total += rep.RepeatPrev[i]
 		}
-		for i := 0; i < numOpTypes; i++ {
+		for i := range numOpTypes {
 			c := rep.RepeatPrev[i]
 			if c == 0 {
 				continue
@@ -1197,7 +1197,7 @@ func buildJSONFile(rep *fileReport, opts statsOpts) jsonFile {
 				LegacyS2:        rep.Stream.LegacyBlocks,
 			},
 		}
-		for i := 0; i < 256; i++ {
+		for i := range 256 {
 			if rep.Stream.ChunkCount[i] == 0 {
 				continue
 			}
@@ -1235,7 +1235,7 @@ func buildJSONFile(rep *fileReport, opts statsOpts) jsonFile {
 			if b.UncompSize > 0 {
 				jb.RatioPct = float64(b.CompSize) * 100 / float64(b.UncompSize)
 			}
-			for i := 0; i < numOpTypes; i++ {
+			for i := range numOpTypes {
 				if b.Ops[i].Count == 0 {
 					continue
 				}
@@ -1322,7 +1322,7 @@ func renderText(w io.Writer, rep *fileReport, opts statsOpts) {
 	fmt.Fprintln(bw, "\n--- Per-op breakdown ---")
 	fmt.Fprintf(bw, "%-8s %10s %6s %12s %6s %12s %6s %8s %8s %12s\n",
 		"Type", "Count", "%Ops", "OutBytes", "%Out", "EncBytes", "%Enc", "AvgOut", "AvgEnc", "Saved")
-	for i := 0; i < numOpTypes; i++ {
+	for i := range numOpTypes {
 		s := &rep.OpTotals[i]
 		if s.Count == 0 {
 			continue
@@ -1375,7 +1375,7 @@ func renderText(w io.Writer, rep *fileReport, opts statsOpts) {
 		fmt.Fprintf(bw, " %8d", n)
 	}
 	fmt.Fprintln(bw)
-	for i := 0; i < numOpTypes; i++ {
+	for i := range numOpTypes {
 		if i == opFusedLit {
 			continue // FusedLit has no header bytes
 		}
@@ -1394,10 +1394,10 @@ func renderText(w io.Writer, rep *fileReport, opts statsOpts) {
 	if rep.OpTotals[opRepeat].Count > 0 {
 		fmt.Fprintln(bw, "\n--- Repeat lineage (op preceding each repeat) ---")
 		total := uint64(0)
-		for i := 0; i < numOpTypes; i++ {
+		for i := range numOpTypes {
 			total += rep.RepeatPrev[i]
 		}
-		for i := 0; i < numOpTypes; i++ {
+		for i := range numOpTypes {
 			c := rep.RepeatPrev[i]
 			if c == 0 {
 				continue
@@ -1409,7 +1409,7 @@ func renderText(w io.Writer, rep *fileReport, opts statsOpts) {
 	if !opts.noHist {
 		// Length histograms
 		fmt.Fprintln(bw, "\n--- Length histograms (log2 buckets) ---")
-		for i := 0; i < numOpTypes; i++ {
+		for i := range numOpTypes {
 			s := &rep.OpTotals[i]
 			if s.Count == 0 {
 				continue
@@ -1420,7 +1420,7 @@ func renderText(w io.Writer, rep *fileReport, opts statsOpts) {
 
 		// Offset histograms
 		fmt.Fprintln(bw, "\n--- Offset histograms (log2 buckets) ---")
-		for i := 0; i < numOpTypes; i++ {
+		for i := range numOpTypes {
 			if i == opLiteral || i == opFusedLit {
 				continue
 			}
@@ -1484,7 +1484,7 @@ func renderStreamSummary(bw *bufio.Writer, ss *streamStats) {
 	fmt.Fprintln(bw, "\nChunk type breakdown:")
 	type ctRow struct{ id, count, bytes uint64 }
 	var rows []ctRow
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		if ss.ChunkCount[i] == 0 {
 			continue
 		}
@@ -1600,7 +1600,7 @@ func renderCSV(out io.Writer, reps []fileReport, opts statsOpts) error {
 		w.Write([]string{"# file", rep.Name, "format", rep.Format, "inputSize", strconv.FormatInt(rep.InputSize, 10)})
 		w.Write([]string{"# section", "per-op"})
 		w.Write([]string{"type", "count", "outBytes", "headerBytes", "fusedLitBytes", "fusedOps", "minLen", "maxLen", "sumLen", "minOff", "maxOff", "sumOff"})
-		for i := 0; i < numOpTypes; i++ {
+		for i := range numOpTypes {
 			s := &rep.OpTotals[i]
 			w.Write([]string{
 				opNames[i],
@@ -1620,11 +1620,11 @@ func renderCSV(out io.Writer, reps []fileReport, opts statsOpts) error {
 
 		w.Write([]string{"# section", "len-hist"})
 		hdr := []string{"type"}
-		for i := 0; i < numHistBuckets; i++ {
+		for i := range numHistBuckets {
 			hdr = append(hdr, bucketLabel(i))
 		}
 		w.Write(hdr)
-		for i := 0; i < numOpTypes; i++ {
+		for i := range numOpTypes {
 			s := &rep.OpTotals[i]
 			row := []string{opNames[i]}
 			for _, v := range s.LenHist {
@@ -1635,7 +1635,7 @@ func renderCSV(out io.Writer, reps []fileReport, opts statsOpts) error {
 
 		w.Write([]string{"# section", "off-hist"})
 		w.Write(hdr)
-		for i := 0; i < numOpTypes; i++ {
+		for i := range numOpTypes {
 			s := &rep.OpTotals[i]
 			row := []string{opNames[i]}
 			for _, v := range s.OffHist {
@@ -1647,7 +1647,7 @@ func renderCSV(out io.Writer, reps []fileReport, opts statsOpts) error {
 		w.Write([]string{"# section", "header-size-hist"})
 		hdrSz := []string{"type", "1", "2", "3", "4", "5", "6", "7"}
 		w.Write(hdrSz)
-		for i := 0; i < numOpTypes; i++ {
+		for i := range numOpTypes {
 			s := &rep.OpTotals[i]
 			row := []string{opNames[i]}
 			for n := 1; n <= 7; n++ {
@@ -1659,7 +1659,7 @@ func renderCSV(out io.Writer, reps []fileReport, opts statsOpts) error {
 		if rep.Format == "stream" {
 			w.Write([]string{"# section", "chunk-types"})
 			w.Write([]string{"id", "name", "count", "bytes"})
-			for i := 0; i < 256; i++ {
+			for i := range 256 {
 				if rep.Stream.ChunkCount[i] == 0 {
 					continue
 				}
@@ -1695,7 +1695,7 @@ func renderCSV(out io.Writer, reps []fileReport, opts statsOpts) error {
 					strconv.Itoa(b.UncompSize),
 					strconv.FormatUint(b.totalOps(), 10),
 				}
-				for i := 0; i < numOpTypes; i++ {
+				for i := range numOpTypes {
 					row = append(row, strconv.FormatUint(b.Ops[i].Count, 10))
 				}
 				w.Write(row)

@@ -158,13 +158,13 @@ func isHTTP(name string) bool {
 
 type shttpLogger struct{}
 
-func (s shttpLogger) Infof(format string, args ...interface{}) {
+func (s shttpLogger) Infof(format string, args ...any) {
 	if debugErrs {
 		log.Printf(format, args...)
 	}
 }
 
-func (s shttpLogger) Debugf(format string, args ...interface{}) {
+func (s shttpLogger) Debugf(format string, args ...any) {
 	if debugErrs {
 		log.Printf("DEBUG: "+format, args...)
 	}

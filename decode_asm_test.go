@@ -114,14 +114,8 @@ func testDecoderComparison(t *testing.T, data []byte) {
 						t.Errorf("content mismatch at byte %d: ASM=%02x, Go=%02x",
 							i, dstAsm[i], dstGo[i])
 
-						start := i - 20
-						if start < 0 {
-							start = 0
-						}
-						end := i + 20
-						if end > len(dstGo) {
-							end = len(dstGo)
-						}
+						start := max(i-20, 0)
+						end := min(i+20, len(dstGo))
 						t.Logf("Go output around mismatch [%d:%d]: %x", start, end, dstGo[start:end])
 						t.Logf("ASM output around mismatch [%d:%d]: %x", start, end, dstAsm[start:end])
 

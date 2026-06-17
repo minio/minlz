@@ -59,10 +59,7 @@ func encodeBlockBest(dst, src []byte, dict *dict) (d int) {
 	if len(src) < minNonLiteralBlockSize {
 		return 0
 	}
-	sLimitDict := len(src) - inputMargin
-	if sLimitDict > maxDictSrcOffset-inputMargin {
-		sLimitDict = maxDictSrcOffset - inputMargin
-	}
+	sLimitDict := min(len(src)-inputMargin, maxDictSrcOffset-inputMargin)
 
 	var lTable *[maxLTableSize]uint64
 	if t := encBestLPool.Get(); t != nil {
