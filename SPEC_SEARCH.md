@@ -669,6 +669,16 @@ a match straddling that boundary is still found via the decoded-block boundary
 check (B.2/B.3); it simply can't be skipped. The stream's final block has no
 successor (hence no forward straddle), so it keeps its table.
 
+That final-block table is built **without forward overlap**, so it omits prefix
+occurrences in the block's last `len(prefix) - 1 + matchLen + Extra Matches`
+bytes — their windows would lie past end-of-stream. For an ordinary pattern this
+is harmless: a complete match's first window lies inside the match, hence inside
+the block, so it is indexed. But a **prefix-only** query — a pattern too short to
+carry a `matchLen` window after the prefix (e.g. the pattern IS the prefix),
+answered purely by table emptiness (3.3.1) — cannot trust the final block's
+all-zero table. A searcher MUST scan the stream's final block rather than skip it
+on an empty table when answering such a query.
+
 **Deferral rule.** Because every tabled block carries full overlap, for a real
 match straddling N→N+1 every window absent from block N's table is present in
 block N+1's table. The searcher therefore defers **all** absent windows after the

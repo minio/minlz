@@ -447,6 +447,18 @@ func parseSearchTable(payload []byte, ignoreCRC bool) (cfg SearchTableConfig, re
 	return
 }
 
+// tableAllZero reports whether the bitmap has no bits set. For a prefix table
+// that means no prefix occurrence starts in the block (an empty table reduces
+// to the 32-byte minimum, so this scan is cheap).
+func tableAllZero(table []byte) bool {
+	for _, b := range table {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // readLE64Pad reads up to 8 bytes from b as a little-endian uint64, zero-padding if short.
 func readLE64Pad(b []byte) uint64 {
 	if len(b) >= 8 {

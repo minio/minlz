@@ -24,6 +24,16 @@ are hashed and checked against the table:
 - If **any** window hash is not set: the block **definitely** doesn't contain the pattern — skip it.
 - If **all** window hashes are set: the block **might** contain the pattern — decode and search.
 
+The settings used to generate the table are crucial for the search efficiency.
+Therefore, the more you know about what you expect to be searching for, the smaller 
+or better you will be able to make the table.
+
+Searching for longer or unique strings will produce fewer false positives, so search will
+have to decode fewer blocks – and therefore be able to skip them entirely.
+
+All examples will be given using strings. However, all input is treated as raw bytes.
+So searches can be performed on any type of data.
+
 #### Example
 
 Say you are indexing a block with hashes of 4 bytes. This means that a block witj `abcdefgh` will be
@@ -176,6 +186,15 @@ with a 256-bit bitmask. Both produce the same result.
 cfg := minlz.NewSearchTableConfig().WithBytePrefix('"', ':')
 ```
 
+#### Choosing good prefix bytes
+
+Pick bytes that immediately precede the values you'll search for:
+
+- **JSON data:** `"` and `:` — values always follow `":` or `:[`.
+- **CSV data:** `,` or `\t` — field separators.
+- **Key=value formats:** `=` precedes values.
+- **Log lines with fields:** space, tab, `=`, or `:`.
+
 #### Long prefix
 
 Long prefix only indexes positions preceded by an exact multi-byte sequence (1–256 bytes):
@@ -190,6 +209,22 @@ occurrence in the pattern.
 
 When no prefix bytes appear in the search pattern, the table cannot be used and the
 searcher falls back to full block decode.
+
+#### Long Exact Matches
+
+It is possible to use a long prefix to match an exact multibyte sequence.
+This will only be helpful if the phrase is unlikely to appear in the stream.
+
+Let's say you are looking for the rare phrase `_INTERNAL_EXCEPTION` in streams.
+This can be specified as the long prefix so the searcher can reject blocks 
+that do not have any entries at all.
+
+The only exception is the very last block on the stream, which will always need to be decoded.
+If you would like to avoid that, set the match length to 1 and truncate one byte, 
+so the prefix is `_INTERNAL_EXCEPTIO`.
+
+In most cases both approaches are equally effective. But there can be exceptions, for
+example, if the shorter prefix is very common within the stream.
 
 ##### Extras
 
@@ -225,14 +260,6 @@ When to avoid it:
 - Queries are short and would not fill `matchLen + E` bytes after the prefix; those
   occurrences become unusable and the searcher falls back.
 
-#### Choosing good prefix bytes
-
-Pick bytes that immediately precede the values you'll search for:
-
-- **JSON data:** `"` and `:` — values always follow `":` or `:[`.
-- **CSV data:** `,` or `\t` — field separators.
-- **Key=value formats:** `=` precedes values.
-- **Log lines with fields:** space, tab, `=`, or `:`.
 
 ### Compressed Search Tables
 
@@ -496,17 +523,17 @@ serialization automatically.
 
 Configuration methods:
 
-| Method                          | Description                                                    |
-|---------------------------------|----------------------------------------------------------------|
-| `NewSearchTableConfig()`        | Create config with defaults (matchLen=6, no prefix, compressed)|
-| `WithMatchLen(n)`               | Set match length 1–8                                           |
-| `WithBytePrefix(b...)`          | Set 1–8 prefix bytes (>8 auto-promotes to bitmask)             |
-| `WithMaskPrefix(mask)`          | Set a 256-bit prefix bitmask                                   |
-| `WithLongPrefix(p)`             | Set a multi-byte prefix (1–256 bytes)                          |
-| `WithMaxPopulation(pct)`        | Discard tables above this population % (default 70)            |
-| `WithMaxReducedPopulation(pct)` | Stop reducing above this population % (default 25, 10 w/prefix)|
-| `WithCompression(opts...)`      | Tune the per-block table compression (on by default)           |
-| `WithoutCompression()`          | Disable per-block table compression (emit 0x45 only)           |
+| Method                          | Description                                                     |
+|---------------------------------|-----------------------------------------------------------------|
+| `NewSearchTableConfig()`        | Create config with defaults (matchLen=6, no prefix, compressed) |
+| `WithMatchLen(n)`               | Set match length 1–8                                            |
+| `WithBytePrefix(b...)`          | Set 1–8 prefix bytes (>8 auto-promotes to bitmask)              |
+| `WithMaskPrefix(mask)`          | Set a 256-bit prefix bitmask                                    |
+| `WithLongPrefix(p)`             | Set a multi-byte prefix (1–256 bytes)                           |
+| `WithMaxPopulation(pct)`        | Discard tables above this population % (default 70)             |
+| `WithMaxReducedPopulation(pct)` | Stop reducing above this population % (default 25, 10 w/prefix) |
+| `WithCompression(opts...)`      | Tune the per-block table compression (on by default)            |
+| `WithoutCompression()`          | Disable per-block table compression (emit 0x45 only)            |
 
 Decompressing the stream will ignore the search tables.
 
