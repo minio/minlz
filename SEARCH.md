@@ -188,9 +188,9 @@ cfg := minlz.NewSearchTableConfig().WithBytePrefix('"', ':')
 
 #### Choosing good prefix bytes
 
-Pick bytes that immediately precede the values you'll search for:
+Pick bytes that immediately precede the values you'll search for. For example:
 
-- **JSON data:** `"` and `:` — values always follow `":` or `:[`.
+- **Dense JSON data:** `"` and `:` — values always follow `":` or `:[`.
 - **CSV data:** `,` or `\t` — field separators.
 - **Key=value formats:** `=` precedes values.
 - **Log lines with fields:** space, tab, `=`, or `:`.
