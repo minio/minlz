@@ -523,10 +523,18 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 				JB(ok)
 			})
 
-			table.SaveIdx(s, hash0)
+			// Read both candidates before storing either, matching
+			// encodeBlockGo/encodeFastBlockGo. Storing hash0 first creates a
+			// store->load dependency (and a hash0==hash1 collision corner case)
+			// for a sub-50-byte gain; reading both first is friendlier to OoO.
 			if !skipOne {
 				table.LoadIdx(hash1, candidate2)
-				table.SaveIdx(s, hash1)
+			}
+			table.SaveIdx(s, hash0)
+			if !skipOne {
+				sp1 := GP32()
+				LEAL(Mem{Base: s, Disp: 1}, sp1)
+				table.SaveIdx(sp1, hash1)
 			}
 		}
 
@@ -972,7 +980,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 		hasher := hashN(o, hashBytes, tableBits)
 		hash0, hash1 := GP64(), GP64()
 		MOVQ(cv, hash0) // src[s-2]
-		if hashBytes > 6 {
+		if hashBytes > 6 || match8 {
 			MOVQ(Mem{Base: src, Index: s, Disp: 0, Scale: 1}, cv)
 		} else {
 			SHRQ(U8(16), cv)
@@ -999,11 +1007,16 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 		INCL(s) // Note s = s + 1 for a while
 
 		if o.maxOffset > maxOffset {
-			// Check if offset exceeds max
+			// Check if offset exceeds max. minPos = base - maxOffset underflows
+			// negative for base < maxOffset (the first ~maxOffset bytes of every
+			// block), so this MUST be a signed compare (JG), matching the search
+			// loop's signed CMOVLLE. JA (unsigned) treated the negative minPos as a
+			// huge value and rejected every near-offset immediate match in the
+			// block's first ~2MB, emitting literals instead.
 			minPos := GP64()
 			LEAL(Mem{Base: base, Disp: -maxOffset}, minPos.As32())
 			CMPL(candidate.As32(), minPos.As32())
-			JA(LabelRef("match_nolit_len_ok" + name))
+			JG(LabelRef("match_nolit_len_ok" + name))
 			JMP(LabelRef("search_loop_" + name))
 			Label("match_nolit_len_ok" + name)
 		}
@@ -1067,7 +1080,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 			// s += length (length is destroyed, use it now)
 			ADDL(length.As32(), s)
 			if match8 {
-				ADDL(U8(8), length.As32()) // length += 4
+				ADDL(U8(8), length.As32()) // length += 8
 			} else {
 				ADDL(U8(4), length.As32()) // length += 4
 			}
@@ -1381,7 +1394,7 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 		// Check if offset exceeds max
 		var ccCounter int
 		var minPos reg.GPVirtual
-		if o.maxOffset > maxOffset {
+		if o.maxOffset > maxOffset && matchOffsetCMOV {
 			minPos = GP64()
 			LEAL(Mem{Base: s, Disp: -maxOffset + 2}, minPos.As32())
 		}
@@ -1550,12 +1563,44 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 				// Store new dst and nextEmit
 				MOVL(s, nextEmitL)
 			}
-			// if s >= sLimit is picked up on next loop.
-			if false {
-				CMPL(s.As32(), sLimitL)
-				JAE(LabelRef("emit_remainder_" + name))
+			// Index the interior of the repeat into both tables, like
+			// encodeBlockBetterGo. The match-emit path indexes copies; not
+			// doing it after repeats left the tables sparse and lost matches.
+			reloadTables("tmp", &sTab, &lTab)
+			{
+				lHasher := hashN(o, lHashBytes, lTableBits)
+				sHasher := hashN(o, sHashBytes, sTableBits)
+				index0, index1 := GP64(), GP64()
+				LEAQ(Mem{Base: base, Disp: 1}, index0) // index0 = base + 1
+				LEAQ(Mem{Base: s, Disp: -2}, index1)   // index1 = s - 2
+
+				Label("repeat_index_loop_" + name)
+				// for index0 < index1
+				CMPQ(index0, index1)
+				JAE(LabelRef("search_loop_" + name))
+
+				hash0l, hash0s, hash1l, hash1s := GP64(), GP64(), GP64(), GP64()
+				MOVQ(Mem{Base: src, Index: index0, Scale: 1, Disp: 0}, hash0l)
+				MOVQ(Mem{Base: src, Index: index0, Scale: 1, Disp: 1}, hash0s)
+				MOVQ(Mem{Base: src, Index: index1, Scale: 1, Disp: 0}, hash1l)
+				MOVQ(Mem{Base: src, Index: index1, Scale: 1, Disp: 1}, hash1s)
+				lHasher.hash(hash0l)
+				sHasher.hash(hash0s)
+				lHasher.hash(hash1l)
+				sHasher.hash(hash1s)
+
+				plusone0, plusone1 := GP64(), GP64()
+				LEAQ(Mem{Base: index0, Disp: 1}, plusone0)
+				LEAQ(Mem{Base: index1, Disp: 1}, plusone1)
+				lTab.SaveIdx(index0, hash0l)
+				sTab.SaveIdx(plusone0, hash0s)
+				lTab.SaveIdx(index1, hash1l)
+				sTab.SaveIdx(plusone1, hash1s)
+
+				ADDQ(U8(2), index0)
+				SUBQ(U8(2), index1)
+				JMP(LabelRef("repeat_index_loop_" + name))
 			}
-			JMP(LabelRef("search_loop_" + name))
 		}
 		PCALIGN(16)
 		Label("no_repeat_found_" + name)
@@ -1725,10 +1770,15 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 			{
 				// Bail if the match is equal or worse to the encoding.
 				if o.maxOffset > maxCopy2Offset {
-					CMPL(length.As32(), U8(1))
+					// Only bail a minimal 4-byte match at a far (copy3) offset
+					// that isn't the current repeat — mirrors encodeBlockBetterGo.
+					// Bailing 5-byte matches and repeats (as before) cost ratio.
+					CMPL(length.As32(), U8(0))
 					JA(LabelRef("match_length_ok_" + name))
 					CMPL(offset32, U32(maxCopy2Offset))
 					JBE(LabelRef("match_length_ok_" + name))
+					CMPL(offset32, repeatL)
+					JE(LabelRef("match_length_ok_" + name))
 					// Match is equal or worse to the encoding.
 					MOVL(nextSTempL, s)
 					INCL(s)
@@ -1894,7 +1944,10 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 		lHasher.hash(hash0l)
 		lHasher.hash(hash1l)
 		lTab.SaveIdx(index0, hash0l)
-		lTab.SaveIdx(index1, hash1l)
+		// hash1l hashes src[index2], so index it at index2, not the loop-invariant
+		// index1 (mirrors encodeBlockBetterGo). Indexing it at index1 filed half the
+		// match interior under a stale position, so those lookups never matched.
+		lTab.SaveIdx(index2, hash1l)
 
 		ADDQ(U8(2), index0)
 		ADDQ(U8(2), index2)
