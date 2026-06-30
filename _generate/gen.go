@@ -1563,11 +1563,24 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 				// Store new dst and nextEmit
 				MOVL(s, nextEmitL)
 			}
+			// Skip the repeat-interior indexing once s is past sLimit: the reads
+			// below (src[index1], src[index1+1] with index1=s-2) would otherwise
+			// run past the input for a repeat that reaches the block end. Mirrors
+			// encodeBlockBetterGo's `if s >= sLimit { goto emitRemainder }` and the
+			// match-emit path's sLimit guard before its post-match indexing.
+			CMPL(s.As32(), sLimitL)
+			JAE(LabelRef("emit_remainder_" + name))
 			// Index the interior of the repeat into both tables, like
 			// encodeBlockBetterGo. The match-emit path indexes copies; not
 			// doing it after repeats left the tables sparse and lost matches.
-			reloadTables("tmp", &sTab, &lTab)
+			// Reload the table base into LOCAL regTables: reloadTables mutates
+			// the regTable it's given, and the shared sTab/lTab are reused by the
+			// no_repeat / candidate paths emitted below (which are reached without
+			// passing through here), so mutating them would leave those paths with
+			// a register only loaded on the repeat path -> garbage table base.
 			{
+				lt, st := lTab, sTab
+				reloadTables("tmp", &st, &lt)
 				lHasher := hashN(o, lHashBytes, lTableBits)
 				sHasher := hashN(o, sHashBytes, sTableBits)
 				index0, index1 := GP64(), GP64()
@@ -1592,10 +1605,10 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 				plusone0, plusone1 := GP64(), GP64()
 				LEAQ(Mem{Base: index0, Disp: 1}, plusone0)
 				LEAQ(Mem{Base: index1, Disp: 1}, plusone1)
-				lTab.SaveIdx(index0, hash0l)
-				sTab.SaveIdx(plusone0, hash0s)
-				lTab.SaveIdx(index1, hash1l)
-				sTab.SaveIdx(plusone1, hash1s)
+				lt.SaveIdx(index0, hash0l)
+				st.SaveIdx(plusone0, hash0s)
+				lt.SaveIdx(index1, hash1l)
+				st.SaveIdx(plusone1, hash1s)
 
 				ADDQ(U8(2), index0)
 				SUBQ(U8(2), index1)
