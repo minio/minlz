@@ -85,6 +85,16 @@ type SidecarSearcher struct {
 	tailOff int64
 	bbuf    []byte
 
+	// tailRescue is set when the most recently processed block was skipped only
+	// because its (prefix) search table was all-zero. Sound for blocks with
+	// forward overlap, but a stream's final block is tabled without it (SPEC
+	// §B.4.3), so a prefix in its last bytes may be unindexed. If that block
+	// turns out to be the stream's last (end-of-stream reached with this set) it
+	// is fetched and scanned instead of skipped. Cleared as each block is processed.
+	tailRescue    bool
+	tailRescueRef remoteRef // location of the held-back block in the main stream
+	tailRescueOff int64     // stream offset where it starts
+
 	// Options.
 	bail         bool
 	ignoreCRC    bool
@@ -193,6 +203,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 	s.prevBlock = nil
 	s.prevLazy = nil
 	s.tailBuf = s.tailBuf[:0]
+	s.tailRescue = false
 	s.winInit = false
 	s.blockStart = 0
 	s.pending = s.pending[:0]
@@ -242,7 +253,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 		ct, cl, err := s.readChunkHeader()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return s.finalize(fn, flushBatch)
+				return s.finalize(pattern, fn, flushBatch)
 			}
 			return err
 		}
@@ -382,7 +393,8 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 				if s.collectStats {
 					s.stats.BlocksTotal++
 				}
-				skip, anyUsable := s.blockDecision(tables, pattern)
+				s.tailRescue = false
+				skip, anyUsable, emptySkip := s.blockDecision(tables, pattern)
 				if s.bail && !anyUsable {
 					return ErrSearchTablesUnusable
 				}
@@ -411,6 +423,11 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 					}
 					s.prevBlock = nil
 					s.tailBuf = s.tailBuf[:0]
+					// An all-zero table can't prove absence in a no-overlap final
+					// block; remember it so end-of-stream scans this block.
+					s.tailRescue = emptySkip
+					s.tailRescueRef = ref
+					s.tailRescueOff = s.blockStart
 					if s.deferred != nil {
 						if err := s.flushDeferred(nil, fn); err != nil {
 							return err
@@ -490,6 +507,10 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			if err := flushBatch(); err != nil {
 				return err
 			}
+			// Scan a tail block held back from skipping (final block of this stream).
+			if err := s.rescueTail(pattern, fn); err != nil {
+				return err
+			}
 			if s.deferred != nil {
 				if err := s.flushDeferred(nil, fn); err != nil {
 					return err
@@ -519,6 +540,11 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 				if err := flushBatch(); err != nil {
 					return err
 				}
+			}
+			// Scan a tail block held back from the prior stream (defensive: a
+			// well-formed stream ends with chunkTypeEOF, which already rescues).
+			if err := s.rescueTail(pattern, fn); err != nil {
+				return err
 			}
 			if cl != magicBodyLen {
 				return ErrSidecarInvalid
@@ -555,17 +581,54 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 }
 
 // finalize drains pending state at end-of-sidecar.
-func (s *SidecarSearcher) finalize(fn func(SearchResult) error, flush func() error) error {
+func (s *SidecarSearcher) finalize(pattern []byte, fn func(SearchResult) error, flush func() error) error {
 	if s.collectStats {
 		defer func() { s.stats.UncompressedSize = s.blockStart }()
 	}
 	if err := flush(); err != nil {
 		return err
 	}
+	if err := s.rescueTail(pattern, fn); err != nil {
+		return err
+	}
 	if s.deferred != nil {
 		if err := s.flushDeferred(nil, fn); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// rescueTail fetches and scans a block that was skipped only because its
+// (prefix) table was all-zero, once that block proves to be a stream's final
+// block (its table has no forward overlap, so an all-zero table cannot prove a
+// prefix-only pattern absent). No-op unless tailRescue is set; clears the flag.
+func (s *SidecarSearcher) rescueTail(pattern []byte, fn func(SearchResult) error) error {
+	if !s.tailRescue {
+		return nil
+	}
+	s.tailRescue = false
+	blk, err := readAndDecodeMainBlock(s.main, s.tailRescueRef.offset, s.tailRescueRef.uncompSize, s.maxBlock, s.ignoreCRC)
+	if err != nil {
+		return err
+	}
+	if s.collectStats {
+		// Re-classify the block: searched, not skipped.
+		s.stats.BlocksSkipped--
+		s.stats.BlocksSearched++
+		s.stats.UncompBytesSearched += int64(len(blk))
+	}
+	s.blockMatches = 0
+	// An all-zero table is skipped only when no boundary match from the previous
+	// block is possible, so the block is self-contained and needs no prev context.
+	s.prevBlock = nil
+	s.prevLazy = nil
+	s.tailBuf = s.tailBuf[:0]
+	if err := s.dispatchSidecarMatches(blk, s.tailRescueOff, pattern, fn); err != nil {
+		return err
+	}
+	if s.collectStats && s.blockMatches == 0 {
+		s.stats.BlocksFalsePositive++
 	}
 	return nil
 }
@@ -627,12 +690,12 @@ func (s *SidecarSearcher) resolveSideDeferred(nextTables []blockTableEntry, batc
 //     be decoded.
 //   - If no tables are usable (or none are present at all), the caller falls
 //     back to decode (or bails).
-func (s *SidecarSearcher) blockDecision(tables []blockTableEntry, pattern []byte) (skip, anyUsable bool) {
+func (s *SidecarSearcher) blockDecision(tables []blockTableEntry, pattern []byte) (skip, anyUsable, emptySkip bool) {
 	if len(tables) == 0 {
 		if s.collectStats {
 			s.stats.TablesMissing++
 		}
-		return false, false
+		return false, false, false
 	}
 	for i := range tables {
 		t := &tables[i]
@@ -647,7 +710,9 @@ func (s *SidecarSearcher) blockDecision(tables []blockTableEntry, pattern []byte
 		}
 		anyUsable = true
 		if !mightMatch {
-			return true, true
+			// emptySkip: an all-zero table can't prove absence in a no-overlap
+			// final block, so the caller must scan that block at end-of-stream.
+			return true, true, tableAllZero(t.table)
 		}
 	}
 	if !anyUsable {
@@ -655,7 +720,7 @@ func (s *SidecarSearcher) blockDecision(tables []blockTableEntry, pattern []byte
 			s.stats.TablesUnusable++
 		}
 	}
-	return false, anyUsable
+	return false, anyUsable, false
 }
 
 // decodeBatch issues one (or, in pathological cases, more) ReadAt(s) to fetch

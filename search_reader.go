@@ -343,6 +343,15 @@ type BlockSearcher struct {
 	deferred      *deferredMatch // pending ErrSearchForward re-dispatch
 	pending       *pendingBlock  // block deferred pending next table check
 	cstDec        *cstDecoder    // lazy decoder state for 0x46 chunks
+	// tailRescue is set when the most recently processed block was skipped only
+	// because its (prefix) search table was all-zero. That skip is sound for any
+	// block with forward overlap, but a stream's final block is tabled without
+	// overlap (SPEC §B.4.3), so a prefix occurrence in its last bytes can be
+	// unindexed. The block stays buffered in prevLazy; if it turns out to be the
+	// stream's last block (end-of-stream reached with this still set) it is
+	// decoded and scanned instead of skipped. Cleared when a later block is processed.
+	tailRescue    bool
+	tailRescueOff int64 // stream offset where the pending block starts
 	infoCallback  func(SearchTableConfig)
 	maxBlock      int
 	readHeader    bool
@@ -448,6 +457,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 	s.pending = nil
 	s.prevLazy = nil
 	s.tailBuf = s.tailBuf[:0]
+	s.tailRescue = false
 	s.winInit = false
 
 	if s.collectStats {
@@ -461,6 +471,9 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 					if err := s.resolvePending(pattern, fn); err != nil {
 						return err
 					}
+				}
+				if err := s.rescueTail(pattern, fn); err != nil {
+					return err
 				}
 				if s.deferred != nil {
 					if err := s.flushDeferred(nil, fn); err != nil {
@@ -498,9 +511,13 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if blockSize > maxBlockSize {
 				return ErrCorrupt
 			}
-			// A concatenated stream starts here. Flush any pending forward-context
-			// dispatch and drop per-stream boundary state so matches and offsets
-			// don't straddle into the new stream (which restarts at offset 0).
+			// A concatenated stream starts here. Scan any held-back tail block
+			// from the prior stream, flush any pending forward-context dispatch,
+			// and drop per-stream boundary state so matches and offsets don't
+			// straddle into the new stream (which restarts at offset 0).
+			if err := s.rescueTail(pattern, fn); err != nil {
+				return err
+			}
 			if s.deferred != nil {
 				if err := s.flushDeferred(nil, fn); err != nil {
 					return err
@@ -693,6 +710,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if s.collectStats {
 				s.stats.BlocksTotal++
 			}
+			s.tailRescue = false
 			tableNoMatch := false
 			deferrable := false
 			if s.blockTable != nil {
@@ -712,6 +730,10 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 							s.stats.BlocksSkipped++
 							s.stats.CompBytesSkipped += int64(chunkLen)
 						}
+						// An all-zero table can't prove absence in a no-overlap
+						// final block; remember it so EOF scans this block.
+						s.tailRescue = tableAllZero(savedTable)
+						s.tailRescueOff = s.blockStart
 						s.blockStart += int64(decompLen)
 						if s.deferred != nil {
 							if err := s.flushDeferred(nil, fn); err != nil {
@@ -851,9 +873,11 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if s.collectStats {
 				s.stats.BlocksTotal++
 			}
+			s.tailRescue = false
 			tableNoMatch := false
 			if s.blockTable != nil {
-				canUse, match := patternCanMatch(&s.blockInfo, s.blockTable, s.blockReductions, pattern)
+				savedTable := s.blockTable
+				canUse, match := patternCanMatch(&s.blockInfo, savedTable, s.blockReductions, pattern)
 				s.blockTable = nil
 				if canUse && !match {
 					if len(s.tailBuf) == 0 || !canBoundaryMatch(s.tailBuf, pattern) {
@@ -865,6 +889,10 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 							s.stats.BlocksSkipped++
 							s.stats.CompBytesSkipped += int64(chunkLen)
 						}
+						// An all-zero table can't prove absence in a no-overlap
+						// final block; remember it so EOF scans this block.
+						s.tailRescue = tableAllZero(savedTable)
+						s.tailRescueOff = s.blockStart
 						s.blockStart += int64(decompLen)
 						if s.deferred != nil {
 							if err := s.flushDeferred(nil, fn); err != nil {
@@ -960,6 +988,10 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				if !s.readFull(s.tmp[:chunkLen]) {
 					return s.err
 				}
+			}
+			// End of this stream — scan a tail block held back from skipping.
+			if err := s.rescueTail(pattern, fn); err != nil {
+				return err
 			}
 			s.readHeader = false
 			continue
@@ -1317,6 +1349,47 @@ func (s *BlockSearcher) resolvePending(pattern []byte, fn func(SearchResult) err
 	return nil
 }
 
+// rescueTail scans a block that was skipped only because its (prefix) search
+// table was all-zero, once that block proves to be a stream's final block. The
+// final block is tabled without forward overlap (SPEC §B.4.3), so an all-zero
+// table cannot prove a prefix-only pattern absent from it. The block stays
+// buffered in prevLazy; here it is decoded and searched. No-op unless tailRescue
+// is set. Safe to call at every end-of-stream point — it clears the flag.
+func (s *BlockSearcher) rescueTail(pattern []byte, fn func(SearchResult) error) error {
+	if !s.tailRescue {
+		return nil
+	}
+	s.tailRescue = false
+	lb := s.prevLazy
+	if lb == nil {
+		return nil
+	}
+	blk := lb.decode()
+	if blk == nil {
+		return ErrCorrupt
+	}
+	if s.collectStats {
+		// Re-classify the block: searched, not skipped.
+		s.stats.BlocksSkipped--
+		s.stats.CompBytesSkipped -= int64(len(lb.chunkData))
+		s.stats.BlocksSearched++
+		s.stats.UncompBytesSearched += int64(len(blk))
+	}
+	s.blockMatches = 0
+	// An all-zero table is skipped only when no boundary match from the previous
+	// block is possible, so the block is self-contained and needs no prev context.
+	s.prevBlock = nil
+	s.prevLazy = nil
+	s.tailBuf = s.tailBuf[:0]
+	if err := s.dispatchMatches(blk, s.tailRescueOff, pattern, fn); err != nil {
+		return err
+	}
+	if s.collectStats && s.blockMatches == 0 {
+		s.stats.BlocksFalsePositive++
+	}
+	return nil
+}
+
 // bufferSkippedBlock reads and buffers a compressed block's data for lazy PrevBlock().
 func (s *BlockSearcher) bufferSkippedBlock(chunkType byte, chunkLen int) (decompLen int, err error) {
 	s.ensureBuf(chunkLen)
@@ -1370,33 +1443,31 @@ func canBoundaryMatch(prev, pattern []byte) bool {
 // canUse return using ONLY the config + pattern — no bitmap needed. Callers
 // use this to decide whether to spend the cost of decoding the bitmap.
 func patternCanUseConfig(cfg *SearchTableConfig, pattern []byte) bool {
-	if len(pattern) < int(cfg.matchLen) {
-		return false
-	}
 	switch cfg.tableType {
 	case searchTableTypeNoPrefix:
-		return true
+		return len(pattern) >= int(cfg.matchLen)
 	case searchTableTypeBytePrefix:
+		if len(pattern) < int(cfg.matchLen) {
+			return false
+		}
 		var pfxMask [32]byte
 		for _, p := range cfg.prefixBytes {
 			pfxMask[p>>3] |= 1 << (p & 7)
 		}
 		return patternHasPrefixContext(&pfxMask, pattern, int(cfg.matchLen))
 	case searchTableTypeMaskPrefix:
-		return patternHasPrefixContext(&cfg.prefixMask, pattern, int(cfg.matchLen))
-	case searchTableTypeLongPrefix:
-		ml := int(cfg.matchLen)
-		ex := int(cfg.extras)
-		pl := len(cfg.longPrefix)
-		if pl == 0 || len(pattern) < pl+ml+ex {
+		if len(pattern) < int(cfg.matchLen) {
 			return false
 		}
-		for i := 0; i <= len(pattern)-pl-ml-ex; i++ {
-			if bytes.Equal(pattern[i:i+pl], cfg.longPrefix) {
-				return true
-			}
-		}
-		return false
+		return patternHasPrefixContext(&cfg.prefixMask, pattern, int(cfg.matchLen))
+	case searchTableTypeLongPrefix:
+		// Usable whenever the pattern contains the prefix. Occurrences with a
+		// full matchLen(+extras) window are answered precisely by patternCanMatch;
+		// a prefix-only pattern (the pattern is shorter than the window, e.g. it
+		// IS the prefix) is answered by table emptiness. Both need the bitmap
+		// decoded, so report usable in either case — even when the pattern is
+		// shorter than matchLen.
+		return len(cfg.longPrefix) > 0 && bytes.Contains(pattern, cfg.longPrefix)
 	}
 	return false
 }
@@ -1476,9 +1547,6 @@ func patternCanMatch(cfg *SearchTableConfig, table []byte, reductions uint8, pat
 		pl := len(cfg.longPrefix)
 		ml := int(cfg.matchLen)
 		ex := int(cfg.extras)
-		if len(pattern) < ml+ex {
-			return false, true
-		}
 		checked := 0
 		firstCheckedAllPresent := false
 		for i := 0; i <= len(pattern)-pl-ml-ex; i++ {
@@ -1507,10 +1575,21 @@ func patternCanMatch(cfg *SearchTableConfig, table []byte, reductions uint8, pat
 			}
 			checked++
 		}
-		if checked == 0 {
-			return false, true
+		if checked > 0 {
+			return true, true
 		}
-		return true, true
+		// No occurrence has a full matchLen(+extras) window inside the pattern —
+		// a prefix-only query (the pattern is too short, e.g. it IS the prefix).
+		// The table indexes every position where the prefix starts in the block,
+		// so an all-zero table proves the prefix — and any pattern containing it —
+		// is absent. A non-empty table can't be narrowed further here. (A stream's
+		// final block is tabled without forward overlap, so the caller must still
+		// scan it on EOF rather than trust an all-zero table; see the tail-rescue
+		// path in the searchers.)
+		if pl > 0 && bytes.Contains(pattern, cfg.longPrefix) {
+			return true, !tableAllZero(table)
+		}
+		return false, true
 	}
 
 	return false, true

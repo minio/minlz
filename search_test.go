@@ -2351,6 +2351,9 @@ func TestSearchWriteReadInterleaved(t *testing.T) {
 // FuzzSearchRoundtrip compresses with search tables and verifies decodability + search correctness.
 func FuzzSearchRoundtrip(f *testing.F) {
 	f.Add([]byte("hello world this is a test with NEEDLE inside"), []byte("NEEDLE"), 4, true)
+	// data[2] odd selects the prefix-only arm (long prefix == whole pattern);
+	// "co64" appears mid-data and at the very end (final-block tail rescue).
+	f.Add([]byte("xx\x01 a co64 box here and one final co64"), []byte("co64"), 6, true)
 	f.Fuzz(func(t *testing.T, data, pattern []byte, matchLen int, usePrefix bool) {
 		if len(data) < 32 || len(pattern) < 1 || len(pattern) > 100 {
 			return
@@ -2363,11 +2366,21 @@ func FuzzSearchRoundtrip(f *testing.F) {
 		// (multi-byte) prefix when the pattern is long enough, so the fuzzer
 		// exercises the long-prefix boundary-straddle path too.
 		useLong := false
+		prefixOnly := false
 		if usePrefix && len(pattern) > 0 {
-			if len(data) > 1 && data[1]&1 == 1 && len(pattern) >= 2+matchLen {
+			switch {
+			case len(data) > 2 && data[2]&1 == 1:
+				// Prefix-only: the long prefix IS the whole search pattern, so the
+				// pattern has no matchLen window after it. The searcher must rule
+				// out all-zero tables yet still find every occurrence — including
+				// one in the no-overlap final block (the EOF tail-rescue path).
+				cfg = cfg.WithLongPrefix(pattern)
+				useLong = true
+				prefixOnly = true
+			case len(data) > 1 && data[1]&1 == 1 && len(pattern) >= 2+matchLen:
 				cfg = cfg.WithLongPrefix(pattern[:2])
 				useLong = true
-			} else {
+			default:
 				cfg = cfg.WithBytePrefix(pattern[0])
 			}
 		}
@@ -2437,7 +2450,18 @@ func FuzzSearchRoundtrip(f *testing.F) {
 
 		// Collect all expected match offsets from the original data.
 		var expected []int64
-		if useLong {
+		if prefixOnly {
+			// pattern == long prefix: every occurrence of the pattern must be found.
+			off := 0
+			for {
+				idx := bytes.Index(data[off:], pattern)
+				if idx < 0 {
+					break
+				}
+				expected = append(expected, int64(off+idx))
+				off += idx + 1
+			}
+		} else if useLong {
 			// Long prefix: count occurrences preceded by the long prefix
 			// (conservative subset that must always be found).
 			lp := pattern[:2]
