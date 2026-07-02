@@ -4385,3 +4385,145 @@ func TestSearchFlushOmitsTable(t *testing.T) {
 		t.Errorf("expected the flushed block to carry no table (TablesMissing>0), got %d", st.TablesMissing)
 	}
 }
+
+// buildPrefixOnlyStreams encodes data with a long-prefix("co64") search table,
+// returning the inline stream and the (main, sidecar) pair.
+func buildPrefixOnlyStreams(t *testing.T, data []byte, blockSize int) (inline, main, side []byte) {
+	t.Helper()
+	cfg := NewSearchTableConfig().WithMatchLen(6).WithLongPrefix([]byte("co64"))
+
+	var ib bytes.Buffer
+	w := NewWriter(&ib, WriterBlockSize(blockSize), WriterConcurrency(1), WriterSearchTable(cfg))
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var mb, sb bytes.Buffer
+	w2 := NewWriter(&mb, WriterBlockSize(blockSize), WriterConcurrency(1),
+		WriterSearchTable(cfg), WriterSidecar(&sb))
+	if _, err := w2.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w2.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return ib.Bytes(), mb.Bytes(), sb.Bytes()
+}
+
+func bruteOffsets(data, pat []byte) []int64 {
+	var out []int64
+	for i := 0; ; {
+		j := bytes.Index(data[i:], pat)
+		if j < 0 {
+			break
+		}
+		out = append(out, int64(i+j))
+		i += j + 1
+	}
+	return out
+}
+
+// TestPrefixOnlySkip checks that a prefix-only query (the pattern IS the long
+// prefix, too short for a matchLen window) rules out blocks with an all-zero
+// table, while still finding:
+//   - a normal interior occurrence (table non-empty), and
+//   - an occurrence in the stream's final block tail, whose no-overlap table is
+//     all-zero (the EOF rescue path).
+func TestPrefixOnlySkip(t *testing.T) {
+	blockSize := minBlockSize // 4096
+	filler := bytes.Repeat([]byte("The quick brown fox jumps over the lazy dog. "), 200)
+	if bytes.Contains(filler, []byte("co64")) {
+		t.Fatal("filler unexpectedly contains co64")
+	}
+
+	var data []byte
+	data = append(data, filler[:blockSize+100]...)         // block 0 + into block 1
+	data = append(data, []byte("co64WINDOW_interior!")...) // interior occurrence with a window
+	data = append(data, filler...)                         // empty (no-co64) interior blocks
+	data = append(data, filler[:blockSize]...)
+	data = append(data, filler[:300]...)
+	data = append(data, []byte("co64")...) // FINAL-block tail: nothing follows -> empty table
+
+	want := bruteOffsets(data, []byte("co64"))
+	if len(want) < 2 {
+		t.Fatalf("setup: want >=2 co64 occurrences, got %d", len(want))
+	}
+	// Sanity: the last occurrence sits at the very end (the rescue case).
+	if want[len(want)-1] != int64(len(data)-4) {
+		t.Fatalf("setup: final co64 not at stream end (%d != %d)", want[len(want)-1], len(data)-4)
+	}
+
+	inline, main, side := buildPrefixOnlyStreams(t, data, blockSize)
+
+	collect := func(search func([]byte, func(SearchResult) error) error) []int64 {
+		seen := map[int64]bool{}
+		var got []int64
+		if err := search([]byte("co64"), func(r SearchResult) error {
+			if !seen[r.StreamOffset] {
+				seen[r.StreamOffset] = true
+				got = append(got, r.StreamOffset)
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	check := func(name string, got []int64) {
+		gm := map[int64]bool{}
+		for _, o := range got {
+			gm[o] = true
+		}
+		for _, o := range want {
+			if !gm[o] {
+				t.Errorf("%s: missing match at offset %d (got %v want %v)", name, o, got, want)
+			}
+		}
+		if len(got) != len(want) {
+			t.Errorf("%s: got %d matches, want %d (got=%v want=%v)", name, len(got), len(want), got, want)
+		}
+	}
+
+	t.Run("BlockSearcher", func(t *testing.T) {
+		check("inline", collect(NewBlockSearcher(bytes.NewReader(inline)).Search))
+	})
+	t.Run("SidecarSearcher", func(t *testing.T) {
+		check("sidecar", collect(NewSidecarSearcher(bytes.NewReader(main), bytes.NewReader(side)).Search))
+	})
+
+	// Interior empty-table blocks must be skipped and no table marked unusable;
+	// population stats must now be computed (bitmap decoded), not left at zero.
+	t.Run("Stats", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			st   func() SearchStats
+		}{
+			{"inline", func() SearchStats {
+				bs := NewBlockSearcher(bytes.NewReader(inline), BlockSearchCollectStats())
+				_ = collect(bs.Search)
+				return bs.Stats()
+			}},
+			{"sidecar", func() SearchStats {
+				ss := NewSidecarSearcher(bytes.NewReader(main), bytes.NewReader(side), BlockSearchCollectStats())
+				_ = collect(ss.Search)
+				return ss.Stats()
+			}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				st := tc.st()
+				if st.TablesUnusable != 0 {
+					t.Errorf("TablesUnusable=%d, want 0", st.TablesUnusable)
+				}
+				if st.BlocksSkipped == 0 {
+					t.Errorf("BlocksSkipped=0, want >0 (interior empty tables should be skipped)")
+				}
+				if st.TablesPresent > 0 && st.TablePopMax == 0 {
+					t.Errorf("TablePopMax=0 with %d tables present — bitmap was not decoded for stats", st.TablesPresent)
+				}
+			})
+		}
+	})
+}
