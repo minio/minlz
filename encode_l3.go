@@ -537,6 +537,12 @@ func encodeBlockBest(dst, src []byte, dict *dict) (d int) {
 			}
 			d += emitLiteral(dst[d:], src[nextEmit:base])
 			// same as `d := emitCopy(dst[d:], repeat, s-base)` but skips storing offset.
+			if best.length == 30 {
+				// Emitting these will cost 1 byte.
+				// Might as well try to find a match for the last byte.
+				best.length--
+				s--
+			}
 			d += emitRepeat(dst[d:], best.length)
 		} else {
 			lits := src[nextEmit:base]
@@ -553,6 +559,10 @@ func encodeBlockBest(dst, src []byte, dict *dict) (d int) {
 							// Prefer Copy2, since it decodes faster
 							d += encodeCopy2(dst[d:], offset, best.length)
 						} else {
+							if best.length == 19 {
+								best.length--
+								s--
+							}
 							d += emitCopy(dst[d:], offset, best.length)
 						}
 					} else {
@@ -567,6 +577,10 @@ func encodeBlockBest(dst, src []byte, dict *dict) (d int) {
 					}
 				} else {
 					// 3 byte offset
+					if best.length == 65 {
+						best.length--
+						s--
+					}
 					if len(lits) > maxCopy3Lits {
 						d += emitLiteral(dst[d:], lits)
 						d += emitCopy(dst[d:], offset, best.length)
@@ -575,10 +589,32 @@ func encodeBlockBest(dst, src []byte, dict *dict) (d int) {
 					}
 				}
 			} else {
-				if best.length > 18 && best.length <= 64 && offset >= 64 && offset <= maxCopy2Offset {
-					// Size is equal.
-					// Prefer Copy2, since it decodes faster
-					d += encodeCopy2(dst[d:], offset, best.length)
+				if best.length > 18 {
+					if offset <= maxCopy2Offset {
+						if best.length <= 64 && offset >= 64 {
+							// Size is equal.
+							// Prefer Copy2, since it decodes faster
+							d += encodeCopy2(dst[d:], offset, best.length)
+						} else {
+							if best.offset <= maxCopy1Offset {
+								if best.length == 19 {
+									best.length--
+									s--
+								}
+							} else if best.length == 65 {
+								best.length--
+								s--
+							}
+							d += emitCopy(dst[d:], offset, best.length)
+						}
+					} else {
+						// 3 byte offset
+						if best.length == 65 {
+							best.length--
+							s--
+						}
+						d += emitCopy(dst[d:], offset, best.length)
+					}
 				} else {
 					d += emitCopy(dst[d:], offset, best.length)
 				}
