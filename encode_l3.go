@@ -596,7 +596,7 @@ func encodeBlockBest(dst, src []byte, dict *dict) (d int) {
 							// Prefer Copy2, since it decodes faster
 							d += encodeCopy2(dst[d:], offset, best.length)
 						} else {
-							if best.offset <= maxCopy1Offset {
+							if offset <= maxCopy1Offset {
 								if best.length == 19 {
 									best.length--
 									s--
