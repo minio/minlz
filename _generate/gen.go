@@ -3732,7 +3732,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 
 	// preload the copy value.
 	// improvement seems quite minimal, but there.
-	const preloadCopyVal = true
+	preloadCopyVal := o.inputMargin > 4
 
 	// Whether this is a benefit remains undecided.
 	alwaysLits := o.inputMargin > 10
@@ -4003,6 +4003,9 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 		MOVQ(value.As64(), length.As64())
 		//  offset = int(uint32(src[s-2]) | uint32(src[s-1])<<8)
 
+		if preloadCopyVal {
+			SHRL(U8(8), copyIn.As32())
+		}
 		CMPL(value.As32(), U8(61))
 		JB(LabelRef(name + "_copy_2_0_extra")) // likely
 		JEQ(LabelRef(name + "_copy_2_1_extra"))
@@ -4054,8 +4057,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 			} else {
 				if preloadCopyVal {
 					MOVL(copyIn.As32(), length.As32())
-					SHRL(U8(8), copyIn)
-					SHRL(U8(24), length.As32())
+					SHRL(U8(16), length.As32())
 					MOVWQZX(copyIn.As16(), offset.As64())
 				} else {
 					MOVWQZX(Mem{Base: src, Disp: 1}, offset.As64())
@@ -4075,7 +4077,6 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 				MOVWQZX(Mem{Base: src, Disp: -2}, offset.As64())
 			} else {
 				if preloadCopyVal {
-					SHRL(U8(8), copyIn)
 					MOVWQZX(copyIn.As16(), offset.As64())
 				} else {
 					MOVWQZX(Mem{Base: src, Disp: 1}, offset.As64())
@@ -4133,7 +4134,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 				ANDL(U8(7), value.As32())
 			}
 			LEAL(Mem{Base: value, Disp: 4}, length.As32())
-			if preloadCopyVal && o.inputMargin > 4 {
+			if preloadCopyVal {
 				SHRL(U8(8), copyIn.As32())
 				MOVWQZX(copyIn.As16(), offset.As64())
 			} else {
@@ -4396,7 +4397,9 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 				}
 
 			} else {
-				// Choose optimized one for offset 1,2,3 and have one for 4+
+				// Choose optimized one for offset 1,2,3 and have one for 4+ and 16+
+				CMPL(offset.As32(), U8(16))
+				JAE(LabelRef(name + "_copy_overlap_16"))
 				CMPL(offset.As32(), U8(3))
 				JA(LabelRef(name + "_copy_overlap_4"))
 				JE(LabelRef(name + "_copy_overlap_3"))
@@ -4482,6 +4485,26 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 					MOVL(tmp.As32(), Mem{Base: dst, Index: length, Scale: 1})
 					// Fix up dst
 					LEAQ(Mem{Base: dst, Index: length, Disp: 4, Scale: 1}, dst)
+					loopFinished()
+				}
+				// 16 or more...
+				{
+					Label(name + "_copy_overlap_16")
+					ADDQ(length, dstPos)
+					SUBQ(U8(16), length) // Length is length - 16
+					Label(name + "_loop_overlap_16")
+					tmp := XMM()
+					MOVOU(Mem{Base: copySrc}, tmp)
+					ADDQ(U8(16), copySrc)
+					MOVOU(tmp, Mem{Base: dst})
+					ADDQ(U8(16), dst)
+					SUBQ(U8(16), length)
+					JA(LabelRef(name + "_loop_overlap_16"))
+					// Fix up final 16 bytes...
+					MOVOU(Mem{Base: copySrc, Index: length, Scale: 1}, tmp)
+					MOVOU(tmp, Mem{Base: dst, Index: length, Scale: 1})
+					// Fix up dst
+					LEAQ(Mem{Base: dst, Index: length, Disp: 16, Scale: 1}, dst)
 					loopFinished()
 				}
 

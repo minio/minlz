@@ -27273,6 +27273,7 @@ decodeBlockAsm_fast_copy_1:
 
 decodeBlockAsm_fast_copy_2:
 	MOVQ    R11, R12
+	SHRL    $0x08, R13
 	CMPL    R11, $0x3d
 	JB      decodeBlockAsm_fast_copy_2_0_extra
 	JEQ     decodeBlockAsm_fast_copy_2_1_extra
@@ -27296,8 +27297,7 @@ decodeBlockAsm_fast_copy_2_2_extra:
 
 decodeBlockAsm_fast_copy_2_1_extra:
 	MOVL    R13, R12
-	SHRL    $0x08, R13
-	SHRL    $0x18, R12
+	SHRL    $0x10, R12
 	MOVWQZX R13, R9
 	ADDQ    $0x04, R8
 	LEAL    64(R12), R12
@@ -27305,7 +27305,6 @@ decodeBlockAsm_fast_copy_2_1_extra:
 	JMP     decodeBlockAsm_fast_copy_exec_long_long
 
 decodeBlockAsm_fast_copy_2_0_extra:
-	SHRL    $0x08, R13
 	MOVWQZX R13, R9
 	LEAQ    3(R8), R8
 	LEAL    4(R12), R12
@@ -27592,6 +27591,8 @@ decodeBlockAsm_fast_copy_done:
 	JMP  decodeBlockAsm_fast_end_copy
 
 decodeBlockAsm_fast_copy_overlap:
+	CMPL R9, $0x10
+	JAE  decodeBlockAsm_fast_copy_overlap_16
 	CMPL R9, $0x03
 	JA   decodeBlockAsm_fast_copy_overlap_4
 	JE   decodeBlockAsm_fast_copy_overlap_3
@@ -27671,6 +27672,26 @@ decodeBlockAsm_fast_loop_overlap_4:
 	SHRQ $0x02, R11
 	CMPQ R8, DX
 	JB   decodeBlockAsm_fast_loop_nofetch
+	JMP  decodeBlockAsm_fast_end_copy
+
+decodeBlockAsm_fast_copy_overlap_16:
+	ADDQ R12, DI
+	SUBQ $0x10, R12
+
+decodeBlockAsm_fast_loop_overlap_16:
+	MOVOU (R11), X0
+	ADDQ  $0x10, R11
+	MOVOU X0, (SI)
+	ADDQ  $0x10, SI
+	SUBQ  $0x10, R12
+	JA    decodeBlockAsm_fast_loop_overlap_16
+	MOVOU (R11)(R12*1), X0
+	MOVOU X0, (SI)(R12*1)
+	LEAQ  16(SI)(R12*1), SI
+	MOVQ  R10, R11
+	SHRQ  $0x02, R11
+	CMPQ  R8, DX
+	JB    decodeBlockAsm_fast_loop_nofetch
 
 decodeBlockAsm_fast_end_copy:
 decodeBlockAsm_fast_end_done:
