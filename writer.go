@@ -1167,7 +1167,7 @@ func skippableFrame(dst []byte, total int, r io.Reader) ([]byte, error) {
 		return dst, fmt.Errorf("minlz: requested skippable frame (%d) < 4", total)
 	}
 	if int64(total) >= maxBlockSize+skippableFrameHeader {
-		return dst, fmt.Errorf("minlz: requested skippable frame (%d) >= max 1<<24", total)
+		return dst, fmt.Errorf("minlz: requested skippable frame (%d) >= max %d", total, maxBlockSize+skippableFrameHeader)
 	}
 	// Chunk type 0xfe "Section 4.4 Padding (chunk type 0xfe)"
 	dst = append(dst, ChunkTypePadding)
@@ -1239,11 +1239,10 @@ func WriterUncompressed() WriterOption {
 // and will increase compression slightly, but it will limit the possible
 // concurrency for smaller payloads for both encoding and decoding.
 // Default block size is 2MB.
-//
 func WriterBlockSize(n int) WriterOption {
 	return func(w *Writer) error {
 		if n > maxBlockSize || n < minBlockSize {
-			return errors.New("minlz: block size out of bounds. Must be <= 4MB and >=4KB")
+			return fmt.Errorf("minlz: block size out of bounds. Must be <= %d and >= %d", maxBlockSize, minBlockSize)
 		}
 		w.blockSize = n
 		return nil
@@ -1266,7 +1265,7 @@ func WriterPadding(n int) WriterOption {
 			w.pad = 0
 		}
 		if n > maxBlockSize {
-			return fmt.Errorf("minlz: padding must less than 4MB")
+			return fmt.Errorf("minlz: padding must be <= %d", maxBlockSize)
 		}
 		w.pad = n
 		return nil
