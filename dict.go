@@ -19,12 +19,6 @@ import (
 )
 
 const (
-	// minDictSize is the minimum dictionary size when repeat has been read.
-	minDictSize = 16
-
-	// maxDictSize is the maximum dictionary size when repeat has been read.
-	maxDictSize = 65536
-
 	// maxDictSrcOffset is the maximum offset where a dictionary entry can start.
 	maxDictSrcOffset = 65535
 )

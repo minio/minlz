@@ -4527,3 +4527,118 @@ func TestPrefixOnlySkip(t *testing.T) {
 		}
 	})
 }
+
+// TestWriterSearchTableIncompressiblePrefix verifies that the inline writer
+// builds prefix search tables for INCOMPRESSIBLE blocks. A prefix table indexes
+// only positions after the prefix, so it stays sparse and useful even on random
+// data — unlike a no-prefix table, which would exceed maxPopPct and be dropped
+// (the negative control below confirms that). Covers all inline writer paths
+// (writeSync / write / writeFull) via cpu=1/4 and Write/EncodeBuffer/ReadFrom.
+func TestWriterSearchTableIncompressiblePrefix(t *testing.T) {
+	const bs = 1 << 16 // 64 KiB, power of two
+	prefix := []byte("KEY:")
+	needle := []byte("KEY:UNIQUEVALUE12345")  // prefix + >matchLen searchable bytes
+	absent := []byte("KEY:MISSINGVALUE99999") // same prefix, value not in the data
+
+	// Three incompressible (random) blocks; needle placed inside block 1.
+	data := make([]byte, bs*3)
+	rng := rand.New(rand.NewSource(1))
+	rng.Read(data)
+	copy(data[bs+123:], needle)
+
+	writeAll := func(w *Writer, method string) error {
+		switch method {
+		case "Write":
+			if _, err := w.Write(data); err != nil {
+				return err
+			}
+		case "EncodeBuffer":
+			if err := w.EncodeBuffer(data); err != nil {
+				return err
+			}
+		case "ReadFrom":
+			// *bytes.Reader is not a byter, so this exercises the writeFull path.
+			if _, err := w.ReadFrom(bytes.NewReader(data)); err != nil {
+				return err
+			}
+		}
+		return w.Close()
+	}
+
+	for _, cpu := range []int{1, 4} {
+		for _, method := range []string{"Write", "EncodeBuffer", "ReadFrom"} {
+			t.Run(fmt.Sprintf("cpu%d/%s", cpu, method), func(t *testing.T) {
+				cfg := NewSearchTableConfig().WithMatchLen(6).WithLongPrefix(prefix)
+				var buf bytes.Buffer
+				w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(bs), WriterConcurrency(cpu))
+				if err := writeAll(w, method); err != nil {
+					t.Fatal(err)
+				}
+
+				// The stream must still decode to the exact input.
+				dec, err := io.ReadAll(NewReader(bytes.NewReader(buf.Bytes())))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(dec, data) {
+					t.Fatal("decoded data mismatch")
+				}
+
+				// Every (incompressible) block must now carry a table.
+				s := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
+				found := false
+				if err := s.Search(needle, func(r SearchResult) error {
+					if bytes.Contains(r.Blocks[1], needle) {
+						found = true
+					}
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				if !found {
+					t.Fatal("needle not found")
+				}
+				if st := s.Stats(); st.TablesMissing != 0 {
+					t.Fatalf("TablesMissing=%d, want 0: incompressible blocks must be indexed when a prefix is set", st.TablesMissing)
+				}
+
+				// An absent value under the same prefix is proved absent by the
+				// sparse tables, so blocks are skipped without decoding.
+				s2 := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
+				if err := s2.Search(absent, func(r SearchResult) error { return nil }); err != nil {
+					t.Fatal(err)
+				}
+				if st := s2.Stats(); st.BlocksSkipped == 0 {
+					t.Fatalf("BlocksSkipped=0 for an absent query, want >0: prefix tables should skip incompressible blocks")
+				}
+			})
+		}
+	}
+
+	// Negative control: with NO prefix, incompressible blocks are (correctly)
+	// left unindexed — the no-prefix table would be dropped by the population
+	// limit. This both preserves the existing optimization and confirms the
+	// blocks above are genuinely incompressible.
+	t.Run("no-prefix-control", func(t *testing.T) {
+		cfg := NewSearchTableConfig().WithMatchLen(6)
+		var buf bytes.Buffer
+		w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(bs), WriterConcurrency(4))
+		if _, err := w.ReadFrom(bytes.NewReader(data)); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		s := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
+		if err := s.Search([]byte("MISSINGVALUE99999"), func(r SearchResult) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+		st := s.Stats()
+		if st.TablesMissing == 0 {
+			t.Fatalf("TablesMissing=0, want >0: incompressible blocks should have no no-prefix table")
+		}
+		if st.BlocksSkipped != 0 {
+			t.Fatalf("BlocksSkipped=%d, want 0: no-prefix tables must not exist for incompressible blocks", st.BlocksSkipped)
+		}
+	})
+}

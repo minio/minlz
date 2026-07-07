@@ -1164,7 +1164,7 @@ func skippableFrame(dst []byte, total int, r io.Reader) ([]byte, error) {
 		return dst, nil
 	}
 	if total < skippableFrameHeader {
-		return dst, fmt.Errorf("minlz: requested skippable frame (%d) < 4", total)
+		return dst, fmt.Errorf("minlz: requested skippable frame (%d) < %d", total, skippableFrameHeader)
 	}
 	if int64(total) >= maxBlockSize+skippableFrameHeader {
 		return dst, fmt.Errorf("minlz: requested skippable frame (%d) >= max %d", total, maxBlockSize+skippableFrameHeader)

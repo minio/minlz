@@ -69,7 +69,7 @@ func Decode(dst, src []byte) ([]byte, error) {
 	if dLen <= cap(dst) {
 		dst = dst[:dLen]
 	} else {
-		dst = make([]byte, dLen, dLen)
+		dst = make([]byte, dLen)
 	}
 	if minLZDecode(dst, block) != 0 {
 		return dst, ErrCorrupt

@@ -169,7 +169,7 @@ func (r *Reader) ensureBufferSize(n int) bool {
 		return true
 	}
 	// Realloc buffer.
-	r.buf = make([]byte, n, n)
+	r.buf = make([]byte, n)
 	return true
 }
 

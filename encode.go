@@ -116,7 +116,7 @@ func Encode(dst, src []byte, level int) ([]byte, error) {
 			}
 
 			block := dst[d : d+n]
-			dst := make([]byte, len(src), len(src))
+			dst := make([]byte, len(src))
 			ret := minLZDecode(dst, block)
 			if !bytes.Equal(dst, src) {
 				n := matchLen(dst, src)
