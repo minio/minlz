@@ -28,7 +28,7 @@ import (
 	"sync"
 )
 
-// NewWriter returns a new Writer that compresses as an MinLZ stream to w.
+// NewWriter returns a new Writer that compresses a MinLZ stream to w.
 //
 // Users must call Close to guarantee all data has been forwarded to
 // the underlying io.Writer and that resources are released.
@@ -1164,10 +1164,10 @@ func skippableFrame(dst []byte, total int, r io.Reader) ([]byte, error) {
 		return dst, nil
 	}
 	if total < skippableFrameHeader {
-		return dst, fmt.Errorf("s2: requested skippable frame (%d) < 4", total)
+		return dst, fmt.Errorf("minlz: requested skippable frame (%d) < 4", total)
 	}
 	if int64(total) >= maxBlockSize+skippableFrameHeader {
-		return dst, fmt.Errorf("s2: requested skippable frame (%d) >= max 1<<24", total)
+		return dst, fmt.Errorf("minlz: requested skippable frame (%d) >= max 1<<24", total)
 	}
 	// Chunk type 0xfe "Section 4.4 Padding (chunk type 0xfe)"
 	dst = append(dst, ChunkTypePadding)
@@ -1223,7 +1223,7 @@ func WriterLevel(n int) WriterOption {
 
 // WriterUncompressed will bypass compression.
 // The stream will be written as uncompressed blocks only.
-// If concurrency is > 1 CRC and output will still be done async.
+// If concurrency is > 1 CRC calculation and output will be done async.
 func WriterUncompressed() WriterOption {
 	return func(w *Writer) error {
 		w.level = 0
@@ -1233,15 +1233,13 @@ func WriterUncompressed() WriterOption {
 
 // WriterBlockSize allows to override the default block size.
 // Blocks will be this size or smaller.
-// Minimum size is 4KB and and maximum size is 4MB.
+// Minimum size is 4KB and the maximum size is 8MB.
 //
 // Bigger blocks may give bigger throughput on systems with many cores,
 // and will increase compression slightly, but it will limit the possible
 // concurrency for smaller payloads for both encoding and decoding.
-// Default block size is 1MB.
+// Default block size is 2MB.
 //
-// When writing Snappy compatible output using WriterSnappyCompat,
-// the maximum block size is 64KB.
 func WriterBlockSize(n int) WriterOption {
 	return func(w *Writer) error {
 		if n > maxBlockSize || n < minBlockSize {
@@ -1252,23 +1250,23 @@ func WriterBlockSize(n int) WriterOption {
 	}
 }
 
-// WriterPadding will add padding to all output so the size will be a multiple of n.
+// WriterPadding will add padding to all output, so the size will be a multiple of n.
 // This can be used to obfuscate the exact output size or make blocks of a certain size.
 // The contents will be a skippable frame, so it will be invisible by the decoder.
-// n must be > 0 and <= 4MB.
+// n must be > 0 and <= 8MB.
 // The padded area will be filled with data from crypto/rand.Reader.
 // The padding will be applied whenever Close is called on the writer.
 func WriterPadding(n int) WriterOption {
 	return func(w *Writer) error {
 		if n <= 0 {
-			return fmt.Errorf("s2: padding must be at least 1")
+			return fmt.Errorf("minlz: padding must be at least 1")
 		}
 		// No need to waste our time.
 		if n == 1 {
 			w.pad = 0
 		}
 		if n > maxBlockSize {
-			return fmt.Errorf("s2: padding must less than 4MB")
+			return fmt.Errorf("minlz: padding must less than 4MB")
 		}
 		w.pad = n
 		return nil
