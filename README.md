@@ -39,6 +39,13 @@ This package implements the MinLZ specification v1.0 in Go.
 For format specification see the included [SPEC.md](SPEC.md).
 
 # Changelog
+
+* [v1.2.0](https://github.com/minio/minlz/releases/tag/v1.2.0)
+  * Add [MinLZ Search](https://github.com/minio/minlz/blob/main/SEARCH.md).
+  * Add mz stats in https://github.com/minio/minlz/pull/39
+  * Align assembly encoders with Go in https://github.com/minio/minlz/pull/47
+  * l3: Do re-matching on borders in https://github.com/minio/minlz/pull/53
+ 
 * [v1.1.0](https://github.com/minio/minlz/releases/tag/v1.1.0)
   * Added SuperFast compression mode. See LevelSuperFast below.
   * Added ARM64 decompression assembly.
