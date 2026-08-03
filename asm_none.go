@@ -21,59 +21,12 @@ import (
 	"math/bits"
 )
 
-const hasAsm = false
+// The block encoders and hasAsm live in encode_generic.go: arm64 builds this
+// file for the helpers below but takes the encoders from assembly.
 
-// encodeBlock encodes a non-empty src to a guaranteed-large-enough dst. It
-// assumes that the varint-encoded length of the decompressed bytes has already
-// been written.
-//
-// It also assumes that:
-//
-//	len(dst) >= MaxEncodedLen(len(src))
-func encodeBlockFast(dst, src []byte) (d int) {
-	if len(src) < minNonLiteralBlockSize {
-		return 0
-	}
-	if len(src) <= 65536 {
-		// Only very maginally faster...
-		return encodeFastBlockGo64K(dst, src)
-	}
-	return encodeFastBlockGo(dst, src)
-}
-
-// encodeBlock encodes a non-empty src to a guaranteed-large-enough dst. It
-// assumes that the varint-encoded length of the decompressed bytes has already
-// been written.
-//
-// It also assumes that:
-//
-//	len(dst) >= MaxEncodedLen(len(src))
-func encodeBlock(dst, src []byte) (d int) {
-	if len(src) < minNonLiteralBlockSize {
-		return 0
-	}
-	if len(src) <= 65536 {
-		return encodeBlockGo64K(dst, src)
-	}
-	return encodeBlockGo(dst, src)
-}
-
-// encodeBlockBetter encodes a non-empty src to a guaranteed-large-enough dst. It
-// assumes that the varint-encoded length of the decompressed bytes has already
-// been written.
-//
-// It also assumes that:
-//
-//	len(dst) >= MaxEncodedLen(len(src))
-func encodeBlockBetter(dst, src []byte) (d int) {
-	if len(src) < minNonLiteralBlockSize {
-		return 0
-	}
-	if len(src) <= 64<<10 {
-		return encodeBlockBetterGo64K(dst, src)
-	}
-	return encodeBlockBetterGo(dst, src)
-}
+// hasLZ4ConvertAsm reports whether cvtLZ4BlockAsm below is the real assembly
+// routine. It is not: this file's copy panics. See lz4convert_asm.go.
+const hasLZ4ConvertAsm = false
 
 // emitLiteral writes a literal chunk and returns the number of bytes written.
 //
