@@ -3020,7 +3020,7 @@ func (o options) genMemMoveShort(name string, dst, src, length reg.GPVirtual, en
 			MOVQ(AX, Mem{Base: dst})
 			MOVQ(CX, Mem{Base: dst, Disp: -8, Index: length, Scale: 1})
 			JMP(end)
-		} else if o.scalarMove {
+		} else if o.scalarMove && !o.wideMove {
 			// Same 16 bytes, as two GPR moves. klauspost's note below says
 			// 2xGPR already matches 1xXMM here, so this costs nothing.
 			MOVQ(Mem{Base: src}, AX)
@@ -3039,12 +3039,13 @@ func (o options) genMemMoveShort(name string, dst, src, length reg.GPVirtual, en
 	}
 
 	if o.scalarMove {
-		// Same head-block/tail-block shape as the SSE forms, in 8-byte units.
-		// Only AX and CX are used: these are inlined into encode loops that
-		// have little of amd64's 16-register file left to spare, and the SSE
-		// originals cost no GPRs at all. Each pair is loaded then stored
-		// before the next is loaded, which is equivalent here because
-		// scalarMove callers never overlap src and dst.
+		// Same head-block/tail-block shape as the SSE forms. Each call moves
+		// 16 bytes: either as two GPR pairs, or -- under wideMove -- as one
+		// 128-bit move, which is what the SSE original did and costs no GPRs
+		// at all. That matters because these are inlined into encode loops
+		// with little of amd64's 16-register file to spare. Each unit is
+		// loaded then stored before the next is loaded, which is equivalent
+		// here because scalarMove callers never overlap src and dst.
 		pair := func(sdisp, ddisp int, useLen bool) {
 			s := func(d int) Mem {
 				if useLen {
@@ -3057,6 +3058,12 @@ func (o options) genMemMoveShort(name string, dst, src, length reg.GPVirtual, en
 					return Mem{Base: dst, Disp: d, Index: length, Scale: 1}
 				}
 				return Mem{Base: dst, Disp: d}
+			}
+			if o.wideMove {
+				X := XMM()
+				MOVOU(s(sdisp), X)
+				MOVOU(X, d(ddisp))
+				return
 			}
 			MOVQ(s(sdisp), AX)
 			MOVQ(s(sdisp+8), CX)
