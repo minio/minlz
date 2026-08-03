@@ -12,4 +12,4 @@ require (
 	golang.org/x/tools v0.36.0 // indirect
 )
 
-replace github.com/mmcloughlin/avo => /home/lizf/go/src/github.com/honeycombio/avo
+replace github.com/mmcloughlin/avo => github.com/honeycombio/avo v0.6.1-0.20260803051754-a8af1dad818d
