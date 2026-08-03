@@ -49,6 +49,12 @@ var genArm64 = flag.Bool("arm64gen", false, "generate only the arm64-lowerable s
 // two can be benchmarked against each other and against Go's own memmove.
 var genWideMove = flag.Bool("widemove", false, "with -arm64gen, move 16 bytes per step in the long copy loop")
 
+// genDecoderOnly emits just the decoder, under a name that does not collide
+// with the hand-written arm64 one. The two are the same algorithm reached two
+// ways -- lowered from the amd64 avo program, or written directly -- which is
+// the comparison worth having.
+var genDecoderOnly = flag.Bool("decoderonly", false, "with -arm64gen, emit only decodeBlockAsmLowered")
+
 func main() {
 	flag.Parse()
 	Constraint(buildtags.Not("appengine").ToConstraint())
@@ -65,6 +71,16 @@ func main() {
 		skipOutput:   false,
 		scalarMove:   *genArm64,
 		wideMove:     *genWideMove,
+	}
+
+	if *genDecoderOnly {
+		// Emitted into its own file so the encoders keep the memmove width
+		// they were measured with: the decoder needs the 16-byte form to fit
+		// in amd64's register file at all, which is not a reason to change
+		// what the encoders do.
+		o.genDecodeBlockAsm("decodeBlockAsmLowered")
+		Generate()
+		return
 	}
 
 	// 16 bit hash table has too big of a speed impact.
@@ -116,9 +132,6 @@ func main() {
 		o.genEmitCopyLits2()
 		o.genEmitCopyLits3()
 		o.genMatchLen()
-		// decodeBlockAsm needs BTL, and hands genMemMoveLong a source that
-		// overlaps the destination. arm64 already has a hand-written decoder
-		// in asm_arm64.s, so there is nothing to gain by lowering this one.
 		o.cvtLZ4BlockAsm()
 		o.genDecodeBlockAsm("decodeBlockAsm")
 	}
@@ -3181,18 +3194,23 @@ func (o options) genMemMoveLong(name string, dst, src, length reg.GPVirtual, end
 	return
 }
 
-// genMemMoveLongScalar is the scalarMove form of genMemMoveLong: a plain
-// forward copy loop plus a trailing block that overlaps whatever the loop
-// already wrote.
+// genMemMoveLongScalar is the scalarMove form of the long copies: a forward
+// loop plus a trailing block laid over whatever the loop already wrote.
 //
-// It differs from the SSE form in one way that matters. That one snapshots the
-// first and last 32 bytes into registers *before* the loop, so a source
-// overlapping the destination still reads pre-copy bytes; this one reads the
-// tail afterwards. The two agree only while src and dst do not overlap, which
-// is what the contract above requires and what every caller reachable in
-// scalarMove mode does -- the encoder copies literals from the input buffer to
-// the output buffer. The decoder's back-reference copies do overlap, which is
-// why genDecodeBlockAsm is not generated in this mode.
+// The SSE genMemMoveLong stages the first and last 32 bytes in XMM before its
+// loop so it can align the destination writes in between. Nothing about that
+// snapshot is load-bearing for correctness -- every caller that reaches it has
+// already established that the source cannot overlap the destination
+// (genEncodeBlockAsm copies literals between two buffers; genDecodeLoop only
+// branches to _copy_long once offset >= length, which puts the source region
+// entirely before the destination). Dropping the alignment attempt therefore
+// only forgoes an optimization, and one tuned for x86 write buffers at that.
+//
+// This is also correct for genMemMoveLong64's callers, which do overlap: they
+// guarantee offset >= 64, and the block moved per iteration is at most 32, so
+// each iteration's reads land entirely within bytes an earlier iteration
+// already finished writing. That is the same forward-copy argument the SSE
+// genMemMoveLong64 relies on -- it has no snapshot either.
 //
 // Flags are kept simple on purpose: the loop's branch reads a CMPQ that
 // immediately precedes it, rather than the SSE form's DECQ-preserves-CF trick.
@@ -3271,6 +3289,14 @@ func (o options) genMemMoveLong64(name string, dst, src, length reg.GPVirtual, e
 		CMPQ(length, U8(64))
 		JAE(ok)
 	})
+
+	if o.scalarMove {
+		// Unlike genMemMoveLong's callers, these do overlap. See the note on
+		// genMemMoveLongScalar for why a forward copy is still correct given
+		// the 64-byte minimum separation this function's contract requires.
+		o.genMemMoveLongScalar(name, dst, src, length, end)
+		return
+	}
 
 	// We do purely unaligned copied.
 	// Modern processors doesn't seems to care,

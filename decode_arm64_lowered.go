@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The hand-written decoder, which is the default. Build with
-// -tags minlz_lowered_decoder to select the one lowered from the amd64 avo
-// program instead; see decode_arm64_lowered.go.
+// The decoder lowered from the amd64 avo program, selected by
+// -tags minlz_lowered_decoder in place of the hand-written decode_arm64.go.
+// Both symbols are always linked in; only the dispatch here changes, so the
+// two can be compared without regenerating anything.
 
-//go:build arm64 && !appengine && !noasm && gc && !purego && !minlz_lowered_decoder
+//go:build arm64 && !appengine && !noasm && gc && !purego && minlz_lowered_decoder
 
 package minlz
 
@@ -36,5 +37,5 @@ func minLZDecode(dst, src []byte) int {
 
 	race.ReadSlice(src)
 	race.WriteSlice(dst)
-	return decodeBlockAsm(dst, src)
+	return decodeBlockAsmLowered(dst, src)
 }
