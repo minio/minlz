@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The hand-written decoder, which is the default. Build with
-// -tags minlz_lowered_decoder to select the one lowered from the amd64 avo
-// program instead; see decode_arm64_lowered.go.
+// decodeBlockAsm here is generated: it is lowered to arm64 from the same avo
+// program that produces the amd64 decoder, and it replaced a hand-written
+// arm64 decoder that it outperformed. See decodeblock_arm64.s.
 
-//go:build arm64 && !appengine && !noasm && gc && !purego && !minlz_lowered_decoder
+//go:build arm64 && !appengine && !noasm && gc && !purego
 
 package minlz
 

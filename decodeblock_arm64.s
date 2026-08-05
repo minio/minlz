@@ -3,9 +3,9 @@
 
 //go:build arm64 && (!appengine && !noasm && gc && !purego)
 
-// func decodeBlockAsmLowered(dst []byte, src []byte) int
+// func decodeBlockAsm(dst []byte, src []byte) int
 // Requires: CMOV, SSE2
-TEXT ·decodeBlockAsmLowered(SB), $0-56
+TEXT ·decodeBlockAsm(SB), $0-56
 	MOVD  dst_base+0(FP), R0
 	MOVD  dst_len+8(FP), R1
 	MOVD  src_base+24(FP), R2
@@ -19,37 +19,37 @@ TEXT ·decodeBlockAsmLowered(SB), $0-56
 	SUB   $20, R1, R2
 	SUB   $20, R0, R3
 	CMP   R2, R7
-	BHS   decodeBlockAsmLowered_fast_end_copy
+	BHS   decodeBlockAsm_fast_end_copy
 	MOVBU (R7), R9
 	MOVD  R9, R10
 	LSR   $0x02, R10, R10
 
-decodeBlockAsmLowered_fast_loop_nofetch:
+decodeBlockAsm_fast_loop_nofetch:
 	CMP  R3, R5
-	BHS  decodeBlockAsmLowered_fast_end_copy
+	BHS  decodeBlockAsm_fast_end_copy
 	ANDS $0x03, R9, R9
-	BNE  decodeBlockAsmLowered_fast_copy
+	BNE  decodeBlockAsm_fast_copy
 
-decodeBlockAsmLowered_fast_lits:
+decodeBlockAsm_fast_lits:
 	MOVWU R10, R11
 	LSRW  $0x01, R11, R11
 	CMPW  $0x3a, R10
-	BLO   decodeBlockAsmLowered_fast_lit_0
+	BLO   decodeBlockAsm_fast_lit_0
 	CMPW  $0x1e, R11
 	MOVBU 1(R7), R11
 	MOVHU 1(R7), R12
-	BHI   decodeBlockAsmLowered_fast_lit_3
+	BHI   decodeBlockAsm_fast_lit_3
 	MOVD  $0x00000002, R13
 	MOVD  $0x00000003, R9
 	CSEL  EQ, R9, R13, R13
 	CSELW EQ, R12, R11, R11
 	ADD   R13, R7, R7
-	JMP   decodeBlockAsmLowered_fast_litcopy_long
+	JMP   decodeBlockAsm_fast_litcopy_long
 
-decodeBlockAsmLowered_fast_lit_0:
+decodeBlockAsm_fast_lit_0:
 	ADD  $1, R7, R7
 	ADDW $1, R11, R11
-	TBNZ $0x00, R10, decodeBlockAsmLowered_fast_copy_exec_short
+	TBNZ $0x00, R10, decodeBlockAsm_fast_copy_exec_short
 	ADD  R11, R5, R9
 	CMP  R0, R9
 	BHI  corrupt
@@ -60,68 +60,48 @@ decodeBlockAsmLowered_fast_lit_0:
 	// genMemMoveShort
 	// margin: 19, min move: 1
 	CMP $0x10, R11
-	BLS decodeBlockAsmLowered_fast_lit_0_copy_memmove_move_8through16
+	BLS decodeBlockAsm_fast_lit_0_copy_memmove_move_8through16
 	CMP $0x20, R11
-	BLS decodeBlockAsmLowered_fast_lit_0_copy_memmove_move_17through32
-	JMP decodeBlockAsmLowered_fast_lit_0_copy_memmove_move_33through64
+	BLS decodeBlockAsm_fast_lit_0_copy_memmove_move_17through32
+	JMP decodeBlockAsm_fast_lit_0_copy_memmove_move_33through64
 
-decodeBlockAsmLowered_fast_lit_0_copy_memmove_move_8through16:
-	MOVD (R7), R9
-	MOVD 8(R7), R10
-	MOVD R9, (R5)
-	MOVD R10, 8(R5)
-	JMP  decodeBlockAsmLowered_fast_litcopy_done
+decodeBlockAsm_fast_lit_0_copy_memmove_move_8through16:
+	FMOVQ (R7), F0
+	FMOVQ F0, (R5)
+	JMP   decodeBlockAsm_fast_litcopy_done
 
-decodeBlockAsmLowered_fast_lit_0_copy_memmove_move_17through32:
-	MOVD (R7), R9
-	MOVD 8(R7), R10
-	MOVD R9, (R5)
-	MOVD R10, 8(R5)
-	ADD  R11, R7, R15
-	MOVD -16(R15), R9
-	ADD  R11, R7, R15
-	MOVD -8(R15), R10
-	ADD  R11, R5, R15
-	MOVD R9, -16(R15)
-	ADD  R11, R5, R15
-	MOVD R10, -8(R15)
-	JMP  decodeBlockAsmLowered_fast_litcopy_done
+decodeBlockAsm_fast_lit_0_copy_memmove_move_17through32:
+	FMOVQ (R7), F0
+	FMOVQ F0, (R5)
+	ADD   R11, R7, R15
+	FMOVQ -16(R15), F0
+	ADD   R11, R5, R15
+	FMOVQ F0, -16(R15)
+	JMP   decodeBlockAsm_fast_litcopy_done
 
-decodeBlockAsmLowered_fast_lit_0_copy_memmove_move_33through64:
-	MOVD (R7), R9
-	MOVD 8(R7), R10
-	MOVD R9, (R5)
-	MOVD R10, 8(R5)
-	MOVD 16(R7), R9
-	MOVD 24(R7), R10
-	MOVD R9, 16(R5)
-	MOVD R10, 24(R5)
-	ADD  R11, R7, R15
-	MOVD -32(R15), R9
-	ADD  R11, R7, R15
-	MOVD -24(R15), R10
-	ADD  R11, R5, R15
-	MOVD R9, -32(R15)
-	ADD  R11, R5, R15
-	MOVD R10, -24(R15)
-	ADD  R11, R7, R15
-	MOVD -16(R15), R9
-	ADD  R11, R7, R15
-	MOVD -8(R15), R10
-	ADD  R11, R5, R15
-	MOVD R9, -16(R15)
-	ADD  R11, R5, R15
-	MOVD R10, -8(R15)
-	JMP  decodeBlockAsmLowered_fast_litcopy_done
+decodeBlockAsm_fast_lit_0_copy_memmove_move_33through64:
+	FMOVQ (R7), F0
+	FMOVQ F0, (R5)
+	FMOVQ 16(R7), F0
+	FMOVQ F0, 16(R5)
+	ADD   R11, R7, R15
+	FMOVQ -32(R15), F0
+	ADD   R11, R5, R15
+	FMOVQ F0, -32(R15)
+	ADD   R11, R7, R15
+	FMOVQ -16(R15), F0
+	ADD   R11, R5, R15
+	FMOVQ F0, -16(R15)
+	JMP   decodeBlockAsm_fast_litcopy_done
 
-decodeBlockAsmLowered_fast_lit_3:
+decodeBlockAsm_fast_lit_3:
 	MOVWU (R7), R11
 	ADD   $0x04, R7, R7
 	LSRW  $0x08, R11, R11
 
-decodeBlockAsmLowered_fast_litcopy_long:
+decodeBlockAsm_fast_litcopy_long:
 	ADD  $30, R11, R11
-	TBNZ $0x00, R10, decodeBlockAsmLowered_fast_copy_exec
+	TBNZ $0x00, R10, decodeBlockAsm_fast_copy_exec
 	ADD  R11, R5, R9
 	CMP  R0, R9
 	BHI  corrupt
@@ -129,14 +109,14 @@ decodeBlockAsmLowered_fast_litcopy_long:
 	CMP  R1, R9
 	BHI  corrupt
 	CMPW $0x40, R11
-	BLS  decodeBlockAsmLowered_fast_litcopy_short_reduced
+	BLS  decodeBlockAsm_fast_litcopy_short_reduced
 
 	// genMemMoveLong
 	MOVD R7, R9
 	MOVD R5, R10
 	MOVD R11, R12
 
-decodeBlockAsmLowered_fast_litcopy_longlarge_big_loop_back:
+decodeBlockAsm_fast_litcopy_longlarge_big_loop_back:
 	FMOVQ (R9), F0
 	FMOVQ 16(R9), F1
 	FMOVQ F0, (R10)
@@ -145,7 +125,7 @@ decodeBlockAsmLowered_fast_litcopy_longlarge_big_loop_back:
 	ADD   $0x20, R10, R10
 	SUB   $0x20, R12, R12
 	CMP   $0x20, R12
-	BHS   decodeBlockAsmLowered_fast_litcopy_longlarge_big_loop_back
+	BHS   decodeBlockAsm_fast_litcopy_longlarge_big_loop_back
 	ADD   R11, R7, R15
 	FMOVQ -32(R15), F0
 	ADD   R11, R7, R15
@@ -154,78 +134,60 @@ decodeBlockAsmLowered_fast_litcopy_longlarge_big_loop_back:
 	FMOVQ F0, -32(R15)
 	ADD   R11, R5, R15
 	FMOVQ F1, -16(R15)
-	JMP   decodeBlockAsmLowered_fast_litcopy_done
+	JMP   decodeBlockAsm_fast_litcopy_done
 
-decodeBlockAsmLowered_fast_litcopy_short_reduced:
+decodeBlockAsm_fast_litcopy_short_reduced:
 	// genMemMoveShort
 	// margin: 16, min move: 30
 	CMP $0x20, R11
-	BLS decodeBlockAsmLowered_fast_lit_longer_copy_memmove_move_17through32
-	JMP decodeBlockAsmLowered_fast_lit_longer_copy_memmove_move_33through64
+	BLS decodeBlockAsm_fast_lit_longer_copy_memmove_move_17through32
+	JMP decodeBlockAsm_fast_lit_longer_copy_memmove_move_33through64
 
-decodeBlockAsmLowered_fast_lit_longer_copy_memmove_move_17through32:
-	MOVD (R7), R9
-	MOVD 8(R7), R10
-	MOVD R9, (R5)
-	MOVD R10, 8(R5)
-	ADD  R11, R7, R15
-	MOVD -16(R15), R9
-	ADD  R11, R7, R15
-	MOVD -8(R15), R10
-	ADD  R11, R5, R15
-	MOVD R9, -16(R15)
-	ADD  R11, R5, R15
-	MOVD R10, -8(R15)
-	JMP  decodeBlockAsmLowered_fast_litcopy_done
+decodeBlockAsm_fast_lit_longer_copy_memmove_move_17through32:
+	FMOVQ (R7), F0
+	FMOVQ F0, (R5)
+	ADD   R11, R7, R15
+	FMOVQ -16(R15), F0
+	ADD   R11, R5, R15
+	FMOVQ F0, -16(R15)
+	JMP   decodeBlockAsm_fast_litcopy_done
 
-decodeBlockAsmLowered_fast_lit_longer_copy_memmove_move_33through64:
-	MOVD (R7), R9
-	MOVD 8(R7), R10
-	MOVD R9, (R5)
-	MOVD R10, 8(R5)
-	MOVD 16(R7), R9
-	MOVD 24(R7), R10
-	MOVD R9, 16(R5)
-	MOVD R10, 24(R5)
-	ADD  R11, R7, R15
-	MOVD -32(R15), R9
-	ADD  R11, R7, R15
-	MOVD -24(R15), R10
-	ADD  R11, R5, R15
-	MOVD R9, -32(R15)
-	ADD  R11, R5, R15
-	MOVD R10, -24(R15)
-	ADD  R11, R7, R15
-	MOVD -16(R15), R9
-	ADD  R11, R7, R15
-	MOVD -8(R15), R10
-	ADD  R11, R5, R15
-	MOVD R9, -16(R15)
-	ADD  R11, R5, R15
-	MOVD R10, -8(R15)
+decodeBlockAsm_fast_lit_longer_copy_memmove_move_33through64:
+	FMOVQ (R7), F0
+	FMOVQ F0, (R5)
+	FMOVQ 16(R7), F0
+	FMOVQ F0, 16(R5)
+	ADD   R11, R7, R15
+	FMOVQ -32(R15), F0
+	ADD   R11, R5, R15
+	FMOVQ F0, -32(R15)
+	ADD   R11, R7, R15
+	FMOVQ -16(R15), F0
+	ADD   R11, R5, R15
+	FMOVQ F0, -16(R15)
 
-decodeBlockAsmLowered_fast_litcopy_done:
+decodeBlockAsm_fast_litcopy_done:
 	ADD   R11, R7, R7
 	ADD   R11, R5, R5
 	ADD   R11, R6, R6
 	CMP   R2, R7
-	BHS   decodeBlockAsmLowered_fast_end_done
+	BHS   decodeBlockAsm_fast_end_done
 	MOVBU (R7), R9
 	MOVD  R9, R10
 	LSR   $0x02, R10, R10
 	CMP   R3, R5
-	BHS   decodeBlockAsmLowered_fast_end_done
+	BHS   decodeBlockAsm_fast_end_done
 	ANDS  $0x03, R9, R9
-	BEQ   decodeBlockAsmLowered_fast_lits
+	BEQ   decodeBlockAsm_fast_lits
 
-decodeBlockAsmLowered_fast_copy:
+decodeBlockAsm_fast_copy:
 	MOVWU (R7), R12
 	CMPW  $0x02, R9
-	BLO   decodeBlockAsmLowered_fast_copy_1
-	BEQ   decodeBlockAsmLowered_fast_copy_2
-	JMP   decodeBlockAsmLowered_fast_copy_3
+	BLO   decodeBlockAsm_fast_copy_1
+	BEQ   decodeBlockAsm_fast_copy_2
+	JMP   decodeBlockAsm_fast_copy_3
 
-decodeBlockAsmLowered_fast_copy_1:
+decodeBlockAsm_fast_copy_1:
 	MOVHU R12, R8
 	ADD   $0x02, R7, R7
 	MOVD  R10, R11
@@ -241,16 +203,16 @@ decodeBlockAsmLowered_fast_copy_1:
 	CMPW  $0x13, R11
 	CSELW EQ, R10, R11, R11
 	CSEL  EQ, R9, R7, R7
-	JMP   decodeBlockAsmLowered_fast_copy_exec
+	JMP   decodeBlockAsm_fast_copy_exec
 
-decodeBlockAsmLowered_fast_copy_2:
+decodeBlockAsm_fast_copy_2:
 	MOVD  R10, R11
 	LSRW  $0x08, R12, R12
 	CMPW  $0x3d, R10
-	BLO   decodeBlockAsmLowered_fast_copy_2_0_extra
-	BEQ   decodeBlockAsmLowered_fast_copy_2_1_extra
+	BLO   decodeBlockAsm_fast_copy_2_0_extra
+	BEQ   decodeBlockAsm_fast_copy_2_1_extra
 	CMPW  $0x3f, R11
-	BLO   decodeBlockAsmLowered_fast_copy_2_2_extra
+	BLO   decodeBlockAsm_fast_copy_2_2_extra
 	MOVHU 1(R7), R8
 	MOVWU 2(R7), R11
 	ADD   $0x06, R7, R7
@@ -258,18 +220,18 @@ decodeBlockAsmLowered_fast_copy_2:
 	ADD   $64, R11, R11
 	MOVWU R11, R11
 	ADD   $0x40, R8, R8
-	JMP   decodeBlockAsmLowered_fast_copy_exec_long_long
+	JMP   decodeBlockAsm_fast_copy_exec_long_long
 
-decodeBlockAsmLowered_fast_copy_2_2_extra:
+decodeBlockAsm_fast_copy_2_2_extra:
 	MOVHU 1(R7), R8
 	MOVHU 3(R7), R11
 	ADD   $0x05, R7, R7
 	ADD   $64, R11, R11
 	MOVWU R11, R11
 	ADD   $0x40, R8, R8
-	JMP   decodeBlockAsmLowered_fast_copy_exec_long_long
+	JMP   decodeBlockAsm_fast_copy_exec_long_long
 
-decodeBlockAsmLowered_fast_copy_2_1_extra:
+decodeBlockAsm_fast_copy_2_1_extra:
 	MOVWU R12, R11
 	LSRW  $0x10, R11, R11
 	MOVHU R12, R8
@@ -277,23 +239,23 @@ decodeBlockAsmLowered_fast_copy_2_1_extra:
 	ADD   $64, R11, R11
 	MOVWU R11, R11
 	ADD   $0x40, R8, R8
-	JMP   decodeBlockAsmLowered_fast_copy_exec_long_long
+	JMP   decodeBlockAsm_fast_copy_exec_long_long
 
-decodeBlockAsmLowered_fast_copy_2_0_extra:
+decodeBlockAsm_fast_copy_2_0_extra:
 	MOVHU R12, R8
 	ADD   $3, R7, R7
 	ADD   $4, R11, R11
 	MOVWU R11, R11
 	ADD   $0x40, R8, R8
-	JMP   decodeBlockAsmLowered_fast_copy_short_no_ol
+	JMP   decodeBlockAsm_fast_copy_short_no_ol
 
-decodeBlockAsmLowered_fast_copy_3:
+decodeBlockAsm_fast_copy_3:
 	MOVWU R12, R8
 	ADD   $0x04, R7, R7
 	MOVD  R10, R9
 	LSR   $0x01, R9, R9
 	AND   $0x03, R9, R9
-	TBNZ  $0x00, R10, decodeBlockAsmLowered_fast_copy3_read
+	TBNZ  $0x00, R10, decodeBlockAsm_fast_copy3_read
 	LSRW  $0x03, R10, R10
 	ANDW  $0x07, R10, R10
 	ADD   $4, R10, R11
@@ -308,41 +270,41 @@ decodeBlockAsmLowered_fast_copy_3:
 	ADD   R9, R7, R7
 	ADD   R9, R5, R5
 	ADD   R9, R6, R6
-	JMP   decodeBlockAsmLowered_fast_copy_short_no_ol
+	JMP   decodeBlockAsm_fast_copy_short_no_ol
 
-decodeBlockAsmLowered_fast_copy3_read:
+decodeBlockAsm_fast_copy3_read:
 	MOVWU R8, R11
 	LSRW  $0x05, R11, R11
 	ANDW  $0x3f, R11, R11
 	LSRW  $0x0b, R8, R8
 	ADDW  $0x00010000, R8, R8
 	CMPW  $0x3d, R11
-	BLO   decodeBlockAsmLowered_fast_copy_3_0_extra
-	BEQ   decodeBlockAsmLowered_fast_copy_3_1_extra
+	BLO   decodeBlockAsm_fast_copy_3_0_extra
+	BEQ   decodeBlockAsm_fast_copy_3_1_extra
 	CMPW  $0x3e, R11
-	BEQ   decodeBlockAsmLowered_fast_copy_3_2_extra
+	BEQ   decodeBlockAsm_fast_copy_3_2_extra
 	MOVWU -1(R7), R11
 	ADD   $0x03, R7, R7
 	LSRW  $0x08, R11, R11
 	ADD   $64, R11, R11
 	MOVWU R11, R11
-	JMP   decodeBlockAsmLowered_fast_copy_fused_long
+	JMP   decodeBlockAsm_fast_copy_fused_long
 
-decodeBlockAsmLowered_fast_copy_3_2_extra:
+decodeBlockAsm_fast_copy_3_2_extra:
 	MOVHU (R7), R11
 	ADD   $0x02, R7, R7
 	ADD   $64, R11, R11
 	MOVWU R11, R11
-	JMP   decodeBlockAsmLowered_fast_copy_fused_long
+	JMP   decodeBlockAsm_fast_copy_fused_long
 
-decodeBlockAsmLowered_fast_copy_3_1_extra:
+decodeBlockAsm_fast_copy_3_1_extra:
 	MOVBU (R7), R11
 	ADD   $0x01, R7, R7
 	ADD   $64, R11, R11
 	MOVWU R11, R11
-	JMP   decodeBlockAsmLowered_fast_copy_fused_long
+	JMP   decodeBlockAsm_fast_copy_fused_long
 
-decodeBlockAsmLowered_fast_copy_3_0_extra:
+decodeBlockAsm_fast_copy_3_0_extra:
 	ADD   $4, R11, R11
 	MOVWU R11, R11
 	MOVWU (R7), R10
@@ -350,17 +312,17 @@ decodeBlockAsmLowered_fast_copy_3_0_extra:
 	ADD   R9, R7, R7
 	ADD   R9, R5, R5
 	ADD   R9, R6, R6
-	JMP   decodeBlockAsmLowered_fast_copy_short_no_ol
+	JMP   decodeBlockAsm_fast_copy_short_no_ol
 
-decodeBlockAsmLowered_fast_copy_fused_long:
+decodeBlockAsm_fast_copy_fused_long:
 	MOVWU (R7), R10
 	MOVW  R10, (R5)
 	ADD   R9, R7, R7
 	ADD   R9, R5, R5
 	ADD   R9, R6, R6
-	JMP   decodeBlockAsmLowered_fast_copy_exec_long_long
+	JMP   decodeBlockAsm_fast_copy_exec_long_long
 
-decodeBlockAsmLowered_fast_copy_exec_short:
+decodeBlockAsm_fast_copy_exec_short:
 	CMPW R6, R8
 	BHI  corrupt
 	ADD  R11, R5, R9
@@ -372,10 +334,10 @@ decodeBlockAsmLowered_fast_copy_exec_short:
 	MOVD  R5, R10
 	SUB   R8, R10, R10
 	CMPW  R11, R8
-	BLO   decodeBlockAsmLowered_fast_copy_overlap
-	JMP   decodeBlockAsmLowered_fast_copy_short
+	BLO   decodeBlockAsm_fast_copy_overlap
+	JMP   decodeBlockAsm_fast_copy_short
 
-decodeBlockAsmLowered_fast_copy_exec_long_long:
+decodeBlockAsm_fast_copy_exec_long_long:
 	MOVD R5, R10
 	SUB  R8, R10, R10
 	CMPW R6, R8
@@ -392,7 +354,7 @@ decodeBlockAsmLowered_fast_copy_exec_long_long:
 	MOVD R5, R13
 	MOVD R11, R14
 
-decodeBlockAsmLowered_fast_copy_long_longlarge_big_loop_back:
+decodeBlockAsm_fast_copy_long_longlarge_big_loop_back:
 	FMOVQ (R12), F0
 	FMOVQ 16(R12), F1
 	FMOVQ F0, (R13)
@@ -401,7 +363,7 @@ decodeBlockAsmLowered_fast_copy_long_longlarge_big_loop_back:
 	ADD   $0x20, R13, R13
 	SUB   $0x20, R14, R14
 	CMP   $0x20, R14
-	BHS   decodeBlockAsmLowered_fast_copy_long_longlarge_big_loop_back
+	BHS   decodeBlockAsm_fast_copy_long_longlarge_big_loop_back
 	ADD   R11, R10, R15
 	FMOVQ -32(R15), F0
 	ADD   R11, R10, R15
@@ -410,9 +372,9 @@ decodeBlockAsmLowered_fast_copy_long_longlarge_big_loop_back:
 	FMOVQ F0, -32(R15)
 	ADD   R11, R5, R15
 	FMOVQ F1, -16(R15)
-	JMP   decodeBlockAsmLowered_fast_copy_done
+	JMP   decodeBlockAsm_fast_copy_done
 
-decodeBlockAsmLowered_fast_copy_short_no_ol:
+decodeBlockAsm_fast_copy_short_no_ol:
 	MOVD R5, R10
 	SUB  R8, R10, R10
 	CMPW R6, R8
@@ -427,61 +389,41 @@ decodeBlockAsmLowered_fast_copy_short_no_ol:
 	// genMemMoveShort
 	// margin: 16, min move: 4
 	CMP $0x10, R11
-	BLS decodeBlockAsmLowered_fast_copy_short_no_ol_memmove_move_8through16
+	BLS decodeBlockAsm_fast_copy_short_no_ol_memmove_move_8through16
 	CMP $0x20, R11
-	BLS decodeBlockAsmLowered_fast_copy_short_no_ol_memmove_move_17through32
-	JMP decodeBlockAsmLowered_fast_copy_short_no_ol_memmove_move_33through64
+	BLS decodeBlockAsm_fast_copy_short_no_ol_memmove_move_17through32
+	JMP decodeBlockAsm_fast_copy_short_no_ol_memmove_move_33through64
 
-decodeBlockAsmLowered_fast_copy_short_no_ol_memmove_move_8through16:
-	MOVD (R10), R12
-	MOVD 8(R10), R13
-	MOVD R12, (R5)
-	MOVD R13, 8(R5)
-	JMP  decodeBlockAsmLowered_fast_copy_done
+decodeBlockAsm_fast_copy_short_no_ol_memmove_move_8through16:
+	FMOVQ (R10), F0
+	FMOVQ F0, (R5)
+	JMP   decodeBlockAsm_fast_copy_done
 
-decodeBlockAsmLowered_fast_copy_short_no_ol_memmove_move_17through32:
-	MOVD (R10), R12
-	MOVD 8(R10), R13
-	MOVD R12, (R5)
-	MOVD R13, 8(R5)
-	ADD  R11, R10, R15
-	MOVD -16(R15), R12
-	ADD  R11, R10, R15
-	MOVD -8(R15), R13
-	ADD  R11, R5, R15
-	MOVD R12, -16(R15)
-	ADD  R11, R5, R15
-	MOVD R13, -8(R15)
-	JMP  decodeBlockAsmLowered_fast_copy_done
+decodeBlockAsm_fast_copy_short_no_ol_memmove_move_17through32:
+	FMOVQ (R10), F0
+	FMOVQ F0, (R5)
+	ADD   R11, R10, R15
+	FMOVQ -16(R15), F0
+	ADD   R11, R5, R15
+	FMOVQ F0, -16(R15)
+	JMP   decodeBlockAsm_fast_copy_done
 
-decodeBlockAsmLowered_fast_copy_short_no_ol_memmove_move_33through64:
-	MOVD (R10), R12
-	MOVD 8(R10), R13
-	MOVD R12, (R5)
-	MOVD R13, 8(R5)
-	MOVD 16(R10), R12
-	MOVD 24(R10), R13
-	MOVD R12, 16(R5)
-	MOVD R13, 24(R5)
-	ADD  R11, R10, R15
-	MOVD -32(R15), R12
-	ADD  R11, R10, R15
-	MOVD -24(R15), R13
-	ADD  R11, R5, R15
-	MOVD R12, -32(R15)
-	ADD  R11, R5, R15
-	MOVD R13, -24(R15)
-	ADD  R11, R10, R15
-	MOVD -16(R15), R12
-	ADD  R11, R10, R15
-	MOVD -8(R15), R13
-	ADD  R11, R5, R15
-	MOVD R12, -16(R15)
-	ADD  R11, R5, R15
-	MOVD R13, -8(R15)
-	JMP  decodeBlockAsmLowered_fast_copy_done
+decodeBlockAsm_fast_copy_short_no_ol_memmove_move_33through64:
+	FMOVQ (R10), F0
+	FMOVQ F0, (R5)
+	FMOVQ 16(R10), F0
+	FMOVQ F0, 16(R5)
+	ADD   R11, R10, R15
+	FMOVQ -32(R15), F0
+	ADD   R11, R5, R15
+	FMOVQ F0, -32(R15)
+	ADD   R11, R10, R15
+	FMOVQ -16(R15), F0
+	ADD   R11, R5, R15
+	FMOVQ F0, -16(R15)
+	JMP   decodeBlockAsm_fast_copy_done
 
-decodeBlockAsmLowered_fast_copy_exec:
+decodeBlockAsm_fast_copy_exec:
 	CMPW R6, R8
 	BHI  corrupt
 	ADD  R11, R5, R9
@@ -493,75 +435,55 @@ decodeBlockAsmLowered_fast_copy_exec:
 	// Prefetch next tag
 	MOVBU (R7), R9
 	CMPW  R11, R8
-	BLO   decodeBlockAsmLowered_fast_copy_overlap
+	BLO   decodeBlockAsm_fast_copy_overlap
 	CMPW  $0x40, R11
-	BHS   decodeBlockAsmLowered_fast_copy_long
+	BHS   decodeBlockAsm_fast_copy_long
 
-decodeBlockAsmLowered_fast_copy_short:
+decodeBlockAsm_fast_copy_short:
 	// genMemMoveShort
 	// margin: 16, min move: 1
 	CMP $0x10, R11
-	BLS decodeBlockAsmLowered_fast_copy_short_memmove_move_8through16
+	BLS decodeBlockAsm_fast_copy_short_memmove_move_8through16
 	CMP $0x20, R11
-	BLS decodeBlockAsmLowered_fast_copy_short_memmove_move_17through32
-	JMP decodeBlockAsmLowered_fast_copy_short_memmove_move_33through64
+	BLS decodeBlockAsm_fast_copy_short_memmove_move_17through32
+	JMP decodeBlockAsm_fast_copy_short_memmove_move_33through64
 
-decodeBlockAsmLowered_fast_copy_short_memmove_move_8through16:
-	MOVD (R10), R12
-	MOVD 8(R10), R13
-	MOVD R12, (R5)
-	MOVD R13, 8(R5)
-	JMP  decodeBlockAsmLowered_fast_copy_done
+decodeBlockAsm_fast_copy_short_memmove_move_8through16:
+	FMOVQ (R10), F0
+	FMOVQ F0, (R5)
+	JMP   decodeBlockAsm_fast_copy_done
 
-decodeBlockAsmLowered_fast_copy_short_memmove_move_17through32:
-	MOVD (R10), R12
-	MOVD 8(R10), R13
-	MOVD R12, (R5)
-	MOVD R13, 8(R5)
-	ADD  R11, R10, R15
-	MOVD -16(R15), R12
-	ADD  R11, R10, R15
-	MOVD -8(R15), R13
-	ADD  R11, R5, R15
-	MOVD R12, -16(R15)
-	ADD  R11, R5, R15
-	MOVD R13, -8(R15)
-	JMP  decodeBlockAsmLowered_fast_copy_done
+decodeBlockAsm_fast_copy_short_memmove_move_17through32:
+	FMOVQ (R10), F0
+	FMOVQ F0, (R5)
+	ADD   R11, R10, R15
+	FMOVQ -16(R15), F0
+	ADD   R11, R5, R15
+	FMOVQ F0, -16(R15)
+	JMP   decodeBlockAsm_fast_copy_done
 
-decodeBlockAsmLowered_fast_copy_short_memmove_move_33through64:
-	MOVD (R10), R12
-	MOVD 8(R10), R13
-	MOVD R12, (R5)
-	MOVD R13, 8(R5)
-	MOVD 16(R10), R12
-	MOVD 24(R10), R13
-	MOVD R12, 16(R5)
-	MOVD R13, 24(R5)
-	ADD  R11, R10, R15
-	MOVD -32(R15), R12
-	ADD  R11, R10, R15
-	MOVD -24(R15), R13
-	ADD  R11, R5, R15
-	MOVD R12, -32(R15)
-	ADD  R11, R5, R15
-	MOVD R13, -24(R15)
-	ADD  R11, R10, R15
-	MOVD -16(R15), R12
-	ADD  R11, R10, R15
-	MOVD -8(R15), R13
-	ADD  R11, R5, R15
-	MOVD R12, -16(R15)
-	ADD  R11, R5, R15
-	MOVD R13, -8(R15)
-	JMP  decodeBlockAsmLowered_fast_copy_done
+decodeBlockAsm_fast_copy_short_memmove_move_33through64:
+	FMOVQ (R10), F0
+	FMOVQ F0, (R5)
+	FMOVQ 16(R10), F0
+	FMOVQ F0, 16(R5)
+	ADD   R11, R10, R15
+	FMOVQ -32(R15), F0
+	ADD   R11, R5, R15
+	FMOVQ F0, -32(R15)
+	ADD   R11, R10, R15
+	FMOVQ -16(R15), F0
+	ADD   R11, R5, R15
+	FMOVQ F0, -16(R15)
+	JMP   decodeBlockAsm_fast_copy_done
 
-decodeBlockAsmLowered_fast_copy_long:
+decodeBlockAsm_fast_copy_long:
 	// genMemMoveLong
 	MOVD R10, R12
 	MOVD R5, R13
 	MOVD R11, R14
 
-decodeBlockAsmLowered_fast_copy_longlarge_big_loop_back:
+decodeBlockAsm_fast_copy_longlarge_big_loop_back:
 	FMOVQ (R12), F0
 	FMOVQ 16(R12), F1
 	FMOVQ F0, (R13)
@@ -570,7 +492,7 @@ decodeBlockAsmLowered_fast_copy_longlarge_big_loop_back:
 	ADD   $0x20, R13, R13
 	SUB   $0x20, R14, R14
 	CMP   $0x20, R14
-	BHS   decodeBlockAsmLowered_fast_copy_longlarge_big_loop_back
+	BHS   decodeBlockAsm_fast_copy_longlarge_big_loop_back
 	ADD   R11, R10, R15
 	FMOVQ -32(R15), F0
 	ADD   R11, R10, R15
@@ -580,70 +502,70 @@ decodeBlockAsmLowered_fast_copy_longlarge_big_loop_back:
 	ADD   R11, R5, R15
 	FMOVQ F1, -16(R15)
 
-decodeBlockAsmLowered_fast_copy_done:
+decodeBlockAsm_fast_copy_done:
 	ADD  R11, R5, R5
 	ADD  R11, R6, R6
 	MOVD R9, R10
 	LSR  $0x02, R10, R10
 	CMP  R2, R7
-	BLO  decodeBlockAsmLowered_fast_loop_nofetch
-	JMP  decodeBlockAsmLowered_fast_end_copy
+	BLO  decodeBlockAsm_fast_loop_nofetch
+	JMP  decodeBlockAsm_fast_end_copy
 
-decodeBlockAsmLowered_fast_copy_overlap:
+decodeBlockAsm_fast_copy_overlap:
 	CMPW  $0x10, R8
-	BHS   decodeBlockAsmLowered_fast_copy_overlap_16
+	BHS   decodeBlockAsm_fast_copy_overlap_16
 	CMPW  $0x03, R8
-	BHI   decodeBlockAsmLowered_fast_copy_overlap_4
-	BEQ   decodeBlockAsmLowered_fast_copy_overlap_3
+	BHI   decodeBlockAsm_fast_copy_overlap_4
+	BEQ   decodeBlockAsm_fast_copy_overlap_3
 	CMPW  $0x02, R8
-	BEQ   decodeBlockAsmLowered_fast_copy_overlap_2
+	BEQ   decodeBlockAsm_fast_copy_overlap_2
 	MOVBU (R10), R16
 	BFI   $0, R16, $8, R10
 	ADD   R11, R6, R6
 
-decodeBlockAsmLowered_fast_loop_overlap_1:
+decodeBlockAsm_fast_loop_overlap_1:
 	MOVB R10, (R5)
 	ADD  $1, R5, R5
 	SUBS $1, R11, R11
-	BNE  decodeBlockAsmLowered_fast_loop_overlap_1
+	BNE  decodeBlockAsm_fast_loop_overlap_1
 	MOVD R9, R10
 	LSR  $0x02, R10, R10
 	CMP  R2, R7
-	BLO  decodeBlockAsmLowered_fast_loop_nofetch
-	JMP  decodeBlockAsmLowered_fast_end_copy
+	BLO  decodeBlockAsm_fast_loop_nofetch
+	JMP  decodeBlockAsm_fast_end_copy
 
-decodeBlockAsmLowered_fast_copy_overlap_2:
+decodeBlockAsm_fast_copy_overlap_2:
 	MOVHU (R10), R16
 	BFI   $0, R16, $16, R12
 	ADD   R11, R6, R6
-	TBZ   $0x00, R11, decodeBlockAsmLowered_fast_loop_overlap_2
+	TBZ   $0x00, R11, decodeBlockAsm_fast_loop_overlap_2
 	MOVB  R12, (R5)
 	MOVHU 1(R10), R16
 	BFI   $0, R16, $16, R12
 	ADD   $1, R5, R5
 	SUB   $1, R11, R11
 
-decodeBlockAsmLowered_fast_loop_overlap_2:
+decodeBlockAsm_fast_loop_overlap_2:
 	MOVH R12, (R5)
 	ADD  $0x02, R5, R5
 	SUBS $0x02, R11, R11
-	BNE  decodeBlockAsmLowered_fast_loop_overlap_2
+	BNE  decodeBlockAsm_fast_loop_overlap_2
 	MOVD R9, R10
 	LSR  $0x02, R10, R10
 	CMP  R2, R7
-	BLO  decodeBlockAsmLowered_fast_loop_nofetch
-	JMP  decodeBlockAsmLowered_fast_end_copy
+	BLO  decodeBlockAsm_fast_loop_nofetch
+	JMP  decodeBlockAsm_fast_end_copy
 
-decodeBlockAsmLowered_fast_copy_overlap_3:
+decodeBlockAsm_fast_copy_overlap_3:
 	MOVWU (R10), R12
 	ADD   R11, R6, R6
 	SUB   $0x03, R11, R11
 
-decodeBlockAsmLowered_fast_loop_overlap_3:
+decodeBlockAsm_fast_loop_overlap_3:
 	MOVW  R12, (R5)
 	ADD   $0x03, R5, R5
 	SUBS  $0x03, R11, R11
-	BHI   decodeBlockAsmLowered_fast_loop_overlap_3
+	BHI   decodeBlockAsm_fast_loop_overlap_3
 	ADD   R11, R10, R15
 	MOVHU 3(R15), R16
 	BFI   $0, R16, $16, R12
@@ -658,20 +580,20 @@ decodeBlockAsmLowered_fast_loop_overlap_3:
 	MOVD  R9, R10
 	LSR   $0x02, R10, R10
 	CMP   R2, R7
-	BLO   decodeBlockAsmLowered_fast_loop_nofetch
-	JMP   decodeBlockAsmLowered_fast_end_copy
+	BLO   decodeBlockAsm_fast_loop_nofetch
+	JMP   decodeBlockAsm_fast_end_copy
 
-decodeBlockAsmLowered_fast_copy_overlap_4:
+decodeBlockAsm_fast_copy_overlap_4:
 	ADD R11, R6, R6
 	SUB $0x04, R11, R11
 
-decodeBlockAsmLowered_fast_loop_overlap_4:
+decodeBlockAsm_fast_loop_overlap_4:
 	MOVWU (R10), R12
 	ADD   $0x04, R10, R10
 	MOVW  R12, (R5)
 	ADD   $0x04, R5, R5
 	SUBS  $0x04, R11, R11
-	BHI   decodeBlockAsmLowered_fast_loop_overlap_4
+	BHI   decodeBlockAsm_fast_loop_overlap_4
 	MOVWU (R10)(R11), R12
 	MOVW  R12, (R5)(R11)
 	ADD   R11, R5, R5
@@ -679,20 +601,20 @@ decodeBlockAsmLowered_fast_loop_overlap_4:
 	MOVD  R9, R10
 	LSR   $0x02, R10, R10
 	CMP   R2, R7
-	BLO   decodeBlockAsmLowered_fast_loop_nofetch
-	JMP   decodeBlockAsmLowered_fast_end_copy
+	BLO   decodeBlockAsm_fast_loop_nofetch
+	JMP   decodeBlockAsm_fast_end_copy
 
-decodeBlockAsmLowered_fast_copy_overlap_16:
+decodeBlockAsm_fast_copy_overlap_16:
 	ADD R11, R6, R6
 	SUB $0x10, R11, R11
 
-decodeBlockAsmLowered_fast_loop_overlap_16:
+decodeBlockAsm_fast_loop_overlap_16:
 	FMOVQ (R10), F0
 	ADD   $0x10, R10, R10
 	FMOVQ F0, (R5)
 	ADD   $0x10, R5, R5
 	SUBS  $0x10, R11, R11
-	BHI   decodeBlockAsmLowered_fast_loop_overlap_16
+	BHI   decodeBlockAsm_fast_loop_overlap_16
 	ADD   R11, R10, R15
 	FMOVQ (R15), F0
 	ADD   R11, R5, R15
@@ -702,46 +624,46 @@ decodeBlockAsmLowered_fast_loop_overlap_16:
 	MOVD  R9, R10
 	LSR   $0x02, R10, R10
 	CMP   R2, R7
-	BLO   decodeBlockAsmLowered_fast_loop_nofetch
+	BLO   decodeBlockAsm_fast_loop_nofetch
 
-decodeBlockAsmLowered_fast_end_copy:
-decodeBlockAsmLowered_fast_end_done:
-decodeBlockAsmLowered_remain_loop:
+decodeBlockAsm_fast_end_copy:
+decodeBlockAsm_fast_end_done:
+decodeBlockAsm_remain_loop:
 	CMP   R1, R7
-	BHS   decodeBlockAsmLowered_remain_end_copy
+	BHS   decodeBlockAsm_remain_end_copy
 	MOVBU (R7), R2
 	MOVD  R2, R3
 	LSR   $0x02, R3, R3
 	CMP   R0, R5
-	BHS   decodeBlockAsmLowered_remain_end_copy
+	BHS   decodeBlockAsm_remain_end_copy
 	ANDS  $0x03, R2, R2
-	BNE   decodeBlockAsmLowered_remain_copy
+	BNE   decodeBlockAsm_remain_copy
 
-decodeBlockAsmLowered_remain_lits:
+decodeBlockAsm_remain_lits:
 	MOVWU R3, R2
 	LSRW  $0x01, R2, R2
 	CMPW  $0x3a, R3
-	BLO   decodeBlockAsmLowered_remain_lit_0
+	BLO   decodeBlockAsm_remain_lit_0
 	CMPW  $0x1e, R2
-	BEQ   decodeBlockAsmLowered_remain_lit_2
-	BHI   decodeBlockAsmLowered_remain_lit_3
+	BEQ   decodeBlockAsm_remain_lit_2
+	BHI   decodeBlockAsm_remain_lit_3
 	ADD   $0x02, R7, R7
 	CMP   R1, R7
 	BHI   corrupt
 	MOVBU -1(R7), R2
-	JMP   decodeBlockAsmLowered_remain_litcopy_long
+	JMP   decodeBlockAsm_remain_litcopy_long
 
-decodeBlockAsmLowered_remain_lit_2:
+decodeBlockAsm_remain_lit_2:
 	ADD   $0x03, R7, R7
 	CMP   R1, R7
 	BHI   corrupt
 	MOVHU -2(R7), R2
-	JMP   decodeBlockAsmLowered_remain_litcopy_long
+	JMP   decodeBlockAsm_remain_litcopy_long
 
-decodeBlockAsmLowered_remain_lit_0:
+decodeBlockAsm_remain_lit_0:
 	ADD  $1, R7, R7
 	ADDW $1, R2, R2
-	TBNZ $0x00, R3, decodeBlockAsmLowered_remain_copy_exec_short
+	TBNZ $0x00, R3, decodeBlockAsm_remain_copy_exec_short
 	ADD  R2, R5, R3
 	CMP  R0, R3
 	BHI  corrupt
@@ -752,17 +674,17 @@ decodeBlockAsmLowered_remain_lit_0:
 	// genMemMoveShort
 	// margin: -1, min move: 1
 	CMP $0x03, R2
-	BLO decodeBlockAsmLowered_remain_lit_0_copy_memmove_move_1or2
-	BEQ decodeBlockAsmLowered_remain_lit_0_copy_memmove_move_3
+	BLO decodeBlockAsm_remain_lit_0_copy_memmove_move_1or2
+	BEQ decodeBlockAsm_remain_lit_0_copy_memmove_move_3
 	CMP $0x08, R2
-	BLS decodeBlockAsmLowered_remain_lit_0_copy_memmove_move_4through8
+	BLS decodeBlockAsm_remain_lit_0_copy_memmove_move_4through8
 	CMP $0x10, R2
-	BLS decodeBlockAsmLowered_remain_lit_0_copy_memmove_move_8through16
+	BLS decodeBlockAsm_remain_lit_0_copy_memmove_move_8through16
 	CMP $0x20, R2
-	BLS decodeBlockAsmLowered_remain_lit_0_copy_memmove_move_17through32
-	JMP decodeBlockAsmLowered_remain_lit_0_copy_memmove_move_33through64
+	BLS decodeBlockAsm_remain_lit_0_copy_memmove_move_17through32
+	JMP decodeBlockAsm_remain_lit_0_copy_memmove_move_33through64
 
-decodeBlockAsmLowered_remain_lit_0_copy_memmove_move_1or2:
+decodeBlockAsm_remain_lit_0_copy_memmove_move_1or2:
 	MOVBU (R7), R16
 	BFI   $0, R16, $8, R3
 	ADD   R2, R7, R15
@@ -771,87 +693,69 @@ decodeBlockAsmLowered_remain_lit_0_copy_memmove_move_1or2:
 	MOVB  R3, (R5)
 	ADD   R2, R5, R15
 	MOVB  R9, -1(R15)
-	JMP   decodeBlockAsmLowered_remain_litcopy_done
+	JMP   decodeBlockAsm_remain_litcopy_done
 
-decodeBlockAsmLowered_remain_lit_0_copy_memmove_move_3:
+decodeBlockAsm_remain_lit_0_copy_memmove_move_3:
 	MOVHU (R7), R16
 	BFI   $0, R16, $16, R3
 	MOVBU 2(R7), R16
 	BFI   $0, R16, $8, R9
 	MOVH  R3, (R5)
 	MOVB  R9, 2(R5)
-	JMP   decodeBlockAsmLowered_remain_litcopy_done
+	JMP   decodeBlockAsm_remain_litcopy_done
 
-decodeBlockAsmLowered_remain_lit_0_copy_memmove_move_4through8:
+decodeBlockAsm_remain_lit_0_copy_memmove_move_4through8:
 	MOVWU (R7), R3
 	ADD   R2, R7, R15
 	MOVWU -4(R15), R9
 	MOVW  R3, (R5)
 	ADD   R2, R5, R15
 	MOVW  R9, -4(R15)
-	JMP   decodeBlockAsmLowered_remain_litcopy_done
+	JMP   decodeBlockAsm_remain_litcopy_done
 
-decodeBlockAsmLowered_remain_lit_0_copy_memmove_move_8through16:
+decodeBlockAsm_remain_lit_0_copy_memmove_move_8through16:
 	MOVD (R7), R3
 	ADD  R2, R7, R15
 	MOVD -8(R15), R9
 	MOVD R3, (R5)
 	ADD  R2, R5, R15
 	MOVD R9, -8(R15)
-	JMP  decodeBlockAsmLowered_remain_litcopy_done
+	JMP  decodeBlockAsm_remain_litcopy_done
 
-decodeBlockAsmLowered_remain_lit_0_copy_memmove_move_17through32:
-	MOVD (R7), R3
-	MOVD 8(R7), R9
-	MOVD R3, (R5)
-	MOVD R9, 8(R5)
-	ADD  R2, R7, R15
-	MOVD -16(R15), R3
-	ADD  R2, R7, R15
-	MOVD -8(R15), R9
-	ADD  R2, R5, R15
-	MOVD R3, -16(R15)
-	ADD  R2, R5, R15
-	MOVD R9, -8(R15)
-	JMP  decodeBlockAsmLowered_remain_litcopy_done
+decodeBlockAsm_remain_lit_0_copy_memmove_move_17through32:
+	FMOVQ (R7), F0
+	FMOVQ F0, (R5)
+	ADD   R2, R7, R15
+	FMOVQ -16(R15), F0
+	ADD   R2, R5, R15
+	FMOVQ F0, -16(R15)
+	JMP   decodeBlockAsm_remain_litcopy_done
 
-decodeBlockAsmLowered_remain_lit_0_copy_memmove_move_33through64:
-	MOVD (R7), R3
-	MOVD 8(R7), R9
-	MOVD R3, (R5)
-	MOVD R9, 8(R5)
-	MOVD 16(R7), R3
-	MOVD 24(R7), R9
-	MOVD R3, 16(R5)
-	MOVD R9, 24(R5)
-	ADD  R2, R7, R15
-	MOVD -32(R15), R3
-	ADD  R2, R7, R15
-	MOVD -24(R15), R9
-	ADD  R2, R5, R15
-	MOVD R3, -32(R15)
-	ADD  R2, R5, R15
-	MOVD R9, -24(R15)
-	ADD  R2, R7, R15
-	MOVD -16(R15), R3
-	ADD  R2, R7, R15
-	MOVD -8(R15), R9
-	ADD  R2, R5, R15
-	MOVD R3, -16(R15)
-	ADD  R2, R5, R15
-	MOVD R9, -8(R15)
-	JMP  decodeBlockAsmLowered_remain_litcopy_done
+decodeBlockAsm_remain_lit_0_copy_memmove_move_33through64:
+	FMOVQ (R7), F0
+	FMOVQ F0, (R5)
+	FMOVQ 16(R7), F0
+	FMOVQ F0, 16(R5)
+	ADD   R2, R7, R15
+	FMOVQ -32(R15), F0
+	ADD   R2, R5, R15
+	FMOVQ F0, -32(R15)
+	ADD   R2, R7, R15
+	FMOVQ -16(R15), F0
+	ADD   R2, R5, R15
+	FMOVQ F0, -16(R15)
+	JMP   decodeBlockAsm_remain_litcopy_done
 
-decodeBlockAsmLowered_remain_lit_3:
+decodeBlockAsm_remain_lit_3:
 	ADD   $0x04, R7, R7
 	CMP   R1, R7
 	BHI   corrupt
 	MOVWU -4(R7), R2
 	LSRW  $0x08, R2, R2
 
-decodeBlockAsmLowered_remain_litcopy_long:
+decodeBlockAsm_remain_litcopy_long:
 	ADD  $30, R2, R2
-	TBNZ $0x00, R3, decodeBlockAsmLowered_remain_copy_exec
+	TBNZ $0x00, R3, decodeBlockAsm_remain_copy_exec
 	ADD  R2, R5, R3
 	CMP  R0, R3
 	BHI  corrupt
@@ -859,14 +763,14 @@ decodeBlockAsmLowered_remain_litcopy_long:
 	CMP  R1, R3
 	BHI  corrupt
 	CMPW $0x40, R2
-	BLS  decodeBlockAsmLowered_remain_litcopy_short_reduced
+	BLS  decodeBlockAsm_remain_litcopy_short_reduced
 
 	// genMemMoveLong
 	MOVD R7, R3
 	MOVD R5, R9
 	MOVD R2, R10
 
-decodeBlockAsmLowered_remain_litcopy_longlarge_big_loop_back:
+decodeBlockAsm_remain_litcopy_longlarge_big_loop_back:
 	FMOVQ (R3), F0
 	FMOVQ 16(R3), F1
 	FMOVQ F0, (R9)
@@ -875,7 +779,7 @@ decodeBlockAsmLowered_remain_litcopy_longlarge_big_loop_back:
 	ADD   $0x20, R9, R9
 	SUB   $0x20, R10, R10
 	CMP   $0x20, R10
-	BHS   decodeBlockAsmLowered_remain_litcopy_longlarge_big_loop_back
+	BHS   decodeBlockAsm_remain_litcopy_longlarge_big_loop_back
 	ADD   R2, R7, R15
 	FMOVQ -32(R15), F0
 	ADD   R2, R7, R15
@@ -884,77 +788,59 @@ decodeBlockAsmLowered_remain_litcopy_longlarge_big_loop_back:
 	FMOVQ F0, -32(R15)
 	ADD   R2, R5, R15
 	FMOVQ F1, -16(R15)
-	JMP   decodeBlockAsmLowered_remain_litcopy_done
+	JMP   decodeBlockAsm_remain_litcopy_done
 
-decodeBlockAsmLowered_remain_litcopy_short_reduced:
+decodeBlockAsm_remain_litcopy_short_reduced:
 	// genMemMoveShort
 	// margin: -4, min move: 30
 	CMP $0x20, R2
-	BLS decodeBlockAsmLowered_remain_lit_longer_copy_memmove_move_17through32
-	JMP decodeBlockAsmLowered_remain_lit_longer_copy_memmove_move_33through64
+	BLS decodeBlockAsm_remain_lit_longer_copy_memmove_move_17through32
+	JMP decodeBlockAsm_remain_lit_longer_copy_memmove_move_33through64
 
-decodeBlockAsmLowered_remain_lit_longer_copy_memmove_move_17through32:
-	MOVD (R7), R3
-	MOVD 8(R7), R9
-	MOVD R3, (R5)
-	MOVD R9, 8(R5)
-	ADD  R2, R7, R15
-	MOVD -16(R15), R3
-	ADD  R2, R7, R15
-	MOVD -8(R15), R9
-	ADD  R2, R5, R15
-	MOVD R3, -16(R15)
-	ADD  R2, R5, R15
-	MOVD R9, -8(R15)
-	JMP  decodeBlockAsmLowered_remain_litcopy_done
+decodeBlockAsm_remain_lit_longer_copy_memmove_move_17through32:
+	FMOVQ (R7), F0
+	FMOVQ F0, (R5)
+	ADD   R2, R7, R15
+	FMOVQ -16(R15), F0
+	ADD   R2, R5, R15
+	FMOVQ F0, -16(R15)
+	JMP   decodeBlockAsm_remain_litcopy_done
 
-decodeBlockAsmLowered_remain_lit_longer_copy_memmove_move_33through64:
-	MOVD (R7), R3
-	MOVD 8(R7), R9
-	MOVD R3, (R5)
-	MOVD R9, 8(R5)
-	MOVD 16(R7), R3
-	MOVD 24(R7), R9
-	MOVD R3, 16(R5)
-	MOVD R9, 24(R5)
-	ADD  R2, R7, R15
-	MOVD -32(R15), R3
-	ADD  R2, R7, R15
-	MOVD -24(R15), R9
-	ADD  R2, R5, R15
-	MOVD R3, -32(R15)
-	ADD  R2, R5, R15
-	MOVD R9, -24(R15)
-	ADD  R2, R7, R15
-	MOVD -16(R15), R3
-	ADD  R2, R7, R15
-	MOVD -8(R15), R9
-	ADD  R2, R5, R15
-	MOVD R3, -16(R15)
-	ADD  R2, R5, R15
-	MOVD R9, -8(R15)
+decodeBlockAsm_remain_lit_longer_copy_memmove_move_33through64:
+	FMOVQ (R7), F0
+	FMOVQ F0, (R5)
+	FMOVQ 16(R7), F0
+	FMOVQ F0, 16(R5)
+	ADD   R2, R7, R15
+	FMOVQ -32(R15), F0
+	ADD   R2, R5, R15
+	FMOVQ F0, -32(R15)
+	ADD   R2, R7, R15
+	FMOVQ -16(R15), F0
+	ADD   R2, R5, R15
+	FMOVQ F0, -16(R15)
 
-decodeBlockAsmLowered_remain_litcopy_done:
+decodeBlockAsm_remain_litcopy_done:
 	ADD   R2, R7, R7
 	ADD   R2, R5, R5
 	ADD   R2, R6, R6
 	CMP   R1, R7
-	BHS   decodeBlockAsmLowered_remain_end_done
+	BHS   decodeBlockAsm_remain_end_done
 	MOVBU (R7), R2
 	MOVD  R2, R3
 	LSR   $0x02, R3, R3
 	CMP   R0, R5
-	BHS   decodeBlockAsmLowered_remain_end_done
+	BHS   decodeBlockAsm_remain_end_done
 	ANDS  $0x03, R2, R2
-	BEQ   decodeBlockAsmLowered_remain_lits
+	BEQ   decodeBlockAsm_remain_lits
 
-decodeBlockAsmLowered_remain_copy:
+decodeBlockAsm_remain_copy:
 	CMPW $0x02, R2
-	BLO  decodeBlockAsmLowered_remain_copy_1
-	BEQ  decodeBlockAsmLowered_remain_copy_2
-	JMP  decodeBlockAsmLowered_remain_copy_3
+	BLO  decodeBlockAsm_remain_copy_1
+	BEQ  decodeBlockAsm_remain_copy_2
+	JMP  decodeBlockAsm_remain_copy_3
 
-decodeBlockAsmLowered_remain_copy_1:
+decodeBlockAsm_remain_copy_1:
 	ADD   $0x02, R7, R7
 	CMP   R1, R7
 	BHI   corrupt
@@ -964,27 +850,27 @@ decodeBlockAsmLowered_remain_copy_1:
 	LSRW  $0x06, R8, R8
 	ADDW  $1, R8, R8
 	CMPW  $0x0f, R2
-	BNE   decodeBlockAsmLowered_remain_copy_1_short
+	BNE   decodeBlockAsm_remain_copy_1_short
 	ADD   $0x01, R7, R7
 	CMP   R1, R7
 	BHI   corrupt
 	MOVBU -1(R7), R2
 	ADD   $18, R2, R2
 	MOVWU R2, R2
-	JMP   decodeBlockAsmLowered_remain_copy_exec
+	JMP   decodeBlockAsm_remain_copy_exec
 
-decodeBlockAsmLowered_remain_copy_1_short:
+decodeBlockAsm_remain_copy_1_short:
 	ADD   $4, R2, R2
 	MOVWU R2, R2
-	JMP   decodeBlockAsmLowered_remain_copy_exec_short
+	JMP   decodeBlockAsm_remain_copy_exec_short
 
-decodeBlockAsmLowered_remain_copy_2:
+decodeBlockAsm_remain_copy_2:
 	MOVD  R3, R2
 	CMPW  $0x3d, R3
-	BLO   decodeBlockAsmLowered_remain_copy_2_0_extra
-	BEQ   decodeBlockAsmLowered_remain_copy_2_1_extra
+	BLO   decodeBlockAsm_remain_copy_2_0_extra
+	BEQ   decodeBlockAsm_remain_copy_2_1_extra
 	CMPW  $0x3f, R2
-	BLO   decodeBlockAsmLowered_remain_copy_2_2_extra
+	BLO   decodeBlockAsm_remain_copy_2_2_extra
 	ADD   $0x06, R7, R7
 	CMP   R1, R7
 	BHI   corrupt
@@ -994,9 +880,9 @@ decodeBlockAsmLowered_remain_copy_2:
 	ADD   $64, R2, R2
 	MOVWU R2, R2
 	ADD   $0x40, R8, R8
-	JMP   decodeBlockAsmLowered_remain_copy_exec_long_long
+	JMP   decodeBlockAsm_remain_copy_exec_long_long
 
-decodeBlockAsmLowered_remain_copy_2_2_extra:
+decodeBlockAsm_remain_copy_2_2_extra:
 	ADD   $0x05, R7, R7
 	CMP   R1, R7
 	BHI   corrupt
@@ -1005,9 +891,9 @@ decodeBlockAsmLowered_remain_copy_2_2_extra:
 	ADD   $64, R2, R2
 	MOVWU R2, R2
 	ADD   $0x40, R8, R8
-	JMP   decodeBlockAsmLowered_remain_copy_exec_long_long
+	JMP   decodeBlockAsm_remain_copy_exec_long_long
 
-decodeBlockAsmLowered_remain_copy_2_1_extra:
+decodeBlockAsm_remain_copy_2_1_extra:
 	ADD   $0x04, R7, R7
 	CMP   R1, R7
 	BHI   corrupt
@@ -1016,9 +902,9 @@ decodeBlockAsmLowered_remain_copy_2_1_extra:
 	ADD   $64, R2, R2
 	MOVWU R2, R2
 	ADD   $0x40, R8, R8
-	JMP   decodeBlockAsmLowered_remain_copy_exec_long_long
+	JMP   decodeBlockAsm_remain_copy_exec_long_long
 
-decodeBlockAsmLowered_remain_copy_2_0_extra:
+decodeBlockAsm_remain_copy_2_0_extra:
 	ADD   $3, R7, R7
 	CMP   R1, R7
 	BHI   corrupt
@@ -1026,9 +912,9 @@ decodeBlockAsmLowered_remain_copy_2_0_extra:
 	ADD   $4, R2, R2
 	MOVWU R2, R2
 	ADD   $0x40, R8, R8
-	JMP   decodeBlockAsmLowered_remain_copy_short_no_ol
+	JMP   decodeBlockAsm_remain_copy_short_no_ol
 
-decodeBlockAsmLowered_remain_copy_3:
+decodeBlockAsm_remain_copy_3:
 	ADD   $0x04, R7, R7
 	CMP   R1, R7
 	BHI   corrupt
@@ -1036,7 +922,7 @@ decodeBlockAsmLowered_remain_copy_3:
 	MOVD  R3, R9
 	LSR   $0x01, R9, R9
 	AND   $0x03, R9, R9
-	TBNZ  $0x00, R3, decodeBlockAsmLowered_remain_copy3_read
+	TBNZ  $0x00, R3, decodeBlockAsm_remain_copy3_read
 	LSRW  $0x03, R3, R3
 	ANDW  $0x07, R3, R3
 	ADD   $4, R3, R2
@@ -1053,8 +939,8 @@ decodeBlockAsmLowered_remain_copy_3:
 
 	// genMemMoveVeryShort
 	CMP   $0x03, R9
-	BEQ   decodeBlockAsmLowered_remain_copy2_fused_lits_move_3
-	BHI   decodeBlockAsmLowered_remain_copy2_fused_lits_move_4
+	BEQ   decodeBlockAsm_remain_copy2_fused_lits_move_3
+	BHI   decodeBlockAsm_remain_copy2_fused_lits_move_4
 	MOVBU (R7), R16
 	BFI   $0, R16, $8, R3
 	ADD   R9, R7, R15
@@ -1063,39 +949,39 @@ decodeBlockAsmLowered_remain_copy_3:
 	MOVB  R3, (R5)
 	ADD   R9, R5, R15
 	MOVB  R10, -1(R15)
-	JMP   decodeBlockAsmLowered_remain_copy2_fused_lits_done
+	JMP   decodeBlockAsm_remain_copy2_fused_lits_done
 
-decodeBlockAsmLowered_remain_copy2_fused_lits_move_3:
+decodeBlockAsm_remain_copy2_fused_lits_move_3:
 	MOVHU (R7), R16
 	BFI   $0, R16, $16, R3
 	MOVBU 2(R7), R16
 	BFI   $0, R16, $8, R10
 	MOVH  R3, (R5)
 	MOVB  R10, 2(R5)
-	JMP   decodeBlockAsmLowered_remain_copy2_fused_lits_done
+	JMP   decodeBlockAsm_remain_copy2_fused_lits_done
 
-decodeBlockAsmLowered_remain_copy2_fused_lits_move_4:
+decodeBlockAsm_remain_copy2_fused_lits_move_4:
 	MOVWU (R7), R3
 	MOVW  R3, (R5)
 
-decodeBlockAsmLowered_remain_copy2_fused_lits_done:
+decodeBlockAsm_remain_copy2_fused_lits_done:
 	ADD $0x40, R8, R8
 	ADD R9, R7, R7
 	ADD R9, R5, R5
 	ADD R9, R6, R6
-	JMP decodeBlockAsmLowered_remain_copy_short_no_ol
+	JMP decodeBlockAsm_remain_copy_short_no_ol
 
-decodeBlockAsmLowered_remain_copy3_read:
+decodeBlockAsm_remain_copy3_read:
 	MOVWU R8, R2
 	LSRW  $0x05, R2, R2
 	ANDW  $0x3f, R2, R2
 	LSRW  $0x0b, R8, R8
 	ADDW  $0x00010000, R8, R8
 	CMPW  $0x3d, R2
-	BLO   decodeBlockAsmLowered_remain_copy_3_0_extra
-	BEQ   decodeBlockAsmLowered_remain_copy_3_1_extra
+	BLO   decodeBlockAsm_remain_copy_3_0_extra
+	BEQ   decodeBlockAsm_remain_copy_3_1_extra
 	CMPW  $0x3e, R2
-	BEQ   decodeBlockAsmLowered_remain_copy_3_2_extra
+	BEQ   decodeBlockAsm_remain_copy_3_2_extra
 	ADD   $0x03, R7, R7
 	CMP   R1, R7
 	BHI   corrupt
@@ -1103,31 +989,31 @@ decodeBlockAsmLowered_remain_copy3_read:
 	LSRW  $0x08, R2, R2
 	ADD   $64, R2, R2
 	MOVWU R2, R2
-	JMP   decodeBlockAsmLowered_remain_copy_fused_long
+	JMP   decodeBlockAsm_remain_copy_fused_long
 
-decodeBlockAsmLowered_remain_copy_3_2_extra:
+decodeBlockAsm_remain_copy_3_2_extra:
 	ADD   $0x02, R7, R7
 	CMP   R1, R7
 	BHI   corrupt
 	MOVHU -2(R7), R2
 	ADD   $64, R2, R2
 	MOVWU R2, R2
-	JMP   decodeBlockAsmLowered_remain_copy_fused_long
+	JMP   decodeBlockAsm_remain_copy_fused_long
 
-decodeBlockAsmLowered_remain_copy_3_1_extra:
+decodeBlockAsm_remain_copy_3_1_extra:
 	ADD   $0x01, R7, R7
 	CMP   R1, R7
 	BHI   corrupt
 	MOVBU -1(R7), R2
 	ADD   $64, R2, R2
 	MOVWU R2, R2
-	JMP   decodeBlockAsmLowered_remain_copy_fused_long
+	JMP   decodeBlockAsm_remain_copy_fused_long
 
-decodeBlockAsmLowered_remain_copy_3_0_extra:
+decodeBlockAsm_remain_copy_3_0_extra:
 	ADD   $4, R2, R2
 	MOVWU R2, R2
 	TSTW  R9, R9
-	BEQ   decodeBlockAsmLowered_remain_copy_short_no_ol
+	BEQ   decodeBlockAsm_remain_copy_short_no_ol
 	ADD   R9, R7, R3
 	ADD   R9, R5, R10
 	CMP   R1, R3
@@ -1137,8 +1023,8 @@ decodeBlockAsmLowered_remain_copy_3_0_extra:
 
 	// genMemMoveVeryShort
 	CMP   $0x03, R9
-	BEQ   decodeBlockAsmLowered_remain_copy3s_fused_lits_move_3
-	BHI   decodeBlockAsmLowered_remain_copy3s_fused_lits_move_4
+	BEQ   decodeBlockAsm_remain_copy3s_fused_lits_move_3
+	BHI   decodeBlockAsm_remain_copy3s_fused_lits_move_4
 	MOVBU (R7), R16
 	BFI   $0, R16, $8, R3
 	ADD   R9, R7, R15
@@ -1147,30 +1033,30 @@ decodeBlockAsmLowered_remain_copy_3_0_extra:
 	MOVB  R3, (R5)
 	ADD   R9, R5, R15
 	MOVB  R10, -1(R15)
-	JMP   decodeBlockAsmLowered_remain_copy3s_fused_lits_done
+	JMP   decodeBlockAsm_remain_copy3s_fused_lits_done
 
-decodeBlockAsmLowered_remain_copy3s_fused_lits_move_3:
+decodeBlockAsm_remain_copy3s_fused_lits_move_3:
 	MOVHU (R7), R16
 	BFI   $0, R16, $16, R3
 	MOVBU 2(R7), R16
 	BFI   $0, R16, $8, R10
 	MOVH  R3, (R5)
 	MOVB  R10, 2(R5)
-	JMP   decodeBlockAsmLowered_remain_copy3s_fused_lits_done
+	JMP   decodeBlockAsm_remain_copy3s_fused_lits_done
 
-decodeBlockAsmLowered_remain_copy3s_fused_lits_move_4:
+decodeBlockAsm_remain_copy3s_fused_lits_move_4:
 	MOVWU (R7), R3
 	MOVW  R3, (R5)
 
-decodeBlockAsmLowered_remain_copy3s_fused_lits_done:
+decodeBlockAsm_remain_copy3s_fused_lits_done:
 	ADD R9, R7, R7
 	ADD R9, R5, R5
 	ADD R9, R6, R6
-	JMP decodeBlockAsmLowered_remain_copy_short_no_ol
+	JMP decodeBlockAsm_remain_copy_short_no_ol
 
-decodeBlockAsmLowered_remain_copy_fused_long:
+decodeBlockAsm_remain_copy_fused_long:
 	TSTW R9, R9
-	BEQ  decodeBlockAsmLowered_remain_copy_exec_long_long
+	BEQ  decodeBlockAsm_remain_copy_exec_long_long
 	ADD  R9, R7, R3
 	ADD  R9, R5, R10
 	CMP  R1, R3
@@ -1180,8 +1066,8 @@ decodeBlockAsmLowered_remain_copy_fused_long:
 
 	// genMemMoveVeryShort
 	CMP   $0x03, R9
-	BEQ   decodeBlockAsmLowered_remain_copy3_fused_lits_move_3
-	BHI   decodeBlockAsmLowered_remain_copy3_fused_lits_move_4
+	BEQ   decodeBlockAsm_remain_copy3_fused_lits_move_3
+	BHI   decodeBlockAsm_remain_copy3_fused_lits_move_4
 	MOVBU (R7), R16
 	BFI   $0, R16, $8, R3
 	ADD   R9, R7, R15
@@ -1190,28 +1076,28 @@ decodeBlockAsmLowered_remain_copy_fused_long:
 	MOVB  R3, (R5)
 	ADD   R9, R5, R15
 	MOVB  R10, -1(R15)
-	JMP   decodeBlockAsmLowered_remain_copy3_fused_lits_done
+	JMP   decodeBlockAsm_remain_copy3_fused_lits_done
 
-decodeBlockAsmLowered_remain_copy3_fused_lits_move_3:
+decodeBlockAsm_remain_copy3_fused_lits_move_3:
 	MOVHU (R7), R16
 	BFI   $0, R16, $16, R3
 	MOVBU 2(R7), R16
 	BFI   $0, R16, $8, R10
 	MOVH  R3, (R5)
 	MOVB  R10, 2(R5)
-	JMP   decodeBlockAsmLowered_remain_copy3_fused_lits_done
+	JMP   decodeBlockAsm_remain_copy3_fused_lits_done
 
-decodeBlockAsmLowered_remain_copy3_fused_lits_move_4:
+decodeBlockAsm_remain_copy3_fused_lits_move_4:
 	MOVWU (R7), R3
 	MOVW  R3, (R5)
 
-decodeBlockAsmLowered_remain_copy3_fused_lits_done:
+decodeBlockAsm_remain_copy3_fused_lits_done:
 	ADD R9, R7, R7
 	ADD R9, R5, R5
 	ADD R9, R6, R6
-	JMP decodeBlockAsmLowered_remain_copy_exec_long_long
+	JMP decodeBlockAsm_remain_copy_exec_long_long
 
-decodeBlockAsmLowered_remain_copy_exec_short:
+decodeBlockAsm_remain_copy_exec_short:
 	CMPW R6, R8
 	BHI  corrupt
 	ADD  R2, R5, R3
@@ -1220,10 +1106,10 @@ decodeBlockAsmLowered_remain_copy_exec_short:
 	MOVD R5, R3
 	SUB  R8, R3, R3
 	CMPW R2, R8
-	BLO  decodeBlockAsmLowered_remain_copy_overlap
-	JMP  decodeBlockAsmLowered_remain_copy_short
+	BLO  decodeBlockAsm_remain_copy_overlap
+	JMP  decodeBlockAsm_remain_copy_short
 
-decodeBlockAsmLowered_remain_copy_exec_long_long:
+decodeBlockAsm_remain_copy_exec_long_long:
 	MOVD R5, R3
 	SUB  R8, R3, R3
 	CMPW R6, R8
@@ -1237,7 +1123,7 @@ decodeBlockAsmLowered_remain_copy_exec_long_long:
 	MOVD R5, R10
 	MOVD R2, R11
 
-decodeBlockAsmLowered_remain_copy_long_longlarge_big_loop_back:
+decodeBlockAsm_remain_copy_long_longlarge_big_loop_back:
 	FMOVQ (R9), F0
 	FMOVQ 16(R9), F1
 	FMOVQ F0, (R10)
@@ -1246,7 +1132,7 @@ decodeBlockAsmLowered_remain_copy_long_longlarge_big_loop_back:
 	ADD   $0x20, R10, R10
 	SUB   $0x20, R11, R11
 	CMP   $0x20, R11
-	BHS   decodeBlockAsmLowered_remain_copy_long_longlarge_big_loop_back
+	BHS   decodeBlockAsm_remain_copy_long_longlarge_big_loop_back
 	ADD   R2, R3, R15
 	FMOVQ -32(R15), F0
 	ADD   R2, R3, R15
@@ -1255,9 +1141,9 @@ decodeBlockAsmLowered_remain_copy_long_longlarge_big_loop_back:
 	FMOVQ F0, -32(R15)
 	ADD   R2, R5, R15
 	FMOVQ F1, -16(R15)
-	JMP   decodeBlockAsmLowered_remain_copy_done
+	JMP   decodeBlockAsm_remain_copy_done
 
-decodeBlockAsmLowered_remain_copy_short_no_ol:
+decodeBlockAsm_remain_copy_short_no_ol:
 	MOVD R5, R3
 	SUB  R8, R3, R3
 	CMPW R6, R8
@@ -1269,74 +1155,56 @@ decodeBlockAsmLowered_remain_copy_short_no_ol:
 	// genMemMoveShort
 	// margin: -4, min move: 4
 	CMP $0x08, R2
-	BLS decodeBlockAsmLowered_remain_copy_short_no_ol_memmove_move_4through8
+	BLS decodeBlockAsm_remain_copy_short_no_ol_memmove_move_4through8
 	CMP $0x10, R2
-	BLS decodeBlockAsmLowered_remain_copy_short_no_ol_memmove_move_8through16
+	BLS decodeBlockAsm_remain_copy_short_no_ol_memmove_move_8through16
 	CMP $0x20, R2
-	BLS decodeBlockAsmLowered_remain_copy_short_no_ol_memmove_move_17through32
-	JMP decodeBlockAsmLowered_remain_copy_short_no_ol_memmove_move_33through64
+	BLS decodeBlockAsm_remain_copy_short_no_ol_memmove_move_17through32
+	JMP decodeBlockAsm_remain_copy_short_no_ol_memmove_move_33through64
 
-decodeBlockAsmLowered_remain_copy_short_no_ol_memmove_move_4through8:
+decodeBlockAsm_remain_copy_short_no_ol_memmove_move_4through8:
 	MOVWU (R3), R9
 	ADD   R2, R3, R15
-	MOVWU -4(R15), R10
+	MOVWU -4(R15), R3
 	MOVW  R9, (R5)
 	ADD   R2, R5, R15
-	MOVW  R10, -4(R15)
-	JMP   decodeBlockAsmLowered_remain_copy_done
+	MOVW  R3, -4(R15)
+	JMP   decodeBlockAsm_remain_copy_done
 
-decodeBlockAsmLowered_remain_copy_short_no_ol_memmove_move_8through16:
+decodeBlockAsm_remain_copy_short_no_ol_memmove_move_8through16:
 	MOVD (R3), R9
 	ADD  R2, R3, R15
-	MOVD -8(R15), R10
+	MOVD -8(R15), R3
 	MOVD R9, (R5)
 	ADD  R2, R5, R15
-	MOVD R10, -8(R15)
-	JMP  decodeBlockAsmLowered_remain_copy_done
+	MOVD R3, -8(R15)
+	JMP  decodeBlockAsm_remain_copy_done
 
-decodeBlockAsmLowered_remain_copy_short_no_ol_memmove_move_17through32:
-	MOVD (R3), R9
-	MOVD 8(R3), R10
-	MOVD R9, (R5)
-	MOVD R10, 8(R5)
-	ADD  R2, R3, R15
-	MOVD -16(R15), R9
-	ADD  R2, R3, R15
-	MOVD -8(R15), R10
-	ADD  R2, R5, R15
-	MOVD R9, -16(R15)
-	ADD  R2, R5, R15
-	MOVD R10, -8(R15)
-	JMP  decodeBlockAsmLowered_remain_copy_done
+decodeBlockAsm_remain_copy_short_no_ol_memmove_move_17through32:
+	FMOVQ (R3), F0
+	FMOVQ F0, (R5)
+	ADD   R2, R3, R15
+	FMOVQ -16(R15), F0
+	ADD   R2, R5, R15
+	FMOVQ F0, -16(R15)
+	JMP   decodeBlockAsm_remain_copy_done
 
-decodeBlockAsmLowered_remain_copy_short_no_ol_memmove_move_33through64:
-	MOVD (R3), R9
-	MOVD 8(R3), R10
-	MOVD R9, (R5)
-	MOVD R10, 8(R5)
-	MOVD 16(R3), R9
-	MOVD 24(R3), R10
-	MOVD R9, 16(R5)
-	MOVD R10, 24(R5)
-	ADD  R2, R3, R15
-	MOVD -32(R15), R9
-	ADD  R2, R3, R15
-	MOVD -24(R15), R10
-	ADD  R2, R5, R15
-	MOVD R9, -32(R15)
-	ADD  R2, R5, R15
-	MOVD R10, -24(R15)
-	ADD  R2, R3, R15
-	MOVD -16(R15), R9
-	ADD  R2, R3, R15
-	MOVD -8(R15), R10
-	ADD  R2, R5, R15
-	MOVD R9, -16(R15)
-	ADD  R2, R5, R15
-	MOVD R10, -8(R15)
-	JMP  decodeBlockAsmLowered_remain_copy_done
+decodeBlockAsm_remain_copy_short_no_ol_memmove_move_33through64:
+	FMOVQ (R3), F0
+	FMOVQ F0, (R5)
+	FMOVQ 16(R3), F0
+	FMOVQ F0, 16(R5)
+	ADD   R2, R3, R15
+	FMOVQ -32(R15), F0
+	ADD   R2, R5, R15
+	FMOVQ F0, -32(R15)
+	ADD   R2, R3, R15
+	FMOVQ -16(R15), F0
+	ADD   R2, R5, R15
+	FMOVQ F0, -16(R15)
+	JMP   decodeBlockAsm_remain_copy_done
 
-decodeBlockAsmLowered_remain_copy_exec:
+decodeBlockAsm_remain_copy_exec:
 	CMPW R6, R8
 	BHI  corrupt
 	ADD  R2, R5, R3
@@ -1345,111 +1213,93 @@ decodeBlockAsmLowered_remain_copy_exec:
 	MOVD R5, R3
 	SUB  R8, R3, R3
 	CMPW R2, R8
-	BLO  decodeBlockAsmLowered_remain_copy_overlap
+	BLO  decodeBlockAsm_remain_copy_overlap
 	CMPW $0x40, R2
-	BHS  decodeBlockAsmLowered_remain_copy_long
+	BHS  decodeBlockAsm_remain_copy_long
 
-decodeBlockAsmLowered_remain_copy_short:
+decodeBlockAsm_remain_copy_short:
 	// genMemMoveShort
 	// margin: -4, min move: 1
 	CMP $0x03, R2
-	BLO decodeBlockAsmLowered_remain_copy_short_memmove_move_1or2
-	BEQ decodeBlockAsmLowered_remain_copy_short_memmove_move_3
+	BLO decodeBlockAsm_remain_copy_short_memmove_move_1or2
+	BEQ decodeBlockAsm_remain_copy_short_memmove_move_3
 	CMP $0x08, R2
-	BLS decodeBlockAsmLowered_remain_copy_short_memmove_move_4through8
+	BLS decodeBlockAsm_remain_copy_short_memmove_move_4through8
 	CMP $0x10, R2
-	BLS decodeBlockAsmLowered_remain_copy_short_memmove_move_8through16
+	BLS decodeBlockAsm_remain_copy_short_memmove_move_8through16
 	CMP $0x20, R2
-	BLS decodeBlockAsmLowered_remain_copy_short_memmove_move_17through32
-	JMP decodeBlockAsmLowered_remain_copy_short_memmove_move_33through64
+	BLS decodeBlockAsm_remain_copy_short_memmove_move_17through32
+	JMP decodeBlockAsm_remain_copy_short_memmove_move_33through64
 
-decodeBlockAsmLowered_remain_copy_short_memmove_move_1or2:
+decodeBlockAsm_remain_copy_short_memmove_move_1or2:
 	MOVBU (R3), R16
 	BFI   $0, R16, $8, R9
 	ADD   R2, R3, R15
 	MOVBU -1(R15), R16
-	BFI   $0, R16, $8, R10
+	BFI   $0, R16, $8, R3
 	MOVB  R9, (R5)
 	ADD   R2, R5, R15
-	MOVB  R10, -1(R15)
-	JMP   decodeBlockAsmLowered_remain_copy_done
+	MOVB  R3, -1(R15)
+	JMP   decodeBlockAsm_remain_copy_done
 
-decodeBlockAsmLowered_remain_copy_short_memmove_move_3:
+decodeBlockAsm_remain_copy_short_memmove_move_3:
 	MOVHU (R3), R16
 	BFI   $0, R16, $16, R9
 	MOVBU 2(R3), R16
-	BFI   $0, R16, $8, R10
+	BFI   $0, R16, $8, R3
 	MOVH  R9, (R5)
-	MOVB  R10, 2(R5)
-	JMP   decodeBlockAsmLowered_remain_copy_done
+	MOVB  R3, 2(R5)
+	JMP   decodeBlockAsm_remain_copy_done
 
-decodeBlockAsmLowered_remain_copy_short_memmove_move_4through8:
+decodeBlockAsm_remain_copy_short_memmove_move_4through8:
 	MOVWU (R3), R9
 	ADD   R2, R3, R15
-	MOVWU -4(R15), R10
+	MOVWU -4(R15), R3
 	MOVW  R9, (R5)
 	ADD   R2, R5, R15
-	MOVW  R10, -4(R15)
-	JMP   decodeBlockAsmLowered_remain_copy_done
+	MOVW  R3, -4(R15)
+	JMP   decodeBlockAsm_remain_copy_done
 
-decodeBlockAsmLowered_remain_copy_short_memmove_move_8through16:
+decodeBlockAsm_remain_copy_short_memmove_move_8through16:
 	MOVD (R3), R9
 	ADD  R2, R3, R15
-	MOVD -8(R15), R10
+	MOVD -8(R15), R3
 	MOVD R9, (R5)
 	ADD  R2, R5, R15
-	MOVD R10, -8(R15)
-	JMP  decodeBlockAsmLowered_remain_copy_done
+	MOVD R3, -8(R15)
+	JMP  decodeBlockAsm_remain_copy_done
 
-decodeBlockAsmLowered_remain_copy_short_memmove_move_17through32:
-	MOVD (R3), R9
-	MOVD 8(R3), R10
-	MOVD R9, (R5)
-	MOVD R10, 8(R5)
-	ADD  R2, R3, R15
-	MOVD -16(R15), R9
-	ADD  R2, R3, R15
-	MOVD -8(R15), R10
-	ADD  R2, R5, R15
-	MOVD R9, -16(R15)
-	ADD  R2, R5, R15
-	MOVD R10, -8(R15)
-	JMP  decodeBlockAsmLowered_remain_copy_done
+decodeBlockAsm_remain_copy_short_memmove_move_17through32:
+	FMOVQ (R3), F0
+	FMOVQ F0, (R5)
+	ADD   R2, R3, R15
+	FMOVQ -16(R15), F0
+	ADD   R2, R5, R15
+	FMOVQ F0, -16(R15)
+	JMP   decodeBlockAsm_remain_copy_done
 
-decodeBlockAsmLowered_remain_copy_short_memmove_move_33through64:
-	MOVD (R3), R9
-	MOVD 8(R3), R10
-	MOVD R9, (R5)
-	MOVD R10, 8(R5)
-	MOVD 16(R3), R9
-	MOVD 24(R3), R10
-	MOVD R9, 16(R5)
-	MOVD R10, 24(R5)
-	ADD  R2, R3, R15
-	MOVD -32(R15), R9
-	ADD  R2, R3, R15
-	MOVD -24(R15), R10
-	ADD  R2, R5, R15
-	MOVD R9, -32(R15)
-	ADD  R2, R5, R15
-	MOVD R10, -24(R15)
-	ADD  R2, R3, R15
-	MOVD -16(R15), R9
-	ADD  R2, R3, R15
-	MOVD -8(R15), R10
-	ADD  R2, R5, R15
-	MOVD R9, -16(R15)
-	ADD  R2, R5, R15
-	MOVD R10, -8(R15)
-	JMP  decodeBlockAsmLowered_remain_copy_done
+decodeBlockAsm_remain_copy_short_memmove_move_33through64:
+	FMOVQ (R3), F0
+	FMOVQ F0, (R5)
+	FMOVQ 16(R3), F0
+	FMOVQ F0, 16(R5)
+	ADD   R2, R3, R15
+	FMOVQ -32(R15), F0
+	ADD   R2, R5, R15
+	FMOVQ F0, -32(R15)
+	ADD   R2, R3, R15
+	FMOVQ -16(R15), F0
+	ADD   R2, R5, R15
+	FMOVQ F0, -16(R15)
+	JMP   decodeBlockAsm_remain_copy_done
 
-decodeBlockAsmLowered_remain_copy_long:
+decodeBlockAsm_remain_copy_long:
 	// genMemMoveLong
 	MOVD R3, R9
 	MOVD R5, R10
 	MOVD R2, R11
 
-decodeBlockAsmLowered_remain_copy_longlarge_big_loop_back:
+decodeBlockAsm_remain_copy_longlarge_big_loop_back:
 	FMOVQ (R9), F0
 	FMOVQ 16(R9), F1
 	FMOVQ F0, (R10)
@@ -1458,7 +1308,7 @@ decodeBlockAsmLowered_remain_copy_longlarge_big_loop_back:
 	ADD   $0x20, R10, R10
 	SUB   $0x20, R11, R11
 	CMP   $0x20, R11
-	BHS   decodeBlockAsmLowered_remain_copy_longlarge_big_loop_back
+	BHS   decodeBlockAsm_remain_copy_longlarge_big_loop_back
 	ADD   R2, R3, R15
 	FMOVQ -32(R15), F0
 	ADD   R2, R3, R15
@@ -1468,26 +1318,26 @@ decodeBlockAsmLowered_remain_copy_longlarge_big_loop_back:
 	ADD   R2, R5, R15
 	FMOVQ F1, -16(R15)
 
-decodeBlockAsmLowered_remain_copy_done:
+decodeBlockAsm_remain_copy_done:
 	ADD R2, R5, R5
 	ADD R2, R6, R6
-	JMP decodeBlockAsmLowered_remain_loop
+	JMP decodeBlockAsm_remain_loop
 
-decodeBlockAsmLowered_remain_copy_overlap:
+decodeBlockAsm_remain_copy_overlap:
 	ADD R2, R6, R6
 
-decodeBlockAsmLowered_remain_copy_overlap_simple:
+decodeBlockAsm_remain_copy_overlap_simple:
 	MOVBU (R3), R16
 	BFI   $0, R16, $8, R9
 	MOVB  R9, (R5)
 	ADD   $1, R3, R3
 	ADD   $1, R5, R5
 	SUBS  $1, R2, R2
-	BNE   decodeBlockAsmLowered_remain_copy_overlap_simple
-	JMP   decodeBlockAsmLowered_remain_loop
+	BNE   decodeBlockAsm_remain_copy_overlap_simple
+	JMP   decodeBlockAsm_remain_loop
 
-decodeBlockAsmLowered_remain_end_copy:
-decodeBlockAsmLowered_remain_end_done:
+decodeBlockAsm_remain_end_copy:
+decodeBlockAsm_remain_end_done:
 	MOVD src_base+24(FP), R0
 	MOVD src_len+32(FP), R1
 	MOVD dst_base+0(FP), R2

@@ -4,8 +4,8 @@
 
 package minlz
 
-// decodeBlockAsmLowered encodes a non-empty src to a guaranteed-large-enough dst.
+// decodeBlockAsm encodes a non-empty src to a guaranteed-large-enough dst.
 // It assumes that the varint-encoded length of the decompressed bytes has already been read.
 //
 //go:noescape
-func decodeBlockAsmLowered(dst []byte, src []byte) int
+func decodeBlockAsm(dst []byte, src []byte) int
