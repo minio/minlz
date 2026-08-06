@@ -106,12 +106,25 @@ func encodeBlockBetterGo(dst, src []byte) (d int) {
 		fmt.Println("encodeBlockBetterGo: Starting encode")
 	}
 
+	// Cap the adaptive skip, matching the assembly encoder this mirrors.
+	// Without a cap, a long stretch with no matches lets the skip grow
+	// geometrically until it strides past the start of the next compressible
+	// region and loses the matches there. The assembly has clamped since it was
+	// written ("Blocks can be long, limit max skipping"); the Go path had not,
+	// which is why the two produced different output on blocks above 64KB.
+	//
+	// Only this encoder clamps. encodeBlockBetterGo64K mirrors
+	// encodeBetterBlockAsm64K, which does not clamp -- and the dispatch
+	// boundary between the two is exactly the 64KB one used here, so the
+	// pairing is exact on both sides.
+	const maxSkip = 100
+
 	for {
 		candidateL := 0
 		nextS := 0
 		for {
 			// Next src position to check
-			nextS = s + (s-nextEmit)>>7 + 1
+			nextS = min(s+(s-nextEmit)>>7+1, s+maxSkip)
 			if nextS > sLimit {
 				goto emitRemainder
 			}
