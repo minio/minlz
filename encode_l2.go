@@ -106,14 +106,12 @@ func encodeBlockBetterGo(dst, src []byte) (d int) {
 		fmt.Println("encodeBlockBetterGo: Starting encode")
 	}
 
-	const maxSkip = 100 // Blocks can be long, limit max skipping.
-
 	for {
 		candidateL := 0
 		nextS := 0
 		for {
-			// Next src position to check
-			nextS = s + min(maxSkip, (s-nextEmit)>>7+1)
+			// Next src position to check. Blocks can be long, limit max skipping.
+			nextS = s + min(100, (s-nextEmit)>>7+1)
 			if nextS > sLimit {
 				goto emitRemainder
 			}
