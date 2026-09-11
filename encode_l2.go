@@ -120,8 +120,7 @@ func encodeBlockBetterGo(dst, src []byte) (d int) {
 	const maxSkip = 100
 
 	for {
-		candidateL := 0
-		nextS := 0
+		var candidateL, nextS int
 		for {
 			// Next src position to check
 			nextS = min(s+(s-nextEmit)>>7+1, s+maxSkip)
