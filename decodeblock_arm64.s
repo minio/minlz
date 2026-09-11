@@ -21,8 +21,7 @@ TEXT ·decodeBlockAsm(SB), $0-56
 	CMP   R2, R7
 	BHS   decodeBlockAsm_fast_end_copy
 	MOVBU (R7), R9
-	MOVD  R9, R10
-	LSR   $0x02, R10, R10
+	LSR   $0x02, R9, R10
 
 decodeBlockAsm_fast_loop_nofetch:
 	CMP  R3, R5
@@ -173,8 +172,7 @@ decodeBlockAsm_fast_litcopy_done:
 	CMP   R2, R7
 	BHS   decodeBlockAsm_fast_end_done
 	MOVBU (R7), R9
-	MOVD  R9, R10
-	LSR   $0x02, R10, R10
+	LSR   $0x02, R9, R10
 	CMP   R3, R5
 	BHS   decodeBlockAsm_fast_end_done
 	ANDS  $0x03, R9, R9
@@ -252,8 +250,7 @@ decodeBlockAsm_fast_copy_2_0_extra:
 decodeBlockAsm_fast_copy_3:
 	MOVWU R12, R8
 	ADD   $0x04, R7, R7
-	MOVD  R10, R9
-	LSR   $0x01, R9, R9
+	LSR   $0x01, R10, R9
 	AND   $0x03, R9, R9
 	TBNZ  $0x00, R10, decodeBlockAsm_fast_copy3_read
 	LSRW  $0x03, R10, R10
@@ -503,13 +500,12 @@ decodeBlockAsm_fast_copy_longlarge_big_loop_back:
 	FMOVQ F1, -16(R15)
 
 decodeBlockAsm_fast_copy_done:
-	ADD  R11, R5, R5
-	ADD  R11, R6, R6
-	MOVD R9, R10
-	LSR  $0x02, R10, R10
-	CMP  R2, R7
-	BLO  decodeBlockAsm_fast_loop_nofetch
-	JMP  decodeBlockAsm_fast_end_copy
+	ADD R11, R5, R5
+	ADD R11, R6, R6
+	LSR $0x02, R9, R10
+	CMP R2, R7
+	BLO decodeBlockAsm_fast_loop_nofetch
+	JMP decodeBlockAsm_fast_end_copy
 
 decodeBlockAsm_fast_copy_overlap:
 	CMPW  $0x10, R8
@@ -528,8 +524,7 @@ decodeBlockAsm_fast_loop_overlap_1:
 	ADD  $1, R5, R5
 	SUBS $1, R11, R11
 	BNE  decodeBlockAsm_fast_loop_overlap_1
-	MOVD R9, R10
-	LSR  $0x02, R10, R10
+	LSR  $0x02, R9, R10
 	CMP  R2, R7
 	BLO  decodeBlockAsm_fast_loop_nofetch
 	JMP  decodeBlockAsm_fast_end_copy
@@ -550,8 +545,7 @@ decodeBlockAsm_fast_loop_overlap_2:
 	ADD  $0x02, R5, R5
 	SUBS $0x02, R11, R11
 	BNE  decodeBlockAsm_fast_loop_overlap_2
-	MOVD R9, R10
-	LSR  $0x02, R10, R10
+	LSR  $0x02, R9, R10
 	CMP  R2, R7
 	BLO  decodeBlockAsm_fast_loop_nofetch
 	JMP  decodeBlockAsm_fast_end_copy
@@ -577,8 +571,7 @@ decodeBlockAsm_fast_loop_overlap_3:
 	MOVB  R12, 2(R15)
 	ADD   R11, R5, R5
 	ADD   $3, R5, R5
-	MOVD  R9, R10
-	LSR   $0x02, R10, R10
+	LSR   $0x02, R9, R10
 	CMP   R2, R7
 	BLO   decodeBlockAsm_fast_loop_nofetch
 	JMP   decodeBlockAsm_fast_end_copy
@@ -598,8 +591,7 @@ decodeBlockAsm_fast_loop_overlap_4:
 	MOVW  R12, (R5)(R11)
 	ADD   R11, R5, R5
 	ADD   $4, R5, R5
-	MOVD  R9, R10
-	LSR   $0x02, R10, R10
+	LSR   $0x02, R9, R10
 	CMP   R2, R7
 	BLO   decodeBlockAsm_fast_loop_nofetch
 	JMP   decodeBlockAsm_fast_end_copy
@@ -621,8 +613,7 @@ decodeBlockAsm_fast_loop_overlap_16:
 	FMOVQ F0, (R15)
 	ADD   R11, R5, R5
 	ADD   $16, R5, R5
-	MOVD  R9, R10
-	LSR   $0x02, R10, R10
+	LSR   $0x02, R9, R10
 	CMP   R2, R7
 	BLO   decodeBlockAsm_fast_loop_nofetch
 
@@ -632,8 +623,7 @@ decodeBlockAsm_remain_loop:
 	CMP   R1, R7
 	BHS   decodeBlockAsm_remain_end_copy
 	MOVBU (R7), R2
-	MOVD  R2, R3
-	LSR   $0x02, R3, R3
+	LSR   $0x02, R2, R3
 	CMP   R0, R5
 	BHS   decodeBlockAsm_remain_end_copy
 	ANDS  $0x03, R2, R2
@@ -827,8 +817,7 @@ decodeBlockAsm_remain_litcopy_done:
 	CMP   R1, R7
 	BHS   decodeBlockAsm_remain_end_done
 	MOVBU (R7), R2
-	MOVD  R2, R3
-	LSR   $0x02, R3, R3
+	LSR   $0x02, R2, R3
 	CMP   R0, R5
 	BHS   decodeBlockAsm_remain_end_done
 	ANDS  $0x03, R2, R2
@@ -919,8 +908,7 @@ decodeBlockAsm_remain_copy_3:
 	CMP   R1, R7
 	BHI   corrupt
 	MOVWU -4(R7), R8
-	MOVD  R3, R9
-	LSR   $0x01, R9, R9
+	LSR   $0x01, R3, R9
 	AND   $0x03, R9, R9
 	TBNZ  $0x00, R3, decodeBlockAsm_remain_copy3_read
 	LSRW  $0x03, R3, R3

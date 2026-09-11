@@ -54,12 +54,10 @@ search_loop_encodeBlockAsm:
 	MOVWU R7, R7
 	MOVW  R5, 28(RSP)
 	MOVD  $0x0000cf1bbcdcbf9b, R9
-	MOVD  R6, R10
-	LSL   $0x10, R10, R10
+	LSL   $0x10, R6, R10
 	MUL   R9, R10, R10
 	LSR   $0x31, R10, R10
-	MOVD  R6, R11
-	LSR   $0x08, R11, R11
+	LSR   $0x08, R6, R11
 	LSL   $0x10, R11, R11
 	MUL   R9, R11, R11
 	LSR   $0x31, R11, R11
@@ -69,8 +67,7 @@ search_loop_encodeBlockAsm:
 	ADD   $1, R2, R10
 	MOVWU R10, R10
 	MOVW  R10, (R0)(R11<<2)
-	MOVD  R6, R10
-	LSR   $0x10, R10, R10
+	LSR   $0x10, R6, R10
 	LSL   $0x10, R10, R10
 	MUL   R9, R10, R10
 	LSR   $0x31, R10, R10
@@ -79,8 +76,7 @@ search_loop_encodeBlockAsm:
 	SUBW  R16, R9, R9
 	ADD   R9, R3, R15
 	MOVWU 1(R15), R11
-	MOVD  R6, R9
-	LSR   $0x08, R9, R9
+	LSR   $0x08, R6, R9
 	CMPW  R11, R9
 	BNE   no_repeat_found_encodeBlockAsm
 	ADD   $1, R2, R6
@@ -1156,11 +1152,10 @@ match_nolit_dst_ok_encodeBlockAsm:
 	MOVD  $0x0000cf1bbcdcbf9b, R5
 	MOVD  R6, R7
 	LSR   $0x10, R6, R6
-	MOVD  R6, R8
 	LSL   $0x10, R7, R7
 	MUL   R5, R7, R7
 	LSR   $0x31, R7, R7
-	LSL   $0x10, R8, R8
+	LSL   $0x10, R6, R8
 	MUL   R5, R8, R8
 	LSR   $0x31, R8, R8
 	SUB   $2, R2, R9
@@ -1595,12 +1590,10 @@ search_loop_encodeBlockAsm2MB:
 	MOVD  (R3)(R2), R6
 	MOVW  R5, 28(RSP)
 	MOVD  $0x0000cf1bbcdcbf9b, R8
-	MOVD  R6, R9
-	LSL   $0x10, R9, R9
+	LSL   $0x10, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x31, R9, R9
-	MOVD  R6, R10
-	LSR   $0x08, R10, R10
+	LSR   $0x08, R6, R10
 	LSL   $0x10, R10, R10
 	MUL   R8, R10, R10
 	LSR   $0x31, R10, R10
@@ -1610,8 +1603,7 @@ search_loop_encodeBlockAsm2MB:
 	ADD   $1, R2, R9
 	MOVWU R9, R9
 	MOVW  R9, (R0)(R10<<2)
-	MOVD  R6, R9
-	LSR   $0x10, R9, R9
+	LSR   $0x10, R6, R9
 	LSL   $0x10, R9, R9
 	MUL   R8, R9, R9
 	LSR   $0x31, R9, R9
@@ -1620,8 +1612,7 @@ search_loop_encodeBlockAsm2MB:
 	SUBW  R16, R8, R8
 	ADD   R8, R3, R15
 	MOVWU 1(R15), R10
-	MOVD  R6, R8
-	LSR   $0x08, R8, R8
+	LSR   $0x08, R6, R8
 	CMPW  R10, R8
 	BNE   no_repeat_found_encodeBlockAsm2MB
 	ADD   $1, R2, R6
@@ -2691,11 +2682,10 @@ match_nolit_dst_ok_encodeBlockAsm2MB:
 	MOVD  $0x0000cf1bbcdcbf9b, R5
 	MOVD  R6, R7
 	LSR   $0x10, R6, R6
-	MOVD  R6, R8
 	LSL   $0x10, R7, R7
 	MUL   R5, R7, R7
 	LSR   $0x31, R7, R7
-	LSL   $0x10, R8, R8
+	LSL   $0x10, R6, R8
 	MUL   R5, R8, R8
 	LSR   $0x31, R8, R8
 	SUB   $2, R2, R9
@@ -3123,12 +3113,10 @@ search_loop_encodeBlockAsm512K:
 	MOVD  (R3)(R2), R6
 	MOVW  R5, 28(RSP)
 	MOVD  $0x0000cf1bbcdcbf9b, R8
-	MOVD  R6, R9
-	LSL   $0x10, R9, R9
+	LSL   $0x10, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x32, R9, R9
-	MOVD  R6, R10
-	LSR   $0x08, R10, R10
+	LSR   $0x08, R6, R10
 	LSL   $0x10, R10, R10
 	MUL   R8, R10, R10
 	LSR   $0x32, R10, R10
@@ -3138,8 +3126,7 @@ search_loop_encodeBlockAsm512K:
 	ADD   $1, R2, R9
 	MOVWU R9, R9
 	MOVW  R9, (R0)(R10<<2)
-	MOVD  R6, R9
-	LSR   $0x10, R9, R9
+	LSR   $0x10, R6, R9
 	LSL   $0x10, R9, R9
 	MUL   R8, R9, R9
 	LSR   $0x32, R9, R9
@@ -3148,8 +3135,7 @@ search_loop_encodeBlockAsm512K:
 	SUBW  R16, R8, R8
 	ADD   R8, R3, R15
 	MOVWU 1(R15), R10
-	MOVD  R6, R8
-	LSR   $0x08, R8, R8
+	LSR   $0x08, R6, R8
 	CMPW  R10, R8
 	BNE   no_repeat_found_encodeBlockAsm512K
 	ADD   $1, R2, R6
@@ -4219,11 +4205,10 @@ match_nolit_dst_ok_encodeBlockAsm512K:
 	MOVD  $0x0000cf1bbcdcbf9b, R5
 	MOVD  R6, R7
 	LSR   $0x10, R6, R6
-	MOVD  R6, R8
 	LSL   $0x10, R7, R7
 	MUL   R5, R7, R7
 	LSR   $0x32, R7, R7
-	LSL   $0x10, R8, R8
+	LSL   $0x10, R6, R8
 	MUL   R5, R8, R8
 	LSR   $0x32, R8, R8
 	SUB   $2, R2, R9
@@ -4651,12 +4636,10 @@ search_loop_encodeBlockAsm64K:
 	MOVD  (R3)(R2), R6
 	MOVW  R5, 28(RSP)
 	MOVD  $0x0000cf1bbcdcbf9b, R8
-	MOVD  R6, R9
-	LSL   $0x10, R9, R9
+	LSL   $0x10, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x33, R9, R9
-	MOVD  R6, R10
-	LSR   $0x08, R10, R10
+	LSR   $0x08, R6, R10
 	LSL   $0x10, R10, R10
 	MUL   R8, R10, R10
 	LSR   $0x33, R10, R10
@@ -4666,8 +4649,7 @@ search_loop_encodeBlockAsm64K:
 	ADD   $1, R2, R9
 	MOVWU R9, R9
 	MOVH  R9, (R0)(R10<<1)
-	MOVD  R6, R9
-	LSR   $0x10, R9, R9
+	LSR   $0x10, R6, R9
 	LSL   $0x10, R9, R9
 	MUL   R8, R9, R9
 	LSR   $0x33, R9, R9
@@ -4676,8 +4658,7 @@ search_loop_encodeBlockAsm64K:
 	SUBW  R16, R8, R8
 	ADD   R8, R3, R15
 	MOVWU 1(R15), R10
-	MOVD  R6, R8
-	LSR   $0x08, R8, R8
+	LSR   $0x08, R6, R8
 	CMPW  R10, R8
 	BNE   no_repeat_found_encodeBlockAsm64K
 	ADD   $1, R2, R6
@@ -5648,11 +5629,10 @@ match_nolit_dst_ok_encodeBlockAsm64K:
 	MOVD  $0x0000cf1bbcdcbf9b, R5
 	MOVD  R6, R7
 	LSR   $0x10, R6, R6
-	MOVD  R6, R8
 	LSL   $0x10, R7, R7
 	MUL   R5, R7, R7
 	LSR   $0x33, R7, R7
-	LSL   $0x10, R8, R8
+	LSL   $0x10, R6, R8
 	MUL   R5, R8, R8
 	LSR   $0x33, R8, R8
 	SUB   $2, R2, R9
@@ -6079,12 +6059,10 @@ search_loop_encodeBlockAsm16K:
 	MOVD  (R3)(R2), R6
 	MOVW  R5, 28(RSP)
 	MOVD  $0x000000cf1bbcdcbb, R8
-	MOVD  R6, R9
-	LSL   $0x18, R9, R9
+	LSL   $0x18, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x34, R9, R9
-	MOVD  R6, R10
-	LSR   $0x08, R10, R10
+	LSR   $0x08, R6, R10
 	LSL   $0x18, R10, R10
 	MUL   R8, R10, R10
 	LSR   $0x34, R10, R10
@@ -6094,8 +6072,7 @@ search_loop_encodeBlockAsm16K:
 	ADD   $1, R2, R9
 	MOVWU R9, R9
 	MOVH  R9, (R0)(R10<<1)
-	MOVD  R6, R9
-	LSR   $0x10, R9, R9
+	LSR   $0x10, R6, R9
 	LSL   $0x18, R9, R9
 	MUL   R8, R9, R9
 	LSR   $0x34, R9, R9
@@ -6104,8 +6081,7 @@ search_loop_encodeBlockAsm16K:
 	SUBW  R16, R8, R8
 	ADD   R8, R3, R15
 	MOVWU 1(R15), R10
-	MOVD  R6, R8
-	LSR   $0x08, R8, R8
+	LSR   $0x08, R6, R8
 	CMPW  R10, R8
 	BNE   no_repeat_found_encodeBlockAsm16K
 	ADD   $1, R2, R6
@@ -7058,11 +7034,10 @@ match_nolit_dst_ok_encodeBlockAsm16K:
 	MOVD  $0x000000cf1bbcdcbb, R5
 	MOVD  R6, R7
 	LSR   $0x10, R6, R6
-	MOVD  R6, R8
 	LSL   $0x18, R7, R7
 	MUL   R5, R7, R7
 	LSR   $0x34, R7, R7
-	LSL   $0x18, R8, R8
+	LSL   $0x18, R6, R8
 	MUL   R5, R8, R8
 	LSR   $0x34, R8, R8
 	SUB   $2, R2, R9
@@ -7480,12 +7455,10 @@ search_loop_encodeBlockAsm4K:
 	MOVD  (R3)(R2), R6
 	MOVW  R5, 28(RSP)
 	MOVD  $0x9e3779b1, R8
-	MOVD  R6, R9
-	LSL   $0x20, R9, R9
+	LSL   $0x20, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x36, R9, R9
-	MOVD  R6, R10
-	LSR   $0x08, R10, R10
+	LSR   $0x08, R6, R10
 	LSL   $0x20, R10, R10
 	MUL   R8, R10, R10
 	LSR   $0x36, R10, R10
@@ -7495,8 +7468,7 @@ search_loop_encodeBlockAsm4K:
 	ADD   $1, R2, R9
 	MOVWU R9, R9
 	MOVH  R9, (R0)(R10<<1)
-	MOVD  R6, R9
-	LSR   $0x10, R9, R9
+	LSR   $0x10, R6, R9
 	LSL   $0x20, R9, R9
 	MUL   R8, R9, R9
 	LSR   $0x36, R9, R9
@@ -7505,8 +7477,7 @@ search_loop_encodeBlockAsm4K:
 	SUBW  R16, R8, R8
 	ADD   R8, R3, R15
 	MOVWU 1(R15), R10
-	MOVD  R6, R8
-	LSR   $0x08, R8, R8
+	LSR   $0x08, R6, R8
 	CMPW  R10, R8
 	BNE   no_repeat_found_encodeBlockAsm4K
 	ADD   $1, R2, R6
@@ -8459,11 +8430,10 @@ match_nolit_dst_ok_encodeBlockAsm4K:
 	MOVD  $0x9e3779b1, R5
 	MOVD  R6, R7
 	LSR   $0x10, R6, R6
-	MOVD  R6, R8
 	LSL   $0x20, R7, R7
 	MUL   R5, R7, R7
 	LSR   $0x36, R7, R7
-	LSL   $0x20, R8, R8
+	LSL   $0x20, R6, R8
 	MUL   R5, R8, R8
 	LSR   $0x36, R8, R8
 	SUB   $2, R2, R9
@@ -8881,12 +8851,10 @@ search_loop_encodeBlockAsm1K:
 	MOVD  (R3)(R2), R6
 	MOVW  R5, 28(RSP)
 	MOVD  $0x9e3779b1, R8
-	MOVD  R6, R9
-	LSL   $0x20, R9, R9
+	LSL   $0x20, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x37, R9, R9
-	MOVD  R6, R10
-	LSR   $0x08, R10, R10
+	LSR   $0x08, R6, R10
 	LSL   $0x20, R10, R10
 	MUL   R8, R10, R10
 	LSR   $0x37, R10, R10
@@ -8896,8 +8864,7 @@ search_loop_encodeBlockAsm1K:
 	ADD   $1, R2, R9
 	MOVWU R9, R9
 	MOVH  R9, (R0)(R10<<1)
-	MOVD  R6, R9
-	LSR   $0x10, R9, R9
+	LSR   $0x10, R6, R9
 	LSL   $0x20, R9, R9
 	MUL   R8, R9, R9
 	LSR   $0x37, R9, R9
@@ -8906,8 +8873,7 @@ search_loop_encodeBlockAsm1K:
 	SUBW  R16, R8, R8
 	ADD   R8, R3, R15
 	MOVWU 1(R15), R10
-	MOVD  R6, R8
-	LSR   $0x08, R8, R8
+	LSR   $0x08, R6, R8
 	CMPW  R10, R8
 	BNE   no_repeat_found_encodeBlockAsm1K
 	ADD   $1, R2, R6
@@ -9860,11 +9826,10 @@ match_nolit_dst_ok_encodeBlockAsm1K:
 	MOVD  $0x9e3779b1, R5
 	MOVD  R6, R7
 	LSR   $0x10, R6, R6
-	MOVD  R6, R8
 	LSL   $0x20, R7, R7
 	MUL   R5, R7, R7
 	LSR   $0x37, R7, R7
-	LSL   $0x20, R8, R8
+	LSL   $0x20, R6, R8
 	MUL   R5, R8, R8
 	LSR   $0x37, R8, R8
 	SUB   $2, R2, R9
@@ -10306,8 +10271,7 @@ search_loop_encodeFastBlockAsm:
 	SUBW  R16, R9, R9
 	ADD   R9, R3, R15
 	MOVWU 1(R15), R11
-	MOVD  R6, R9
-	LSR   $0x08, R9, R9
+	LSR   $0x08, R6, R9
 	CMPW  R11, R9
 	BNE   no_repeat_found_encodeFastBlockAsm
 	ADD   $1, R2, R6
@@ -11673,8 +11637,7 @@ search_loop_encodeFastBlockAsm2MB:
 	SUBW  R16, R8, R8
 	ADD   R8, R3, R15
 	MOVWU 1(R15), R10
-	MOVD  R6, R8
-	LSR   $0x08, R8, R8
+	LSR   $0x08, R6, R8
 	CMPW  R10, R8
 	BNE   no_repeat_found_encodeFastBlockAsm2MB
 	ADD   $1, R2, R6
@@ -13027,8 +12990,7 @@ search_loop_encodeFastBlockAsm512K:
 	SUBW  R16, R8, R8
 	ADD   R8, R3, R15
 	MOVWU 1(R15), R10
-	MOVD  R6, R8
-	LSR   $0x08, R8, R8
+	LSR   $0x08, R6, R8
 	CMPW  R10, R8
 	BNE   no_repeat_found_encodeFastBlockAsm512K
 	ADD   $1, R2, R6
@@ -14381,8 +14343,7 @@ search_loop_encodeFastBlockAsm64K:
 	SUBW  R16, R8, R8
 	ADD   R8, R3, R15
 	MOVWU 1(R15), R10
-	MOVD  R6, R8
-	LSR   $0x08, R8, R8
+	LSR   $0x08, R6, R8
 	CMPW  R10, R8
 	BNE   no_repeat_found_encodeFastBlockAsm64K
 	ADD   $1, R2, R6
@@ -15686,8 +15647,7 @@ search_loop_encodeFastBlockAsm16K:
 	SUBW  R16, R8, R8
 	ADD   R8, R3, R15
 	MOVWU 1(R15), R10
-	MOVD  R6, R8
-	LSR   $0x08, R8, R8
+	LSR   $0x08, R6, R8
 	CMPW  R10, R8
 	BNE   no_repeat_found_encodeFastBlockAsm16K
 	ADD   $1, R2, R6
@@ -16964,8 +16924,7 @@ search_loop_encodeFastBlockAsm4K:
 	SUBW  R16, R8, R8
 	ADD   R8, R3, R15
 	MOVWU 1(R15), R10
-	MOVD  R6, R8
-	LSR   $0x08, R8, R8
+	LSR   $0x08, R6, R8
 	CMPW  R10, R8
 	BNE   no_repeat_found_encodeFastBlockAsm4K
 	ADD   $1, R2, R6
@@ -18242,8 +18201,7 @@ search_loop_encodeFastBlockAsm1K:
 	SUBW  R16, R8, R8
 	ADD   R8, R3, R15
 	MOVWU 1(R15), R10
-	MOVD  R6, R8
-	LSR   $0x08, R8, R8
+	LSR   $0x08, R6, R8
 	CMPW  R10, R8
 	BNE   no_repeat_found_encodeFastBlockAsm1K
 	ADD   $1, R2, R6
@@ -19508,12 +19466,10 @@ check_maxskip_cont_encodeBetterBlockAsm:
 	MOVW  R5, 28(RSP)
 	MOVD  $0x00cf1bbcdcbfa563, R8
 	MOVD  $0x9e3779b1, R5
-	MOVD  R6, R9
-	MOVD  R6, R10
-	LSL   $0x08, R9, R9
+	LSL   $0x08, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x2f, R9, R9
-	LSL   $0x20, R10, R10
+	LSL   $0x20, R6, R10
 	MUL   R5, R10, R10
 	LSR   $0x32, R10, R10
 	MOVWU (R3)(R9<<2), R5
@@ -19986,8 +19942,7 @@ no_repeat_found_encodeBetterBlockAsm:
 
 candidateS_match_encodeBetterBlockAsm:
 	LSR   $0x08, R6, R6
-	MOVD  R6, R10
-	LSL   $0x08, R10, R10
+	LSL   $0x08, R6, R10
 	MUL   R8, R10, R10
 	LSR   $0x2f, R10, R10
 	MOVWU (R3)(R10<<2), R5
@@ -21284,12 +21239,10 @@ check_maxskip_cont_encodeBetterBlockAsm2MB:
 	MOVW  R5, 28(RSP)
 	MOVD  $0x00cf1bbcdcbfa563, R8
 	MOVD  $0x9e3779b1, R5
-	MOVD  R6, R9
-	MOVD  R6, R10
-	LSL   $0x08, R9, R9
+	LSL   $0x08, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x2f, R9, R9
-	LSL   $0x20, R10, R10
+	LSL   $0x20, R6, R10
 	MUL   R5, R10, R10
 	LSR   $0x32, R10, R10
 	MOVWU (R3)(R9<<2), R5
@@ -21752,8 +21705,7 @@ no_repeat_found_encodeBetterBlockAsm2MB:
 
 candidateS_match_encodeBetterBlockAsm2MB:
 	LSR   $0x08, R6, R6
-	MOVD  R6, R9
-	LSL   $0x08, R9, R9
+	LSL   $0x08, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x2f, R9, R9
 	MOVWU (R3)(R9<<2), R5
@@ -23048,12 +23000,10 @@ check_maxskip_cont_encodeBetterBlockAsm512K:
 	MOVW  R5, 28(RSP)
 	MOVD  $0x00cf1bbcdcbfa563, R8
 	MOVD  $0x9e3779b1, R5
-	MOVD  R6, R9
-	MOVD  R6, R10
-	LSL   $0x08, R9, R9
+	LSL   $0x08, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x30, R9, R9
-	LSL   $0x20, R10, R10
+	LSL   $0x20, R6, R10
 	MUL   R5, R10, R10
 	LSR   $0x33, R10, R10
 	MOVWU (R3)(R9<<2), R5
@@ -23525,8 +23475,7 @@ no_repeat_found_encodeBetterBlockAsm512K:
 
 candidateS_match_encodeBetterBlockAsm512K:
 	LSR   $0x08, R6, R6
-	MOVD  R6, R9
-	LSL   $0x08, R9, R9
+	LSL   $0x08, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x30, R9, R9
 	MOVWU (R3)(R9<<2), R5
@@ -24830,12 +24779,10 @@ search_loop_encodeBetterBlockAsm64K:
 	MOVW  R5, 28(RSP)
 	MOVD  $0x0000cf1bbcdcbf9b, R8
 	MOVD  $0x9e3779b1, R5
-	MOVD  R6, R9
-	MOVD  R6, R10
-	LSL   $0x10, R9, R9
+	LSL   $0x10, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x31, R9, R9
-	LSL   $0x20, R10, R10
+	LSL   $0x20, R6, R10
 	MUL   R5, R10, R10
 	LSR   $0x34, R10, R10
 	MOVHU (R3)(R9<<1), R5
@@ -25306,8 +25253,7 @@ no_repeat_found_encodeBetterBlockAsm64K:
 
 candidateS_match_encodeBetterBlockAsm64K:
 	LSR   $0x08, R6, R6
-	MOVD  R6, R9
-	LSL   $0x10, R9, R9
+	LSL   $0x10, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x31, R9, R9
 	MOVHU (R3)(R9<<1), R5
@@ -26491,12 +26437,10 @@ search_loop_encodeBetterBlockAsm16K:
 	MOVW  R5, 28(RSP)
 	MOVD  $0x0000cf1bbcdcbf9b, R8
 	MOVD  $0x9e3779b1, R5
-	MOVD  R6, R9
-	MOVD  R6, R10
-	LSL   $0x10, R9, R9
+	LSL   $0x10, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x32, R9, R9
-	LSL   $0x20, R10, R10
+	LSL   $0x20, R6, R10
 	MUL   R5, R10, R10
 	LSR   $0x35, R10, R10
 	MOVHU (R3)(R9<<1), R5
@@ -26958,8 +26902,7 @@ no_repeat_found_encodeBetterBlockAsm16K:
 
 candidateS_match_encodeBetterBlockAsm16K:
 	LSR   $0x08, R6, R6
-	MOVD  R6, R9
-	LSL   $0x10, R9, R9
+	LSL   $0x10, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x32, R9, R9
 	MOVHU (R3)(R9<<1), R5
@@ -28116,12 +28059,10 @@ search_loop_encodeBetterBlockAsm4K:
 	MOVW  R5, 28(RSP)
 	MOVD  $0x0000cf1bbcdcbf9b, R8
 	MOVD  $0x9e3779b1, R5
-	MOVD  R6, R9
-	MOVD  R6, R10
-	LSL   $0x10, R9, R9
+	LSL   $0x10, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x34, R9, R9
-	LSL   $0x20, R10, R10
+	LSL   $0x20, R6, R10
 	MUL   R5, R10, R10
 	LSR   $0x36, R10, R10
 	MOVHU (R3)(R9<<1), R5
@@ -28583,8 +28524,7 @@ no_repeat_found_encodeBetterBlockAsm4K:
 
 candidateS_match_encodeBetterBlockAsm4K:
 	LSR   $0x08, R6, R6
-	MOVD  R6, R9
-	LSL   $0x10, R9, R9
+	LSL   $0x10, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x34, R9, R9
 	MOVHU (R3)(R9<<1), R5
@@ -29741,12 +29681,10 @@ search_loop_encodeBetterBlockAsm1K:
 	MOVW  R5, 28(RSP)
 	MOVD  $0x0000cf1bbcdcbf9b, R8
 	MOVD  $0x9e3779b1, R5
-	MOVD  R6, R9
-	MOVD  R6, R10
-	LSL   $0x10, R9, R9
+	LSL   $0x10, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x35, R9, R9
-	LSL   $0x20, R10, R10
+	LSL   $0x20, R6, R10
 	MUL   R5, R10, R10
 	LSR   $0x38, R10, R10
 	MOVHU (R3)(R9<<1), R5
@@ -30208,8 +30146,7 @@ no_repeat_found_encodeBetterBlockAsm1K:
 
 candidateS_match_encodeBetterBlockAsm1K:
 	LSR   $0x08, R6, R6
-	MOVD  R6, R9
-	LSL   $0x10, R9, R9
+	LSL   $0x10, R6, R9
 	MUL   R8, R9, R9
 	LSR   $0x35, R9, R9
 	MOVHU (R3)(R9<<1), R5
