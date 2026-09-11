@@ -51,7 +51,7 @@ func encodeBlockFast(dst, src []byte) (d int) {
 			tmp = &[sz]byte{}
 		}
 		race.WriteSlice(tmp[:])
-		defer encPools[pool].Put(tmp)
+		defer encFastPools[pool].Put(tmp)
 		return encodeFastBlockAsm(dst, src, tmp)
 	case len(src) > 512<<10:
 		const sz, pool = 32768, 0
@@ -60,7 +60,7 @@ func encodeBlockFast(dst, src []byte) (d int) {
 			tmp = &[sz]byte{}
 		}
 		race.WriteSlice(tmp[:])
-		defer encPools[pool].Put(tmp)
+		defer encFastPools[pool].Put(tmp)
 		return encodeFastBlockAsm2MB(dst, src, tmp)
 	case len(src) > 64<<10:
 		const sz, pool = 32768, 0
@@ -69,7 +69,7 @@ func encodeBlockFast(dst, src []byte) (d int) {
 			tmp = &[sz]byte{}
 		}
 		race.WriteSlice(tmp[:])
-		defer encPools[pool].Put(tmp)
+		defer encFastPools[pool].Put(tmp)
 		return encodeFastBlockAsm512K(dst, src, tmp)
 	case len(src) > 16<<10:
 		const sz, pool = 8192, 1
@@ -78,7 +78,7 @@ func encodeBlockFast(dst, src []byte) (d int) {
 			tmp = &[sz]byte{}
 		}
 		race.WriteSlice(tmp[:])
-		defer encPools[pool].Put(tmp)
+		defer encFastPools[pool].Put(tmp)
 		return encodeFastBlockAsm64K(dst, src, tmp)
 	case len(src) > 4<<10:
 		const sz, pool = 4096, 2
@@ -87,7 +87,7 @@ func encodeBlockFast(dst, src []byte) (d int) {
 			tmp = &[sz]byte{}
 		}
 		race.WriteSlice(tmp[:])
-		defer encPools[pool].Put(tmp)
+		defer encFastPools[pool].Put(tmp)
 		return encodeFastBlockAsm16K(dst, src, tmp)
 	case len(src) > 1<<10:
 		const sz, pool = 2048, 3
@@ -96,7 +96,7 @@ func encodeBlockFast(dst, src []byte) (d int) {
 			tmp = &[sz]byte{}
 		}
 		race.WriteSlice(tmp[:])
-		defer encPools[pool].Put(tmp)
+		defer encFastPools[pool].Put(tmp)
 		return encodeFastBlockAsm4K(dst, src, tmp)
 	case len(src) > 32:
 		const sz, pool = 1024, 4
@@ -105,7 +105,7 @@ func encodeBlockFast(dst, src []byte) (d int) {
 			tmp = &[sz]byte{}
 		}
 		race.WriteSlice(tmp[:])
-		defer encPools[pool].Put(tmp)
+		defer encFastPools[pool].Put(tmp)
 		return encodeFastBlockAsm1K(dst, src, tmp)
 	}
 	return 0
