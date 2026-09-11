@@ -53,9 +53,10 @@ const (
 // arm64 caller.
 var genArm64 = flag.Bool("arm64gen", false, "generate only the arm64-lowerable subset, with scalar memmove")
 
-// genWideMove selects the 16-byte long-copy loop over the 8-byte one, so the
-// two can be benchmarked against each other and against Go's own memmove.
-var genWideMove = flag.Bool("widemove", false, "with -arm64gen, move 16 bytes per step in the long copy loop")
+// genWideMove makes the scalar memmove helpers move 16 bytes per unit instead
+// of 8, in the long copy loop and the short blocks alike, so the two widths can
+// be benchmarked against each other and against Go's own memmove.
+var genWideMove = flag.Bool("widemove", false, "with -arm64gen, move 16 bytes per unit in the scalar memmove helpers, the long copy loop and the short blocks alike")
 
 // genDecoderOnly emits just the decoder, into its own file so the encoders keep
 // the memmove width they were measured with. On arm64 this is the decoder that
@@ -3805,7 +3806,7 @@ func (o options) cvtLZ4BlockAsm() {
 
 func (o options) genDecodeBlockAsm(name string) {
 	TEXT(name, 0, "func(dst, src []byte) int")
-	Doc(name+" encodes a non-empty src to a guaranteed-large-enough dst.",
+	Doc(name+" decodes a non-empty src to a guaranteed-large-enough dst.",
 		"It assumes that the varint-encoded length of the decompressed bytes has already been read.", "")
 	Pragma("noescape")
 	dstBase := Load(Param("dst").Base(), GP64())

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Split out of asm_none.go so arm64 can take the assembly block encoders from
-// encode_arm64.go while still using the Go helpers (emitLiteral, matchLen and
+// encode_asm.go while still using the Go helpers (emitLiteral, matchLen and
 // friends) that asm_none.go continues to provide there. amd64 replaces those
 // helpers with assembly too, which is why it excludes asm_none.go outright.
 
