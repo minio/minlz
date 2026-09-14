@@ -24,6 +24,8 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+
+	"github.com/minio/minlz/internal/race"
 )
 
 // TestEncodePoolsRoundTrip checks that every assembly encoder returns its
@@ -35,7 +37,21 @@ import (
 // makes that family's next Get fail its type assertion and allocate, while the
 // family that lost it allocates on every call. Both happened on amd64 before
 // encodeBlockFast's Put was pointed at encFastPools.
+//
+// That "in practice" is only true for a normal build. Under the race
+// detector, sync.Pool.Put deliberately drops its argument on the floor about
+// one time in four (see the "Randomly drop x on floor" branch in
+// $GOROOT/src/sync/pool.go) specifically to keep callers honest about not
+// relying on Get returning what Put just stored. That makes every subtest
+// here independently ~25% likely to see an empty pool, so the test flakes on
+// -race no matter how carefully the surrounding code avoids GCs or
+// goroutine switches: skip it there rather than chase a race that is a
+// documented property of the allocator, not a bug in the encoders.
 func TestEncodePoolsRoundTrip(t *testing.T) {
+	if race.Enabled {
+		t.Skip("sync.Pool.Put randomly drops its argument under the race detector; this test's pool round-trip check cannot pass reliably there")
+	}
+
 	type family struct {
 		name   string
 		encode func(dst, src []byte) int
