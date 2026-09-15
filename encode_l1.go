@@ -191,7 +191,7 @@ func encodeBlockGo(dst, src []byte) (d int) {
 			if base-nextEmit > maxCopy3Lits || repeat < minCopy2Offset {
 				// Bail if we exceed the maximum size.
 				// We will not exceed dstLimit with the other encodings.
-				if d+(s-nextEmit) > dstLimit {
+				if d+(base-nextEmit) > dstLimit {
 					return 0
 				}
 				d += emitLiteral(dst[d:], src[nextEmit:base])
@@ -434,7 +434,7 @@ func encodeBlockGo64K(dst, src []byte) (d int) {
 			if base-nextEmit > maxCopy2Lits || repeat < minCopy2Offset {
 				// Bail if we exceed the maximum size.
 				// We will not exceed dstLimit with the other encodings.
-				if d+(s-nextEmit) > dstLimit {
+				if d+(base-nextEmit) > dstLimit {
 					return 0
 				}
 				d += emitLiteral(dst[d:], src[nextEmit:base])

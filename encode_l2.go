@@ -110,8 +110,8 @@ func encodeBlockBetterGo(dst, src []byte) (d int) {
 		candidateL := 0
 		nextS := 0
 		for {
-			// Next src position to check
-			nextS = s + (s-nextEmit)>>7 + 1
+			// Next src position to check. Blocks can be long, limit max skipping.
+			nextS = s + min(100, (s-nextEmit)>>7+1)
 			if nextS > sLimit {
 				goto emitRemainder
 			}

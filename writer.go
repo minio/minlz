@@ -992,14 +992,14 @@ func (w *Writer) asyncFlush(omitTrailing bool) error {
 			_, err := w.writeSync(w.ibuf, true, omitTrailing)
 			w.ibuf = w.ibuf[:0]
 			return w.err(err)
-		} else {
-			_, err := w.write(w.ibuf, true, omitTrailing)
-			w.ibuf = w.ibuf[:0]
-			err = w.err(err)
-			if err != nil {
-				return err
-			}
 		}
+		_, err := w.write(w.ibuf, true, omitTrailing)
+		w.ibuf = w.ibuf[:0]
+		err = w.err(err)
+		if err != nil {
+			return err
+		}
+
 	}
 	return w.err(nil)
 }
