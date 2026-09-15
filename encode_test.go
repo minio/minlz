@@ -72,6 +72,34 @@ func TestEncodeHugeS2(t *testing.T) {
 	test(t, bytes.Repeat([]byte("a"), MaxBlockSize*2))
 }
 
+// TestEncodeLongMatch checks that a block consisting of a single long match is
+// not rejected as incompressible. Sizes cover the 64K and the general encoders.
+func TestEncodeLongMatch(t *testing.T) {
+	for _, size := range []int{60000, 1 << 20} {
+		data := bytes.Repeat([]byte("abcdefghij"), size/10)
+		for _, level := range []int{LevelSuperFast, LevelFastest, LevelBalanced, LevelSmallest} {
+			asm, err := Encode(nil, data, level)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for name, comp := range map[string][]byte{"go": encodeGo(nil, data, level), "asm": asm} {
+				if len(comp) > 1024 {
+					t.Errorf("%s, level %d, size %d: not compressed, got %d bytes", name, level, len(data), len(comp))
+					continue
+				}
+				decoded, err := Decode(nil, comp)
+				if err != nil {
+					t.Errorf("%s, level %d, size %d: %v", name, level, len(data), err)
+					continue
+				}
+				if !bytes.Equal(data, decoded) {
+					t.Errorf("%s, level %d, size %d: decode mismatch", name, level, len(data))
+				}
+			}
+		}
+	}
+}
+
 func TestSizes(t *testing.T) {
 	// Test emitting all lengths and their corresponding size functions.
 	for i := 4; i < MaxBlockSize; i++ {
