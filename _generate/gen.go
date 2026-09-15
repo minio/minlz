@@ -16,6 +16,14 @@ package main
 
 //go:generate go run gen.go -out ../asm_amd64.s -stubs ../asm_amd64.go -pkg=minlz
 //go:generate gofmt -w ../asm_amd64.go
+// avo appends the -arch suffix to -out itself, so ../encodeblock.s is written
+// as ../encodeblock_arm64.s. -stubs takes no such suffix and is spelled in
+// full. The asymmetry is avo's, not a typo: spelling -out with the suffix
+// already on it yields encodeblock_arm64_arm64.s.
+//go:generate go run gen.go -out ../encodeblock.s -stubs ../encodeblock_arm64.go -arch arm64 -arm64gen -pkg=minlz
+//go:generate gofmt -w ../encodeblock_arm64.go
+//go:generate go run gen.go -out ../decodeblock.s -stubs ../decodeblock_arm64.go -arch arm64 -arm64gen -widemove -decoderonly -pkg=minlz
+//go:generate gofmt -w ../decodeblock_arm64.go
 
 import (
 	"flag"
@@ -38,6 +46,24 @@ const (
 	matchOffsetCMOV = true
 )
 
+// genArm64 restricts generation to the subset that the avo arm64 lowering can
+// reproduce, and swaps the SSE memmove helpers for scalar ones. The decoder and
+// the LZ4 converter stay out of this pass: the decoder is emitted separately by
+// -decoderonly because it needs the wider memmove, and the LZ4 converter has no
+// arm64 caller.
+var genArm64 = flag.Bool("arm64gen", false, "generate only the arm64-lowerable subset, with scalar memmove")
+
+// genWideMove makes the scalar memmove helpers move 16 bytes per unit instead
+// of 8, in the long copy loop and the short blocks alike, so the two widths can
+// be benchmarked against each other and against Go's own memmove.
+var genWideMove = flag.Bool("widemove", false, "with -arm64gen, move 16 bytes per unit in the scalar memmove helpers, the long copy loop and the short blocks alike")
+
+// genDecoderOnly emits just the decoder, into its own file so the encoders keep
+// the memmove width they were measured with. On arm64 this is the decoder that
+// ships: it replaced a hand-written one, which it beat on Neoverse-N1 while
+// tying on incompressible input.
+var genDecoderOnly = flag.Bool("decoderonly", false, "with -arm64gen, emit only decodeBlockAsm")
+
 func main() {
 	flag.Parse()
 	Constraint(buildtags.Not("appengine").ToConstraint())
@@ -52,6 +78,24 @@ func main() {
 		outputMargin: 17,
 		inputMargin:  17,
 		skipOutput:   false,
+		scalarMove:   *genArm64,
+		wideMove:     *genWideMove,
+	}
+
+	if *genDecoderOnly {
+		// Emitted into its own file so the encoders keep the memmove width
+		// they were measured with: the decoder needs the 16-byte form to fit
+		// in amd64's register file at all, which is not a reason to change
+		// what the encoders do.
+		//
+		// maxLen, maxOffset and the margins are deliberately left at their
+		// zero/struct defaults here. genDecodeBlockAsm reads none of them: it
+		// sets inputMargin and outputMargin itself for each of the two decode
+		// loops it emits, and maxLen/maxOffset are encoder-side settings. The
+		// only option that reaches the decoder is the memmove width.
+		o.genDecodeBlockAsm("decodeBlockAsm")
+		Generate()
+		return
 	}
 
 	// 16 bit hash table has too big of a speed impact.
@@ -91,14 +135,21 @@ func main() {
 	o.maxOffset = 8<<20 - 1
 	o.outputMargin = 8
 	o.inputMargin = 0
-	o.genEmitLiteral()
-	o.genEmitRepeat()
-	o.genEmitCopy()
-	o.genEmitCopyLits2()
-	o.genEmitCopyLits3()
-	o.genMatchLen()
-	o.cvtLZ4BlockAsm()
-	o.genDecodeBlockAsm("decodeBlockAsm")
+	if !*genArm64 {
+		// The block encoders above inline their own copies of these, so arm64
+		// needs none of them to encode. Emitting them anyway would collide at
+		// link time with the Go definitions in asm_none.go, which arm64 still
+		// builds -- amd64 replaces those wholesale via asm_amd64.go, arm64
+		// only adds to them.
+		o.genEmitLiteral()
+		o.genEmitRepeat()
+		o.genEmitCopy()
+		o.genEmitCopyLits2()
+		o.genEmitCopyLits3()
+		o.genMatchLen()
+		o.cvtLZ4BlockAsm()
+		o.genDecodeBlockAsm("decodeBlockAsm")
+	}
 
 	// This has quite low impact, so we disable it.
 	if false {
@@ -229,6 +280,16 @@ type options struct {
 	inputMargin   int
 	maxSkip       int
 	ignoreMargins bool
+	// scalarMove emits the memmove helpers using only general-purpose
+	// registers. The SSE forms it replaces are not merely wider: the 32
+	// byte/iteration loop in genMemMoveLong leans on x86 preserving CF across
+	// DECQ, which no arm64 lowering reproduces.
+	scalarMove bool
+	// wideMove makes the scalarMove long-copy loop move 16 bytes per step
+	// instead of 8. On arm64 that lowers to FMOVQ, which uses the FP/SIMD
+	// register file for the move but does no vector arithmetic. Which is
+	// faster is a question for the benchmark, not for taste.
+	wideMove bool
 	fastOpts
 }
 
@@ -2974,6 +3035,14 @@ func (o options) genMemMoveShort(name string, dst, src, length reg.GPVirtual, en
 			MOVQ(AX, Mem{Base: dst})
 			MOVQ(CX, Mem{Base: dst, Disp: -8, Index: length, Scale: 1})
 			JMP(end)
+		} else if o.scalarMove && !o.wideMove {
+			// Same 16 bytes, as two GPR moves. klauspost's note below says
+			// 2xGPR already matches 1xXMM here, so this costs nothing.
+			MOVQ(Mem{Base: src}, AX)
+			MOVQ(Mem{Base: src, Disp: 8}, CX)
+			MOVQ(AX, Mem{Base: dst})
+			MOVQ(CX, Mem{Base: dst, Disp: 8})
+			JMP(end)
 		} else {
 			// We can always write 16 bytes.
 			// 2xGPR is the same speed as 1xXMM
@@ -2982,6 +3051,53 @@ func (o options) genMemMoveShort(name string, dst, src, length reg.GPVirtual, en
 			MOVOU(X0, Mem{Base: dst})
 			JMP(end)
 		}
+	}
+
+	if o.scalarMove {
+		// Same head-block/tail-block shape as the SSE forms. Each call moves
+		// 16 bytes: either as two GPR pairs, or -- under wideMove -- as one
+		// 128-bit move, which is what the SSE original did and costs no GPRs
+		// at all. That matters because these are inlined into encode loops
+		// with little of amd64's 16-register file to spare. Each unit is
+		// loaded then stored before the next is loaded, which is equivalent
+		// here because scalarMove callers never overlap src and dst.
+		pair := func(sdisp, ddisp int, useLen bool) {
+			s := func(d int) Mem {
+				if useLen {
+					return Mem{Base: src, Disp: d, Index: length, Scale: 1}
+				}
+				return Mem{Base: src, Disp: d}
+			}
+			d := func(d int) Mem {
+				if useLen {
+					return Mem{Base: dst, Disp: d, Index: length, Scale: 1}
+				}
+				return Mem{Base: dst, Disp: d}
+			}
+			if o.wideMove {
+				X := XMM()
+				MOVOU(s(sdisp), X)
+				MOVOU(X, d(ddisp))
+				return
+			}
+			MOVQ(s(sdisp), AX)
+			MOVQ(s(sdisp+8), CX)
+			MOVQ(AX, d(ddisp))
+			MOVQ(CX, d(ddisp+8))
+		}
+
+		Label(name + "move_17through32")
+		pair(0, 0, false)
+		pair(-16, -16, true)
+		JMP(end)
+
+		Label(name + "move_33through64")
+		pair(0, 0, false)
+		pair(16, 16, false)
+		pair(-32, -32, true)
+		pair(-16, -16, true)
+		JMP(end)
+		return
 	}
 
 	Label(name + "move_17through32")
@@ -3030,6 +3146,11 @@ func (o options) genMemMoveLong(name string, dst, src, length reg.GPVirtual, end
 		CMPQ(length, U8(64))
 		JAE(ok)
 	})
+
+	if o.scalarMove {
+		o.genMemMoveLongScalar(name, dst, src, length, end)
+		return
+	}
 
 	// Store start and end for sse_tail
 	Label(name + "forward_sse")
@@ -3095,6 +3216,85 @@ func (o options) genMemMoveLong(name string, dst, src, length reg.GPVirtual, end
 	return
 }
 
+// genMemMoveLongScalar is the scalarMove form of the long copies: a forward
+// loop plus a trailing block laid over whatever the loop already wrote.
+//
+// The SSE genMemMoveLong stages the first and last 32 bytes in XMM before its
+// loop so it can align the destination writes in between. Nothing about that
+// snapshot is load-bearing for correctness -- every caller that reaches it has
+// already established that the source cannot overlap the destination
+// (genEncodeBlockAsm copies literals between two buffers; genDecodeLoop only
+// branches to _copy_long once offset >= length, which puts the source region
+// entirely before the destination). Dropping the alignment attempt therefore
+// only forgoes an optimization, and one tuned for x86 write buffers at that.
+//
+// This is also correct for genMemMoveLong64's callers, which do overlap: they
+// guarantee offset >= 64, and the block moved per iteration is at most 32, so
+// each iteration's reads land entirely within bytes an earlier iteration
+// already finished writing. That is the same forward-copy argument the SSE
+// genMemMoveLong64 relies on -- it has no snapshot either.
+//
+// Flags are kept simple on purpose: the loop's branch reads a CMPQ that
+// immediately precedes it, rather than the SSE form's DECQ-preserves-CF trick.
+// Register pressure is the binding constraint here, not instruction count.
+// avo allocates against amd64's 16 GPRs, and these helpers are inlined into
+// encode loops that already hold most of them live -- which is the real reason
+// the SSE form parks its 64 bytes of head/tail in XMM registers. So this moves
+// two registers' worth per iteration and reuses the same two throughout.
+func (o options) genMemMoveLongScalar(name string, dst, src, length reg.GPVirtual, end LabelRef) {
+	unit := 8
+	if o.wideMove {
+		unit = 16
+	}
+	block := 2 * unit
+
+	var r0, r1 reg.Register
+	if o.wideMove {
+		r0, r1 = XMM(), XMM()
+	} else {
+		r0, r1 = GP64(), GP64()
+	}
+	mov := func(from, to Op) {
+		if o.wideMove {
+			MOVOU(from, to)
+			return
+		}
+		MOVQ(from, to)
+	}
+	at := func(base reg.GPVirtual, disp int, useLen bool) Mem {
+		if useLen {
+			return Mem{Base: base, Disp: disp, Index: length, Scale: 1}
+		}
+		return Mem{Base: base, Disp: disp}
+	}
+
+	srcPos, dstPos, remain := GP64(), GP64(), GP64()
+	MOVQ(src, srcPos)
+	MOVQ(dst, dstPos)
+	MOVQ(length, remain)
+
+	PCALIGN(16)
+	Label(name + "big_loop_back")
+	mov(at(srcPos, 0, false), r0)
+	mov(at(srcPos, unit, false), r1)
+	mov(r0, at(dstPos, 0, false))
+	mov(r1, at(dstPos, unit, false))
+	ADDQ(U8(block), srcPos)
+	ADDQ(U8(block), dstPos)
+	SUBQ(U8(block), remain)
+	CMPQ(remain, U8(block))
+	JAE(LabelRef(name + "big_loop_back"))
+
+	// Fewer than block bytes are left. Copy the final block outright, over the
+	// tail of what the loop already wrote. length >= 64 >= block, so this stays
+	// in bounds.
+	mov(at(src, -block, true), r0)
+	mov(at(src, -unit, true), r1)
+	mov(r0, at(dst, -block, true))
+	mov(r1, at(dst, -unit, true))
+	JMP(end)
+}
+
 // genMemMoveLong64 copies regions of at least 64 bytes.
 // src and dst may not overlap by less than 64 bytes.
 // length must be >= 64 bytes. Is preserved.
@@ -3111,6 +3311,14 @@ func (o options) genMemMoveLong64(name string, dst, src, length reg.GPVirtual, e
 		CMPQ(length, U8(64))
 		JAE(ok)
 	})
+
+	if o.scalarMove {
+		// Unlike genMemMoveLong's callers, these do overlap. See the note on
+		// genMemMoveLongScalar for why a forward copy is still correct given
+		// the 64-byte minimum separation this function's contract requires.
+		o.genMemMoveLongScalar(name, dst, src, length, end)
+		return
+	}
 
 	// We do purely unaligned copied.
 	// Modern processors doesn't seems to care,
@@ -3598,7 +3806,7 @@ func (o options) cvtLZ4BlockAsm() {
 
 func (o options) genDecodeBlockAsm(name string) {
 	TEXT(name, 0, "func(dst, src []byte) int")
-	Doc(name+" encodes a non-empty src to a guaranteed-large-enough dst.",
+	Doc(name+" decodes a non-empty src to a guaranteed-large-enough dst.",
 		"It assumes that the varint-encoded length of the decompressed bytes has already been read.", "")
 	Pragma("noescape")
 	dstBase := Load(Param("dst").Base(), GP64())
@@ -4530,6 +4738,13 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 }
 
 func PCALIGN(n int) {
+	if *genArm64 {
+		// Dropped rather than translated. Go's arm64 assembler does accept
+		// PCALIGN, but 16 is tuned to x86 instruction fetch; whether any
+		// alignment helps on a given arm64 core is a question for the
+		// benchmark on that core.
+		return
+	}
 	Instruction(&ir.Instruction{
 		Opcode:   "PCALIGN",
 		Operands: []Op{Imm(uint64(n))},

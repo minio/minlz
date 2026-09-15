@@ -47,7 +47,7 @@ func (l *lZ4Converter) ConvertBlock(dst, src []byte) ([]byte, int, error) {
 	// The block starts with the varint-encoded length of the decompressed bytes.
 	s, d := 0, len(dst)
 	dst = dst[:cap(dst)]
-	if !debug && hasAsm {
+	if !debug && hasLZ4ConvertAsm {
 		res, sz := cvtLZ4BlockAsm(dst[d:], src)
 		if res < 0 {
 			const (

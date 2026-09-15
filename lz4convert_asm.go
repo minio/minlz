@@ -1,4 +1,4 @@
-// Copyright 2026 MinIO Inc.
+// Copyright 2025 MinIO Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build arm64 && !appengine && !noasm && gc && !purego
+//go:build amd64 && !appengine && !noasm && gc && !purego
 
 package minlz
 
-// decodeBlockAsm decodes a non-empty src to a guaranteed-large-enough dst.
-// It assumes that the varint-encoded length of the decompressed bytes has already been read.
-//
-//go:noescape
-func decodeBlockAsm(dst []byte, src []byte) int
+// hasLZ4ConvertAsm reports whether cvtLZ4BlockAsm is a real assembly routine.
+// This is narrower than hasAsm, which only promises that *some* assembly is in
+// use and is true on arm64 as well; there cvtLZ4BlockAsm is still the stub in
+// asm_none.go that panics.
+const hasLZ4ConvertAsm = true

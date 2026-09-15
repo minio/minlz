@@ -19,7 +19,7 @@ compression ratio while retaining a high decompression speed.
 * Block or Streaming interfaces
 * Very fast decompression, even as pure Go
 * AMD64 encoder+decoder assembly
-* ARM64 decoder assembly
+* ARM64 encoder+decoder assembly
 * Adjustable Compression (4 levels)
 * Concurrent stream Compression
 * Concurrent stream Decompression
