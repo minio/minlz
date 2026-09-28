@@ -444,9 +444,7 @@ func TestSidecarSearcher_ConcurrentSearch(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, 8)
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			ss := NewSidecarSearcher(bytes.NewReader(mainBytes), bytes.NewReader(sideBytes))
 			count := 0
 			err := ss.Search(pat, func(SearchResult) error {
@@ -460,7 +458,7 @@ func TestSidecarSearcher_ConcurrentSearch(t *testing.T) {
 			if count != expected {
 				errs <- fmt.Errorf("got %d, want %d", count, expected)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)

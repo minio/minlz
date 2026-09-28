@@ -30,6 +30,10 @@ builds:
       - riscv64
     goarm:
       - 7
+    ignore:
+      # Removed in Go 1.26.
+      - goos: windows
+        goarch: arm
 
 archives:
   -

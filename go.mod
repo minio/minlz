@@ -1,5 +1,5 @@
 module github.com/minio/minlz
 
-go 1.24
+go 1.25
 
-require github.com/klauspost/compress v1.19.0
+require github.com/klauspost/compress v1.20.1
