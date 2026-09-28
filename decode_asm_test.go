@@ -20,6 +20,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"io"
+	"math/rand"
 	"os"
 	"testing"
 )
@@ -41,6 +42,64 @@ func TestCompareDecoders(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			testDecoderComparison(t, tc.data)
+		})
+	}
+}
+
+// TestCompareDecodersOverlappingCopy drives both decoders through copies whose
+// length exceeds their offset, so the source region is still being written
+// while it is read. With the offset at 64 or more the decoders take a forward
+// block copy rather than the byte-at-a-time overlap loops, and at 65536 or
+// more the copy carries the three-byte offset tag, which selects the long
+// copy path. That path is the one place the lowered decoder's memmove must
+// handle overlap, and its correctness rests on the copy running forward in
+// blocks no wider than the offset. The encoders rarely emit that shape and
+// none of the inputs in TestCompareDecoders do, so the block is assembled by
+// hand from the emit helpers: a literal of offset bytes, then one copy. The
+// expected output is that literal repeated until the copy is filled.
+func TestCompareDecodersOverlappingCopy(t *testing.T) {
+	cases := []struct {
+		name           string
+		offset, length int
+	}{
+		{"offset-64-x16", 64, 1024},
+		{"offset-100-plus-64", 100, 164},
+		{"offset-4k-x2", 4096, 8192},
+		{"offset-64k-plus-1", 65536, 65537},
+		{"offset-64k-x3", 65536, 3 * 65536},
+		{"offset-100k-x2", 100 << 10, 200 << 10},
+		{"offset-100k-plus-64", 100 << 10, 100<<10 + 64},
+	}
+	rng := rand.New(rand.NewSource(1))
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lit := make([]byte, tc.offset)
+			rng.Read(lit)
+			n := tc.offset + tc.length
+			block := make([]byte, MaxEncodedLen(n))
+			d := emitLiteral(block, lit)
+			d += emitCopy(block[d:], tc.offset, tc.length)
+			block = block[:d]
+
+			want := make([]byte, 0, n+tc.offset)
+			for len(want) < n {
+				want = append(want, lit...)
+			}
+			want = want[:n]
+
+			for _, dec := range []struct {
+				name string
+				fn   func(dst, src []byte) int
+			}{{"asm", decodeBlockAsm}, {"go", minLZDecodeGo}} {
+				dst := make([]byte, n)
+				if res := dec.fn(dst, block); res != 0 {
+					t.Errorf("%s decoder: error %d", dec.name, res)
+					continue
+				}
+				if !bytes.Equal(dst, want) {
+					t.Errorf("%s decoder: output differs from expected at offset %d", dec.name, matchLen(dst, want))
+				}
+			}
 		})
 	}
 }

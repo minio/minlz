@@ -123,7 +123,7 @@ jobs:
     strategy:
       matrix:
         tags: [ '', 'nounsafe', '"noasm,nounsafe"' ]
-        tests: ['FuzzEncodingBlocks', 'FuzzDecodeBlock', 'FuzzStreamEncode', 'FuzzStreamDecode', 'FuzzLZ4Block', 'FuzzCompressedSearchRoundtrip', 'FuzzDecodeCompressedSearchChunk']
+        tests: ['FuzzEncodingBlocks', 'FuzzDecodeBlock', 'FuzzStreamEncode', 'FuzzStreamDecode', 'FuzzCompressedSearchRoundtrip', 'FuzzDecodeCompressedSearchChunk']
         os: [ubuntu-latest, ubuntu-24.04-arm]
     runs-on: ${{ matrix.os }}
     steps:

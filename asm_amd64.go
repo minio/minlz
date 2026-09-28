@@ -209,12 +209,7 @@ func emitCopyLits3(dst []byte, lits []byte, offset int, length int) int
 //go:noescape
 func matchLen(a []byte, b []byte) int
 
-// cvtLZ4Block converts an LZ4 block to MinLZ
-//
-//go:noescape
-func cvtLZ4BlockAsm(dst []byte, src []byte) (uncompressed int, dstUsed int)
-
-// decodeBlockAsm encodes a non-empty src to a guaranteed-large-enough dst.
+// decodeBlockAsm decodes a non-empty src to a guaranteed-large-enough dst.
 // It assumes that the varint-encoded length of the decompressed bytes has already been read.
 //
 //go:noescape

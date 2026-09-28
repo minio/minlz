@@ -12,19 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !appengine && !noasm && gc && !purego
+// Renamed from encode_amd64.go, where the _amd64 filename suffix -- not the
+// constraint below -- was what limited it to one architecture. The dispatch
+// itself is architecture-neutral: arm64 now supplies the same encodeBlockAsm*
+// symbols from asm_arm64.s.
+
+//go:build (amd64 || arm64) && !appengine && !noasm && gc && !purego
 
 package minlz
 
 import (
-	"sync"
-
 	"github.com/minio/minlz/internal/race"
 )
 
 const hasAsm = true
-
-var encFastPools [7]sync.Pool
 
 // encodeBlock encodes a non-empty src to a guaranteed-large-enough dst. It
 // assumes that the varint-encoded length of the decompressed bytes has already
@@ -46,7 +47,7 @@ func encodeBlockFast(dst, src []byte) (d int) {
 			tmp = &[sz]byte{}
 		}
 		race.WriteSlice(tmp[:])
-		defer encPools[pool].Put(tmp)
+		defer encFastPools[pool].Put(tmp)
 		return encodeFastBlockAsm(dst, src, tmp)
 	case len(src) > 512<<10:
 		const sz, pool = 32768, 0
@@ -55,7 +56,7 @@ func encodeBlockFast(dst, src []byte) (d int) {
 			tmp = &[sz]byte{}
 		}
 		race.WriteSlice(tmp[:])
-		defer encPools[pool].Put(tmp)
+		defer encFastPools[pool].Put(tmp)
 		return encodeFastBlockAsm2MB(dst, src, tmp)
 	case len(src) > 64<<10:
 		const sz, pool = 32768, 0
@@ -64,7 +65,7 @@ func encodeBlockFast(dst, src []byte) (d int) {
 			tmp = &[sz]byte{}
 		}
 		race.WriteSlice(tmp[:])
-		defer encPools[pool].Put(tmp)
+		defer encFastPools[pool].Put(tmp)
 		return encodeFastBlockAsm512K(dst, src, tmp)
 	case len(src) > 16<<10:
 		const sz, pool = 8192, 1
@@ -73,7 +74,7 @@ func encodeBlockFast(dst, src []byte) (d int) {
 			tmp = &[sz]byte{}
 		}
 		race.WriteSlice(tmp[:])
-		defer encPools[pool].Put(tmp)
+		defer encFastPools[pool].Put(tmp)
 		return encodeFastBlockAsm64K(dst, src, tmp)
 	case len(src) > 4<<10:
 		const sz, pool = 4096, 2
@@ -82,7 +83,7 @@ func encodeBlockFast(dst, src []byte) (d int) {
 			tmp = &[sz]byte{}
 		}
 		race.WriteSlice(tmp[:])
-		defer encPools[pool].Put(tmp)
+		defer encFastPools[pool].Put(tmp)
 		return encodeFastBlockAsm16K(dst, src, tmp)
 	case len(src) > 1<<10:
 		const sz, pool = 2048, 3
@@ -91,7 +92,7 @@ func encodeBlockFast(dst, src []byte) (d int) {
 			tmp = &[sz]byte{}
 		}
 		race.WriteSlice(tmp[:])
-		defer encPools[pool].Put(tmp)
+		defer encFastPools[pool].Put(tmp)
 		return encodeFastBlockAsm4K(dst, src, tmp)
 	case len(src) > 32:
 		const sz, pool = 1024, 4
@@ -100,13 +101,11 @@ func encodeBlockFast(dst, src []byte) (d int) {
 			tmp = &[sz]byte{}
 		}
 		race.WriteSlice(tmp[:])
-		defer encPools[pool].Put(tmp)
+		defer encFastPools[pool].Put(tmp)
 		return encodeFastBlockAsm1K(dst, src, tmp)
 	}
 	return 0
 }
-
-var encPools [7]sync.Pool
 
 // encodeBlock encodes a non-empty src to a guaranteed-large-enough dst. It
 // assumes that the varint-encoded length of the decompressed bytes has already
@@ -187,8 +186,6 @@ func encodeBlock(dst, src []byte) (d int) {
 	}
 	return 0
 }
-
-var encBetterPools [6]sync.Pool
 
 // encodeBlockBetter encodes a non-empty src to a guaranteed-large-enough dst. It
 // assumes that the varint-encoded length of the decompressed bytes has already

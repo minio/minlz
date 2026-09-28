@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"os"
+	"sync"
 )
 
 const (
@@ -218,6 +219,15 @@ const inputMargin = 8
 // minNonLiteralBlockSize is the minimum size of the input to encodeBlock that
 // will be accepted by the encoder.
 const minNonLiteralBlockSize = 16
+
+// Scratch tables for the assembly block encoders in encode_asm.go, indexed by
+// size class. Declared for every build so tests can inspect them; they stay
+// empty where the pure-Go encoders are used.
+var (
+	encFastPools   [7]sync.Pool
+	encPools       [7]sync.Pool
+	encBetterPools [6]sync.Pool
+)
 
 // encodeUncompressed will append src to dst as uncompressed data and return it.
 func encodeUncompressed(dst, src []byte) []byte {
