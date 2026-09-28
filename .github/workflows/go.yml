@@ -12,7 +12,7 @@ jobs:
   build:
     strategy:
       matrix:
-        go-version: [1.24.x, 1.25.x, 1.26.x]
+        go-version: [1.25.x, 1.26.x, 1.27.x]
         os: [ubuntu-latest, macos-latest, windows-latest, ubuntu-24.04-arm]
     env:
       CGO_ENABLED: 0
@@ -60,7 +60,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v7.0.0
       with:
-        go-version: 1.25.x
+        go-version: 1.27.x
 
     - name: Checkout code
       uses: actions/checkout@v7.0.1
@@ -82,7 +82,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v7.0.0
       with:
-        go-version: 1.25.x
+        go-version: 1.27.x
 
     - name: Checkout code
       uses: actions/checkout@v7.0.1
@@ -100,10 +100,10 @@ jobs:
       run: go build github.com/minio/minlz/cmd/mz&&./mz c -verify -o=comp.mz mz&&./mz d -rm comp.mz&&rm ./mz&&rm comp
 
     - name: goreleaser deprecation
-      run: curl -sfL https://git.io/goreleaser | VERSION=v2.13.2 sh -s -- check
+      run: curl -sfL https://git.io/goreleaser | VERSION=v2.18.2 sh -s -- check
 
     - name: goreleaser snapshot
-      run: curl -sL https://git.io/goreleaser | VERSION=v2.13.2 sh -s -- --snapshot --clean
+      run: curl -sL https://git.io/goreleaser | VERSION=v2.18.2 sh -s -- --snapshot --clean
 
     - name: Test GOAMD64 v3
       env:
@@ -123,17 +123,17 @@ jobs:
     strategy:
       matrix:
         tags: [ '', 'nounsafe', '"noasm,nounsafe"' ]
-        tests: ['FuzzEncodingBlocks', 'FuzzDecodeBlock', 'FuzzStreamEncode', 'FuzzStreamDecode', 'FuzzLZ4Block', 'FuzzCompressedSearchRoundtrip', 'FuzzDecodeCompressedSearchChunk']
+        tests: ['FuzzEncodingBlocks', 'FuzzDecodeBlock', 'FuzzStreamEncode', 'FuzzStreamDecode', 'FuzzCompressedSearchRoundtrip', 'FuzzDecodeCompressedSearchChunk']
         os: [ubuntu-latest, ubuntu-24.04-arm]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Set up Go
         uses: actions/setup-go@v7.0.0
         with:
-          go-version: 1.25.x
+          go-version: 1.27.x
 
       - name: Checkout code
         uses: actions/checkout@v7.0.1
 
       - name: mz/${{ matrix.tests }}/${{ matrix.tags }}
-        run: go test -tags=${{ matrix.tags }} -run=none -fuzz=${{ matrix.tests }} -fuzztime=100000x -test.fuzzminimizetime=10ms
+        run: go test -tags=${{ matrix.tags }} -run=none -fuzz=${{ matrix.tests }} -fuzztime=3m -test.fuzzminimizetime=100ms

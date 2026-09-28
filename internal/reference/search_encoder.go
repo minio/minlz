@@ -153,7 +153,7 @@ func BuildSearchTable(cfg SearchConfig, blockData, overlap []byte) (table []byte
 	}
 
 	// Positions fully inside blockData.
-	for pos := 0; pos < last; pos++ {
+	for pos := range last {
 		indexAt(pos)
 	}
 	// Overlap tail: positions whose windows extend into the next block.

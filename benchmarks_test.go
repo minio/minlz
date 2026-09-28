@@ -280,6 +280,22 @@ func BenchmarkRandomEncodeBlock8MB(b *testing.B) {
 	benchEncode(b, data)
 }
 
+// BenchmarkRandomDecodeBlock1MB fills a gap the encode benchmarks above do not
+// have: incompressible input encodes to one long literal run, so decoding it is
+// a memmove and nothing else. That is a different bottleneck from the tag
+// dispatch loop the Twain decode benchmarks measure, and on a platform with
+// more than one decoder implementation it is the case that decides which one
+// is actually faster.
+func BenchmarkRandomDecodeBlock1MB(b *testing.B) {
+	rng := rand.New(rand.NewSource(1))
+	data := make([]byte, 1<<20)
+	_, err := io.ReadFull(rng, data)
+	if err != nil {
+		b.Fatal(err)
+	}
+	benchDecode(b, data)
+}
+
 func downloadBenchmarkFiles(b testing.TB, basename string) (errRet error) {
 	bDir := filepath.FromSlash(*benchdataDir)
 	filename := filepath.Join(bDir, basename)
