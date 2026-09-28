@@ -136,4 +136,4 @@ jobs:
         uses: actions/checkout@v7.0.1
 
       - name: mz/${{ matrix.tests }}/${{ matrix.tags }}
-        run: go test -tags=${{ matrix.tags }} -run=none -fuzz=${{ matrix.tests }} -fuzztime=100000x -test.fuzzminimizetime=10ms
+        run: go test -tags=${{ matrix.tags }} -run=none -fuzz=${{ matrix.tests }} -fuzztime=3m -test.fuzzminimizetime=100ms
