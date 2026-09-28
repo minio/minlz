@@ -112,15 +112,22 @@ func TestEncodeAllocs(t *testing.T) {
 	for _, size := range []int{4 << 20, 1 << 20, 128 << 10, 32 << 10, 8 << 10, 2 << 10, 512} {
 		src := bytes.Repeat([]byte("minlz alloc test "), size/17+1)[:size]
 		dst := make([]byte, MaxEncodedLen(size))
-		allocs := testing.AllocsPerRun(10, func() {
+		encode := func() {
 			for _, level := range []int{LevelSuperFast, LevelFastest} {
 				if _, err := Encode(dst, src, level); err != nil {
 					t.Fatal(err)
 				}
 			}
-		})
+		}
+		// sync.Pool may drop items at any time, so only fail if every attempt allocates.
+		var allocs float64
+		for range 3 {
+			if allocs = testing.AllocsPerRun(10, encode); allocs == 0 {
+				break
+			}
+		}
 		if allocs > 0 {
-			t.Errorf("size %d: got %v allocs per run, want 0", size, allocs)
+			t.Errorf("size %d: got %v allocs per run in all 3 attempts, want 0", size, allocs)
 		}
 	}
 }
