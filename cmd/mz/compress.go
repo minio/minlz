@@ -812,13 +812,11 @@ func verifyTo(w io.Writer, verify, quiet bool, cpu int) (io.Writer, func() error
 	writer := io.MultiWriter(w, pw)
 	var wg sync.WaitGroup
 	var err error
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		r := minlz.NewReader(pr)
 		_, err = r.DecodeConcurrent(io.Discard, cpu)
 		pr.CloseWithError(fmt.Errorf("verify: %w", err))
-	}()
+	})
 	return writer, func() error {
 		pw.Close()
 		wg.Wait()

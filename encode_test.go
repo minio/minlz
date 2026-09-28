@@ -892,7 +892,7 @@ func TestEncodePoolsRoundTrip(t *testing.T) {
 				if len(held[target]) == 0 {
 					t.Errorf("%s pool %d is empty after encoding: the table was returned somewhere else", f.name, target.pool)
 				}
-				want := reflect.PointerTo(reflect.ArrayOf(c.table[fi], reflect.TypeOf(byte(0))))
+				want := reflect.PointerTo(reflect.ArrayOf(c.table[fi], reflect.TypeFor[byte]()))
 				for s, vs := range held {
 					for _, v := range vs {
 						switch {
