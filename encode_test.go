@@ -34,52 +34,41 @@ import (
 )
 
 func TestEncodeHuge(t *testing.T) {
-	test := func(t *testing.T, data []byte) {
-		for i := LevelFastest; i <= LevelSmallest; i++ {
-			comp, err := Encode(make([]byte, MaxEncodedLen(len(data))), data, LevelFastest)
+	data := make([]byte, MaxBlockSize)
+	for level := LevelFastest; level <= LevelSmallest; level++ {
+		t.Run(fmt.Sprintf("level%d", level), func(t *testing.T) {
+			comp, err := Encode(make([]byte, MaxEncodedLen(len(data))), data, level)
 			if err != nil {
-				t.Error(err)
-				return
+				t.Fatal(err)
 			}
 			decoded, err := Decode(nil, comp)
 			if err != nil {
-				t.Error(err)
-				return
+				t.Fatal(err)
 			}
 			if !bytes.Equal(data, decoded) {
-				t.Error("block decoder mismatch")
-				return
+				t.Fatal("block decoder mismatch")
 			}
 			if mel := MaxEncodedLen(len(data)); len(comp) > mel {
-				t.Error(fmt.Errorf("MaxEncodedLen Exceed: input: %d, mel: %d, got %d", len(data), mel, len(comp)))
-				return
+				t.Fatalf("MaxEncodedLen Exceed: input: %d, mel: %d, got %d", len(data), mel, len(comp))
 			}
-		}
+		})
 	}
-	test(t, make([]byte, MaxBlockSize))
 }
 
 func TestEncodeHugeS2(t *testing.T) {
-	test := func(t *testing.T, data []byte) {
-		for i := LevelFastest; i <= LevelSmallest; i++ {
-			comp := s2.Encode(make([]byte, s2.MaxEncodedLen(len(data))), data)
-			decoded, err := Decode(nil, comp)
-			if err != nil {
-				t.Error(err)
-				return
-			}
-			if !bytes.Equal(data, decoded) {
-				t.Error("block decoder mismatch")
-				return
-			}
-			if mel := s2.MaxEncodedLen(len(data)); len(comp) > mel {
-				t.Error(fmt.Errorf("MaxEncodedLen Exceed: input: %d, mel: %d, got %d", len(data), mel, len(comp)))
-				return
-			}
-		}
-	}
 	// Test we fall back correctly.
-	test(t, bytes.Repeat([]byte("a"), MaxBlockSize*2))
+	data := bytes.Repeat([]byte("a"), MaxBlockSize*2)
+	comp := s2.Encode(make([]byte, s2.MaxEncodedLen(len(data))), data)
+	decoded, err := Decode(nil, comp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, decoded) {
+		t.Fatal("block decoder mismatch")
+	}
+	if mel := s2.MaxEncodedLen(len(data)); len(comp) > mel {
+		t.Fatalf("MaxEncodedLen Exceed: input: %d, mel: %d, got %d", len(data), mel, len(comp))
+	}
 }
 
 // TestEncodeLongMatch checks that a block consisting of a single long match is
