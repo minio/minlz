@@ -581,6 +581,8 @@ func TestEncodeRandomStored(t *testing.T) {
 			})
 		}
 	}
+}
+
 // updateEncodeGolden regenerates the digests in encodeAsmGolden. Run it on
 // amd64 -- that is the architecture the digests are defined to describe -- and
 // paste the printed map back into this file:
