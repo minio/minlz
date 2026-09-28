@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/s2"
+	"github.com/minio/minlz/internal/race"
 )
 
 func TestEncodeHuge(t *testing.T) {
@@ -96,6 +97,30 @@ func TestEncodeLongMatch(t *testing.T) {
 					t.Errorf("%s, level %d, size %d: decode mismatch", name, level, len(data))
 				}
 			}
+		}
+	}
+}
+
+// TestEncodeAllocs checks that the hash tables are reused across calls.
+// Levels are alternated, since a table returned to the wrong pool (#68)
+// can make the other level allocate as well.
+func TestEncodeAllocs(t *testing.T) {
+	if race.Enabled {
+		t.Skip("sync.Pool randomly drops items with the race detector")
+	}
+	// One size per encoder table size.
+	for _, size := range []int{4 << 20, 1 << 20, 128 << 10, 32 << 10, 8 << 10, 2 << 10, 512} {
+		src := bytes.Repeat([]byte("minlz alloc test "), size/17+1)[:size]
+		dst := make([]byte, MaxEncodedLen(size))
+		allocs := testing.AllocsPerRun(10, func() {
+			for _, level := range []int{LevelSuperFast, LevelFastest} {
+				if _, err := Encode(dst, src, level); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+		if allocs > 0 {
+			t.Errorf("size %d: got %v allocs per run, want 0", size, allocs)
 		}
 	}
 }
