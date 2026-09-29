@@ -16,8 +16,12 @@ package minlz
 
 import (
 	"bytes"
+	"fmt"
 	"math/rand"
+	"strings"
 	"testing"
+
+	"github.com/minio/minlz/internal/reference"
 )
 
 // TestDecodeBlock tests the decoder with various data patterns.
@@ -163,36 +167,70 @@ func TestDecodeBlockLongOffsets(t *testing.T) {
 	}
 }
 
+// decodeBlockBenchInputs returns the blocks BenchmarkDecodeBlock decodes.
+// They are encoded with internal/reference so every build, with or without
+// assembly, decodes the same bytes.
+//
+// The random_* inputs are stored blocks, so they time the stored-block copy
+// rather than the decode loop. Use text_* and compressible to compare
+// decoders.
+func decodeBlockBenchInputs(tb testing.TB) (names []string, data, encoded [][]byte) {
+	add := func(name string, d []byte) {
+		e, err := reference.EncodeBlock(d)
+		if err != nil {
+			tb.Fatal(err)
+		}
+		names = append(names, name)
+		data = append(data, d)
+		encoded = append(encoded, e)
+	}
+	sizes := []int{1000, 10000, 100000, 1000000}
+	rng := rand.New(rand.NewSource(0))
+	for _, size := range sizes {
+		d := make([]byte, size)
+		rng.Read(d)
+		add(fmt.Sprintf("random_%d", size), d)
+	}
+	text := readFile(tb, "testdata/Mark.Twain-Tom.Sawyer.txt")
+	for _, size := range sizes {
+		add(fmt.Sprintf("text_%d", size), expand(text, size))
+	}
+	add("compressible", bytes.Repeat([]byte("abcdefghij"), 100000))
+	return names, data, encoded
+}
+
+// TestDecodeBlockBenchInputs checks that the benchmark inputs decode, and
+// that the text and compressible ones are compressed rather than stored.
+func TestDecodeBlockBenchInputs(t *testing.T) {
+	names, data, encoded := decodeBlockBenchInputs(t)
+	for i, name := range names {
+		got, err := Decode(nil, encoded[i])
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !bytes.Equal(got, data[i]) {
+			t.Fatalf("%s: decode mismatch", name)
+		}
+		if strings.HasPrefix(name, "text_") && len(encoded[i]) >= len(data[i]) {
+			t.Fatalf("%s: encoded to %d bytes, want a compressed block", name, len(encoded[i]))
+		}
+		if name == "compressible" && len(encoded[i]) > len(data[i])/100 {
+			t.Fatalf("%s: encoded to %d bytes, want a compressed block", name, len(encoded[i]))
+		}
+	}
+}
+
 // BenchmarkDecodeBlock benchmarks the decoder.
 func BenchmarkDecodeBlock(b *testing.B) {
-	sizes := []int{1000, 10000, 100000, 1000000}
-
-	for _, size := range sizes {
-		data := make([]byte, size)
-		rand.Read(data)
-
-		encoded, _ := Encode(nil, data, LevelFastest)
-		dst := make([]byte, size)
-
-		b.Run("random_"+string(rune('0'+size%10)), func(b *testing.B) {
-			b.SetBytes(int64(size))
+	names, data, encoded := decodeBlockBenchInputs(b)
+	for i, name := range names {
+		dst := make([]byte, len(data[i]))
+		b.Run(name, func(b *testing.B) {
+			b.SetBytes(int64(len(data[i])))
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				Decode(dst, encoded)
+			for n := 0; n < b.N; n++ {
+				Decode(dst, encoded[i])
 			}
 		})
 	}
-
-	// Benchmark highly compressible data
-	data := bytes.Repeat([]byte("abcdefghij"), 100000)
-	encoded, _ := Encode(nil, data, LevelFastest)
-	dst := make([]byte, len(data))
-
-	b.Run("compressible", func(b *testing.B) {
-		b.SetBytes(int64(len(data)))
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			Decode(dst, encoded)
-		}
-	})
 }

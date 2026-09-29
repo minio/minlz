@@ -560,6 +560,29 @@ func TestEmitters(t *testing.T) {
 	})
 }
 
+// TestEncodeRandomStored checks that every level stores random input as an
+// uncompressed block. An encoder that starts emitting compressed blocks for
+// it has regressed, and would also slow decoding of incompressible data.
+func TestEncodeRandomStored(t *testing.T) {
+	rng := rand.New(rand.NewSource(0))
+	for _, size := range []int{100, 1000, 10000, 100000, 1000000} {
+		src := make([]byte, size)
+		rng.Read(src)
+		want := encodeUncompressed(nil, src)
+		for _, level := range []int{LevelSuperFast, LevelFastest, LevelBalanced, LevelSmallest} {
+			t.Run(fmt.Sprintf("%d/level%d", size, level), func(t *testing.T) {
+				got, err := Encode(nil, src, level)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(got, want) {
+					t.Errorf("encoded to %d bytes, want a %d byte stored block", len(got), len(want))
+				}
+			})
+		}
+	}
+}
+
 // updateEncodeGolden regenerates the digests in encodeAsmGolden. Run it on
 // amd64 -- that is the architecture the digests are defined to describe -- and
 // paste the printed map back into this file:
