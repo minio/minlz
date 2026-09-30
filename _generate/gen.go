@@ -680,7 +680,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 
 					length := o.matchLen("repeat_extend_"+name, forwardStart, backStart, srcLeft, nil, LabelRef("repeat_extend_forward_end_"+name))
 					forwardStart, backStart, srcLeft = nil, nil, nil
-					PCALIGN(16)
+					PCALIGN(Imm(16))
 					Label("repeat_extend_forward_end_" + name)
 					// s+= length
 					ADDL(length.As32(), s)
@@ -907,7 +907,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 			nil,
 			LabelRef("match_nolit_end_"+name),
 		)
-		PCALIGN(16)
+		PCALIGN(Imm(16))
 		Label("match_nolit_end_" + name)
 		assert(func(ok LabelRef) {
 			// Should never exceed max block size...
@@ -979,7 +979,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 			o.emitLiteral("match_emit_"+name, litLen, nil, dst, litSrc, LabelRef("match_nolits_copy_"+name), true)
 		}
 
-		PCALIGN(16)
+		PCALIGN(Imm(16))
 		Label("match_nolits_copy_" + name)
 		o.emitCopy("match_nolit_"+name, length, offset, nil, dst, LabelRef("match_nolit_emitcopy_end_"+name))
 		Label("match_nolit_emitcopy_end_" + name)
@@ -1102,7 +1102,7 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 				length,
 				LabelRef("match_nolit2_end_"+name),
 			)
-			PCALIGN(16)
+			PCALIGN(Imm(16))
 			Label("match_nolit2_end_" + name)
 			assert(func(ok LabelRef) {
 				// Should never exceed max block size...
@@ -1341,7 +1341,7 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 	Load(Param("src").Base(), src)
 
 	// Load cv
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label("search_loop_" + name)
 	reloadTables("tmp", &sTab, &lTab)
 	candidate := GP32()
@@ -1573,7 +1573,7 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 
 					length := o.matchLen("repeat_extend_"+name, forwardStart, backStart, srcLeft, nil, LabelRef("repeat_extend_forward_end_"+name))
 					forwardStart, backStart, srcLeft = nil, nil, nil
-					PCALIGN(16)
+					PCALIGN(Imm(16))
 					Label("repeat_extend_forward_end_" + name)
 					// s+= length
 					ADDL(length.As32(), s)
@@ -1648,7 +1648,7 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 				JMP(LabelRef("repeat_index_loop_" + name))
 			}
 		}
-		PCALIGN(16)
+		PCALIGN(Imm(16))
 		Label("no_repeat_found_" + name)
 		{
 			// Check candidates are ok. All must be < s and < len(src)
@@ -1714,7 +1714,7 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 		}
 	}
 
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label("candidate_match_" + name)
 	// We have a match at 's' with src offset in "candidate" that matches at least 4 bytes.
 	// Extend backwards
@@ -1797,7 +1797,7 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 			nil,
 			LabelRef("match_nolit_end_"+name),
 		)
-		PCALIGN(16)
+		PCALIGN(Imm(16))
 		Label("match_nolit_end_" + name)
 		assert(func(ok LabelRef) {
 			CMPL(length.As32(), U32(math.MaxInt32))
@@ -2999,7 +2999,7 @@ func (o options) genMemMoveShort(name string, dst, src, length reg.GPVirtual, en
 	}
 
 	if minMove <= 16 {
-		PCALIGN(16)
+		PCALIGN(Imm(16))
 		Label(name + "move_8through16")
 		if margin < 16 {
 			MOVQ(Mem{Base: src}, AX)
@@ -3155,7 +3155,7 @@ func (o options) genMemMoveLong(name string, dst, src, length reg.GPVirtual, end
 	dstPos := GP64()
 	LEAQ(Mem{Disp: -32, Base: dst, Scale: 1, Index: srcOff}, dstPos)
 
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label(name + "big_loop_back")
 
 	MOVOU(Mem{Disp: 0, Base: srcPos}, X4)
@@ -3245,7 +3245,7 @@ func (o options) genMemMoveLongScalar(name string, dst, src, length reg.GPVirtua
 	MOVQ(dst, dstPos)
 	MOVQ(length, remain)
 
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label(name + "big_loop_back")
 	mov(at(srcPos, 0, false), r0)
 	mov(at(srcPos, unit, false), r1)
@@ -3307,7 +3307,7 @@ func (o options) genMemMoveLong64(name string, dst, src, length reg.GPVirtual, e
 	MOVQ(dst, dstPos)
 	MOVQ(length, remain)
 
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label(name + "big_loop_back")
 	MOVOU(Mem{Disp: 0, Base: srcPos}, X0)
 	MOVOU(Mem{Disp: 16, Base: srcPos}, X1)
@@ -3385,7 +3385,7 @@ func (o options) matchLen(name string, a, b, len, dst reg.GPVirtual, end LabelRe
 	Label("avx2_continue_" + name)
 
 	JMP(LabelRef("matchlen_loop_16_entry_" + name))
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label("matchlen_loopback_16_" + name)
 	tmp2 := GP64()
 	MOVQ(Mem{Base: a, Index: matched, Scale: 1}, tmp)
@@ -3403,7 +3403,7 @@ func (o options) matchLen(name string, a, b, len, dst reg.GPVirtual, end LabelRe
 	JAE(LabelRef("matchlen_loopback_16_" + name))
 	JMP(LabelRef("matchlen_match8_" + name))
 
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label("matchlen_bsf_16" + name)
 	// Not all match.
 	TZCNTQ(tmp2, tmp2)
@@ -3423,7 +3423,7 @@ func (o options) matchLen(name string, a, b, len, dst reg.GPVirtual, end LabelRe
 	LEAL(Mem{Base: matched, Disp: 8}, matched)
 	JMP(LabelRef("matchlen_match4_" + name))
 
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label("matchlen_bsf_8_" + name)
 	// Not all match.
 	TZCNTQ(tmp, tmp)
@@ -3672,7 +3672,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	// LOOP
 	if !prefetch {
 		// Triggers https://github.com/golang/go/issues/74648
-		// PCALIGN(16)
+		// PCALIGN(Imm(16))
 	}
 	Label(name + "_loop")
 	CMPQ(src, srcLimit)
@@ -3682,7 +3682,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	SHRQ(U8(2), value)
 
 	if prefetch {
-		PCALIGN(16)
+		PCALIGN(Imm(16))
 		Label(name + "_loop_nofetch")
 	}
 	// Check destination
@@ -3695,7 +3695,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	JNZ(LabelRef(name + "_copy"))
 	// TAG 00 Literals
 	length := GP64()
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label(name + "_lits")
 	{
 		MOVL(value.As32(), length.As32())
@@ -3749,7 +3749,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 			}
 		}
 		// 1 - > 29 literals
-		PCALIGN(16)
+		PCALIGN(Imm(16))
 		Label(name + "_lit_0")
 		{
 			INCQ(src)
@@ -3848,7 +3848,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	JMP(LabelRef(name + "_copy_3"))
 
 	// TAG 1 - Copy 1
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label(name + "_copy_1")
 	{
 		if o.inputMargin < 2 {
@@ -3911,7 +3911,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	}
 
 	// TAG 2 - Copy 2
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label(name + "_copy_2")
 	{
 		// length = int(src[s-3]) >> 2
@@ -4004,7 +4004,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 		}
 	}
 	// TAG 3 - Copy 2/3 fused
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label(name + "_copy_3")
 	{
 		if o.inputMargin < 4 {
@@ -4191,7 +4191,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	}
 	// Length always < 64
 	copySrc := GP64()
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label(name + "_copy_exec_short")
 	{
 		CMPL(offset.As32(), dstPos.As32())
@@ -4211,7 +4211,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	o.outputMargin -= 4
 
 	// 64 offset, 64 length
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label(name + "_copy_exec_long_long")
 	{
 		MOVQ(dst, copySrc)
@@ -4228,7 +4228,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 
 	// length 4 -> 64, no overlap
 	// Very hot (16 byte copy mainly)
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label(name + "_copy_short_no_ol")
 	{
 		// Create source pointer with offset
@@ -4244,7 +4244,7 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 		o.genMemMoveShort(name+"_copy_short_no_ol", dst, copySrc, length, LabelRef(name+"_copy_done"), 4)
 	}
 	// Offset anything, length anything
-	PCALIGN(16)
+	PCALIGN(Imm(16))
 	Label(name + "_copy_exec")
 	{
 		CMPL(offset.As32(), dstPos.As32())
@@ -4442,18 +4442,4 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 	// DONE - store if last was literal if needed.
 	Label(name + "_end_copy")
 	Label(name + "_end_done")
-}
-
-func PCALIGN(n int) {
-	if *genArm64 {
-		// Dropped rather than translated. Go's arm64 assembler does accept
-		// PCALIGN, but 16 is tuned to x86 instruction fetch; whether any
-		// alignment helps on a given arm64 core is a question for the
-		// benchmark on that core.
-		return
-	}
-	Instruction(&ir.Instruction{
-		Opcode:   "PCALIGN",
-		Operands: []Op{Imm(uint64(n))},
-	})
 }
