@@ -329,11 +329,10 @@ matchlen_match2_repeat_extend_encodeBlockAsm:
 	JZ   repeat_extend_forward_end_encodeBlockAsm
 
 matchlen_match1_repeat_extend_encodeBlockAsm:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  repeat_extend_forward_end_encodeBlockAsm
-	LEAL 1(R11), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     repeat_extend_forward_end_encodeBlockAsm
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeBlockAsm:
@@ -508,11 +507,10 @@ matchlen_match2_match_nolit_encodeBlockAsm:
 	JZ   match_nolit_end_encodeBlockAsm
 
 matchlen_match1_match_nolit_encodeBlockAsm:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  match_nolit_end_encodeBlockAsm
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeBlockAsm
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     match_nolit_end_encodeBlockAsm
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeBlockAsm:
@@ -774,19 +772,18 @@ emit_lit_memmove_long_match_emit_encodeBlockAsmlarge_big_loop_back:
 	JNA   emit_lit_memmove_long_match_emit_encodeBlockAsmlarge_big_loop_back
 
 emit_lit_memmove_long_match_emit_encodeBlockAsmlarge_forward_sse_loop_32:
-	MOVOU -32(DI)(R13*1), X4
-	MOVOU -16(DI)(R13*1), X5
-	MOVOA X4, -32(CX)(R13*1)
-	MOVOA X5, -16(CX)(R13*1)
-	ADDQ  $0x20, R13
-	CMPQ  R8, R13
-	JAE   emit_lit_memmove_long_match_emit_encodeBlockAsmlarge_forward_sse_loop_32
-	MOVOU X0, (CX)
-	MOVOU X1, 16(CX)
-	MOVOU X2, -32(CX)(R8*1)
-	MOVOU X3, -16(CX)(R8*1)
-	MOVQ  R9, CX
-	JMP   match_nolits_copy_encodeBlockAsm
+	MOVOU   -32(DI)(R13*1), X4
+	MOVOU   -16(DI)(R13*1), X5
+	MOVOA   X4, -32(CX)(R13*1)
+	MOVOA   X5, -16(CX)(R13*1)
+	ADDQ    $0x20, R13
+	CMPQ    R8, R13
+	JAE     emit_lit_memmove_long_match_emit_encodeBlockAsmlarge_forward_sse_loop_32
+	MOVOU   X0, (CX)
+	MOVOU   X1, 16(CX)
+	MOVOU   X2, -32(CX)(R8*1)
+	MOVOU   X3, -16(CX)(R8*1)
+	MOVQ    R9, CX
 	PCALIGN $0x10
 
 match_nolits_copy_encodeBlockAsm:
@@ -1048,11 +1045,10 @@ matchlen_match2_match_nolit2_encodeBlockAsm:
 	JZ   match_nolit2_end_encodeBlockAsm
 
 matchlen_match1_match_nolit2_encodeBlockAsm:
-	MOVB (R8)(R11*1), R9
-	CMPB (SI)(R11*1), R9
-	JNE  match_nolit2_end_encodeBlockAsm
-	LEAL 1(R11), R11
-	JMP  match_nolit2_end_encodeBlockAsm
+	MOVB    (R8)(R11*1), R9
+	CMPB    (SI)(R11*1), R9
+	JNE     match_nolit2_end_encodeBlockAsm
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit2_end_encodeBlockAsm:
@@ -1583,11 +1579,10 @@ matchlen_match2_repeat_extend_encodeBlockAsm2MB:
 	JZ   repeat_extend_forward_end_encodeBlockAsm2MB
 
 matchlen_match1_repeat_extend_encodeBlockAsm2MB:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  repeat_extend_forward_end_encodeBlockAsm2MB
-	LEAL 1(R11), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm2MB
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     repeat_extend_forward_end_encodeBlockAsm2MB
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeBlockAsm2MB:
@@ -1756,11 +1751,10 @@ matchlen_match2_match_nolit_encodeBlockAsm2MB:
 	JZ   match_nolit_end_encodeBlockAsm2MB
 
 matchlen_match1_match_nolit_encodeBlockAsm2MB:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  match_nolit_end_encodeBlockAsm2MB
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeBlockAsm2MB
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     match_nolit_end_encodeBlockAsm2MB
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeBlockAsm2MB:
@@ -2022,19 +2016,18 @@ emit_lit_memmove_long_match_emit_encodeBlockAsm2MBlarge_big_loop_back:
 	JNA   emit_lit_memmove_long_match_emit_encodeBlockAsm2MBlarge_big_loop_back
 
 emit_lit_memmove_long_match_emit_encodeBlockAsm2MBlarge_forward_sse_loop_32:
-	MOVOU -32(DI)(R13*1), X4
-	MOVOU -16(DI)(R13*1), X5
-	MOVOA X4, -32(CX)(R13*1)
-	MOVOA X5, -16(CX)(R13*1)
-	ADDQ  $0x20, R13
-	CMPQ  R8, R13
-	JAE   emit_lit_memmove_long_match_emit_encodeBlockAsm2MBlarge_forward_sse_loop_32
-	MOVOU X0, (CX)
-	MOVOU X1, 16(CX)
-	MOVOU X2, -32(CX)(R8*1)
-	MOVOU X3, -16(CX)(R8*1)
-	MOVQ  R9, CX
-	JMP   match_nolits_copy_encodeBlockAsm2MB
+	MOVOU   -32(DI)(R13*1), X4
+	MOVOU   -16(DI)(R13*1), X5
+	MOVOA   X4, -32(CX)(R13*1)
+	MOVOA   X5, -16(CX)(R13*1)
+	ADDQ    $0x20, R13
+	CMPQ    R8, R13
+	JAE     emit_lit_memmove_long_match_emit_encodeBlockAsm2MBlarge_forward_sse_loop_32
+	MOVOU   X0, (CX)
+	MOVOU   X1, 16(CX)
+	MOVOU   X2, -32(CX)(R8*1)
+	MOVOU   X3, -16(CX)(R8*1)
+	MOVQ    R9, CX
 	PCALIGN $0x10
 
 match_nolits_copy_encodeBlockAsm2MB:
@@ -2290,11 +2283,10 @@ matchlen_match2_match_nolit2_encodeBlockAsm2MB:
 	JZ   match_nolit2_end_encodeBlockAsm2MB
 
 matchlen_match1_match_nolit2_encodeBlockAsm2MB:
-	MOVB (R8)(R11*1), R9
-	CMPB (SI)(R11*1), R9
-	JNE  match_nolit2_end_encodeBlockAsm2MB
-	LEAL 1(R11), R11
-	JMP  match_nolit2_end_encodeBlockAsm2MB
+	MOVB    (R8)(R11*1), R9
+	CMPB    (SI)(R11*1), R9
+	JNE     match_nolit2_end_encodeBlockAsm2MB
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit2_end_encodeBlockAsm2MB:
@@ -2825,11 +2817,10 @@ matchlen_match2_repeat_extend_encodeBlockAsm512K:
 	JZ   repeat_extend_forward_end_encodeBlockAsm512K
 
 matchlen_match1_repeat_extend_encodeBlockAsm512K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  repeat_extend_forward_end_encodeBlockAsm512K
-	LEAL 1(R11), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm512K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     repeat_extend_forward_end_encodeBlockAsm512K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeBlockAsm512K:
@@ -2998,11 +2989,10 @@ matchlen_match2_match_nolit_encodeBlockAsm512K:
 	JZ   match_nolit_end_encodeBlockAsm512K
 
 matchlen_match1_match_nolit_encodeBlockAsm512K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  match_nolit_end_encodeBlockAsm512K
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeBlockAsm512K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     match_nolit_end_encodeBlockAsm512K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeBlockAsm512K:
@@ -3264,19 +3254,18 @@ emit_lit_memmove_long_match_emit_encodeBlockAsm512Klarge_big_loop_back:
 	JNA   emit_lit_memmove_long_match_emit_encodeBlockAsm512Klarge_big_loop_back
 
 emit_lit_memmove_long_match_emit_encodeBlockAsm512Klarge_forward_sse_loop_32:
-	MOVOU -32(DI)(R13*1), X4
-	MOVOU -16(DI)(R13*1), X5
-	MOVOA X4, -32(CX)(R13*1)
-	MOVOA X5, -16(CX)(R13*1)
-	ADDQ  $0x20, R13
-	CMPQ  R8, R13
-	JAE   emit_lit_memmove_long_match_emit_encodeBlockAsm512Klarge_forward_sse_loop_32
-	MOVOU X0, (CX)
-	MOVOU X1, 16(CX)
-	MOVOU X2, -32(CX)(R8*1)
-	MOVOU X3, -16(CX)(R8*1)
-	MOVQ  R9, CX
-	JMP   match_nolits_copy_encodeBlockAsm512K
+	MOVOU   -32(DI)(R13*1), X4
+	MOVOU   -16(DI)(R13*1), X5
+	MOVOA   X4, -32(CX)(R13*1)
+	MOVOA   X5, -16(CX)(R13*1)
+	ADDQ    $0x20, R13
+	CMPQ    R8, R13
+	JAE     emit_lit_memmove_long_match_emit_encodeBlockAsm512Klarge_forward_sse_loop_32
+	MOVOU   X0, (CX)
+	MOVOU   X1, 16(CX)
+	MOVOU   X2, -32(CX)(R8*1)
+	MOVOU   X3, -16(CX)(R8*1)
+	MOVQ    R9, CX
 	PCALIGN $0x10
 
 match_nolits_copy_encodeBlockAsm512K:
@@ -3532,11 +3521,10 @@ matchlen_match2_match_nolit2_encodeBlockAsm512K:
 	JZ   match_nolit2_end_encodeBlockAsm512K
 
 matchlen_match1_match_nolit2_encodeBlockAsm512K:
-	MOVB (R8)(R11*1), R9
-	CMPB (SI)(R11*1), R9
-	JNE  match_nolit2_end_encodeBlockAsm512K
-	LEAL 1(R11), R11
-	JMP  match_nolit2_end_encodeBlockAsm512K
+	MOVB    (R8)(R11*1), R9
+	CMPB    (SI)(R11*1), R9
+	JNE     match_nolit2_end_encodeBlockAsm512K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit2_end_encodeBlockAsm512K:
@@ -4066,11 +4054,10 @@ matchlen_match2_repeat_extend_encodeBlockAsm64K:
 	JZ   repeat_extend_forward_end_encodeBlockAsm64K
 
 matchlen_match1_repeat_extend_encodeBlockAsm64K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  repeat_extend_forward_end_encodeBlockAsm64K
-	LEAL 1(R11), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm64K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     repeat_extend_forward_end_encodeBlockAsm64K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeBlockAsm64K:
@@ -4239,11 +4226,10 @@ matchlen_match2_match_nolit_encodeBlockAsm64K:
 	JZ   match_nolit_end_encodeBlockAsm64K
 
 matchlen_match1_match_nolit_encodeBlockAsm64K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  match_nolit_end_encodeBlockAsm64K
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeBlockAsm64K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     match_nolit_end_encodeBlockAsm64K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeBlockAsm64K:
@@ -4458,19 +4444,18 @@ emit_lit_memmove_long_match_emit_encodeBlockAsm64Klarge_big_loop_back:
 	JNA   emit_lit_memmove_long_match_emit_encodeBlockAsm64Klarge_big_loop_back
 
 emit_lit_memmove_long_match_emit_encodeBlockAsm64Klarge_forward_sse_loop_32:
-	MOVOU -32(DI)(R13*1), X4
-	MOVOU -16(DI)(R13*1), X5
-	MOVOA X4, -32(CX)(R13*1)
-	MOVOA X5, -16(CX)(R13*1)
-	ADDQ  $0x20, R13
-	CMPQ  R8, R13
-	JAE   emit_lit_memmove_long_match_emit_encodeBlockAsm64Klarge_forward_sse_loop_32
-	MOVOU X0, (CX)
-	MOVOU X1, 16(CX)
-	MOVOU X2, -32(CX)(R8*1)
-	MOVOU X3, -16(CX)(R8*1)
-	MOVQ  R9, CX
-	JMP   match_nolits_copy_encodeBlockAsm64K
+	MOVOU   -32(DI)(R13*1), X4
+	MOVOU   -16(DI)(R13*1), X5
+	MOVOA   X4, -32(CX)(R13*1)
+	MOVOA   X5, -16(CX)(R13*1)
+	ADDQ    $0x20, R13
+	CMPQ    R8, R13
+	JAE     emit_lit_memmove_long_match_emit_encodeBlockAsm64Klarge_forward_sse_loop_32
+	MOVOU   X0, (CX)
+	MOVOU   X1, 16(CX)
+	MOVOU   X2, -32(CX)(R8*1)
+	MOVOU   X3, -16(CX)(R8*1)
+	MOVQ    R9, CX
 	PCALIGN $0x10
 
 match_nolits_copy_encodeBlockAsm64K:
@@ -4683,11 +4668,10 @@ matchlen_match2_match_nolit2_encodeBlockAsm64K:
 	JZ   match_nolit2_end_encodeBlockAsm64K
 
 matchlen_match1_match_nolit2_encodeBlockAsm64K:
-	MOVB (R8)(R11*1), R9
-	CMPB (SI)(R11*1), R9
-	JNE  match_nolit2_end_encodeBlockAsm64K
-	LEAL 1(R11), R11
-	JMP  match_nolit2_end_encodeBlockAsm64K
+	MOVB    (R8)(R11*1), R9
+	CMPB    (SI)(R11*1), R9
+	JNE     match_nolit2_end_encodeBlockAsm64K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit2_end_encodeBlockAsm64K:
@@ -5208,11 +5192,10 @@ matchlen_match2_repeat_extend_encodeBlockAsm16K:
 	JZ   repeat_extend_forward_end_encodeBlockAsm16K
 
 matchlen_match1_repeat_extend_encodeBlockAsm16K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  repeat_extend_forward_end_encodeBlockAsm16K
-	LEAL 1(R11), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm16K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     repeat_extend_forward_end_encodeBlockAsm16K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeBlockAsm16K:
@@ -5381,11 +5364,10 @@ matchlen_match2_match_nolit_encodeBlockAsm16K:
 	JZ   match_nolit_end_encodeBlockAsm16K
 
 matchlen_match1_match_nolit_encodeBlockAsm16K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  match_nolit_end_encodeBlockAsm16K
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeBlockAsm16K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     match_nolit_end_encodeBlockAsm16K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeBlockAsm16K:
@@ -5592,19 +5574,18 @@ emit_lit_memmove_long_match_emit_encodeBlockAsm16Klarge_big_loop_back:
 	JNA   emit_lit_memmove_long_match_emit_encodeBlockAsm16Klarge_big_loop_back
 
 emit_lit_memmove_long_match_emit_encodeBlockAsm16Klarge_forward_sse_loop_32:
-	MOVOU -32(DI)(R13*1), X4
-	MOVOU -16(DI)(R13*1), X5
-	MOVOA X4, -32(CX)(R13*1)
-	MOVOA X5, -16(CX)(R13*1)
-	ADDQ  $0x20, R13
-	CMPQ  R8, R13
-	JAE   emit_lit_memmove_long_match_emit_encodeBlockAsm16Klarge_forward_sse_loop_32
-	MOVOU X0, (CX)
-	MOVOU X1, 16(CX)
-	MOVOU X2, -32(CX)(R8*1)
-	MOVOU X3, -16(CX)(R8*1)
-	MOVQ  R9, CX
-	JMP   match_nolits_copy_encodeBlockAsm16K
+	MOVOU   -32(DI)(R13*1), X4
+	MOVOU   -16(DI)(R13*1), X5
+	MOVOA   X4, -32(CX)(R13*1)
+	MOVOA   X5, -16(CX)(R13*1)
+	ADDQ    $0x20, R13
+	CMPQ    R8, R13
+	JAE     emit_lit_memmove_long_match_emit_encodeBlockAsm16Klarge_forward_sse_loop_32
+	MOVOU   X0, (CX)
+	MOVOU   X1, 16(CX)
+	MOVOU   X2, -32(CX)(R8*1)
+	MOVOU   X3, -16(CX)(R8*1)
+	MOVQ    R9, CX
 	PCALIGN $0x10
 
 match_nolits_copy_encodeBlockAsm16K:
@@ -5817,11 +5798,10 @@ matchlen_match2_match_nolit2_encodeBlockAsm16K:
 	JZ   match_nolit2_end_encodeBlockAsm16K
 
 matchlen_match1_match_nolit2_encodeBlockAsm16K:
-	MOVB (R8)(R11*1), R9
-	CMPB (SI)(R11*1), R9
-	JNE  match_nolit2_end_encodeBlockAsm16K
-	LEAL 1(R11), R11
-	JMP  match_nolit2_end_encodeBlockAsm16K
+	MOVB    (R8)(R11*1), R9
+	CMPB    (SI)(R11*1), R9
+	JNE     match_nolit2_end_encodeBlockAsm16K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit2_end_encodeBlockAsm16K:
@@ -6334,11 +6314,10 @@ matchlen_match2_repeat_extend_encodeBlockAsm4K:
 	JZ   repeat_extend_forward_end_encodeBlockAsm4K
 
 matchlen_match1_repeat_extend_encodeBlockAsm4K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  repeat_extend_forward_end_encodeBlockAsm4K
-	LEAL 1(R11), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm4K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     repeat_extend_forward_end_encodeBlockAsm4K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeBlockAsm4K:
@@ -6507,11 +6486,10 @@ matchlen_match2_match_nolit_encodeBlockAsm4K:
 	JZ   match_nolit_end_encodeBlockAsm4K
 
 matchlen_match1_match_nolit_encodeBlockAsm4K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  match_nolit_end_encodeBlockAsm4K
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeBlockAsm4K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     match_nolit_end_encodeBlockAsm4K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeBlockAsm4K:
@@ -6718,19 +6696,18 @@ emit_lit_memmove_long_match_emit_encodeBlockAsm4Klarge_big_loop_back:
 	JNA   emit_lit_memmove_long_match_emit_encodeBlockAsm4Klarge_big_loop_back
 
 emit_lit_memmove_long_match_emit_encodeBlockAsm4Klarge_forward_sse_loop_32:
-	MOVOU -32(DI)(R13*1), X4
-	MOVOU -16(DI)(R13*1), X5
-	MOVOA X4, -32(CX)(R13*1)
-	MOVOA X5, -16(CX)(R13*1)
-	ADDQ  $0x20, R13
-	CMPQ  R8, R13
-	JAE   emit_lit_memmove_long_match_emit_encodeBlockAsm4Klarge_forward_sse_loop_32
-	MOVOU X0, (CX)
-	MOVOU X1, 16(CX)
-	MOVOU X2, -32(CX)(R8*1)
-	MOVOU X3, -16(CX)(R8*1)
-	MOVQ  R9, CX
-	JMP   match_nolits_copy_encodeBlockAsm4K
+	MOVOU   -32(DI)(R13*1), X4
+	MOVOU   -16(DI)(R13*1), X5
+	MOVOA   X4, -32(CX)(R13*1)
+	MOVOA   X5, -16(CX)(R13*1)
+	ADDQ    $0x20, R13
+	CMPQ    R8, R13
+	JAE     emit_lit_memmove_long_match_emit_encodeBlockAsm4Klarge_forward_sse_loop_32
+	MOVOU   X0, (CX)
+	MOVOU   X1, 16(CX)
+	MOVOU   X2, -32(CX)(R8*1)
+	MOVOU   X3, -16(CX)(R8*1)
+	MOVQ    R9, CX
 	PCALIGN $0x10
 
 match_nolits_copy_encodeBlockAsm4K:
@@ -6943,11 +6920,10 @@ matchlen_match2_match_nolit2_encodeBlockAsm4K:
 	JZ   match_nolit2_end_encodeBlockAsm4K
 
 matchlen_match1_match_nolit2_encodeBlockAsm4K:
-	MOVB (R8)(R11*1), R9
-	CMPB (SI)(R11*1), R9
-	JNE  match_nolit2_end_encodeBlockAsm4K
-	LEAL 1(R11), R11
-	JMP  match_nolit2_end_encodeBlockAsm4K
+	MOVB    (R8)(R11*1), R9
+	CMPB    (SI)(R11*1), R9
+	JNE     match_nolit2_end_encodeBlockAsm4K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit2_end_encodeBlockAsm4K:
@@ -7460,11 +7436,10 @@ matchlen_match2_repeat_extend_encodeBlockAsm1K:
 	JZ   repeat_extend_forward_end_encodeBlockAsm1K
 
 matchlen_match1_repeat_extend_encodeBlockAsm1K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  repeat_extend_forward_end_encodeBlockAsm1K
-	LEAL 1(R11), R11
-	JMP  repeat_extend_forward_end_encodeBlockAsm1K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     repeat_extend_forward_end_encodeBlockAsm1K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeBlockAsm1K:
@@ -7633,11 +7608,10 @@ matchlen_match2_match_nolit_encodeBlockAsm1K:
 	JZ   match_nolit_end_encodeBlockAsm1K
 
 matchlen_match1_match_nolit_encodeBlockAsm1K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  match_nolit_end_encodeBlockAsm1K
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeBlockAsm1K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     match_nolit_end_encodeBlockAsm1K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeBlockAsm1K:
@@ -7844,19 +7818,18 @@ emit_lit_memmove_long_match_emit_encodeBlockAsm1Klarge_big_loop_back:
 	JNA   emit_lit_memmove_long_match_emit_encodeBlockAsm1Klarge_big_loop_back
 
 emit_lit_memmove_long_match_emit_encodeBlockAsm1Klarge_forward_sse_loop_32:
-	MOVOU -32(DI)(R13*1), X4
-	MOVOU -16(DI)(R13*1), X5
-	MOVOA X4, -32(CX)(R13*1)
-	MOVOA X5, -16(CX)(R13*1)
-	ADDQ  $0x20, R13
-	CMPQ  R8, R13
-	JAE   emit_lit_memmove_long_match_emit_encodeBlockAsm1Klarge_forward_sse_loop_32
-	MOVOU X0, (CX)
-	MOVOU X1, 16(CX)
-	MOVOU X2, -32(CX)(R8*1)
-	MOVOU X3, -16(CX)(R8*1)
-	MOVQ  R9, CX
-	JMP   match_nolits_copy_encodeBlockAsm1K
+	MOVOU   -32(DI)(R13*1), X4
+	MOVOU   -16(DI)(R13*1), X5
+	MOVOA   X4, -32(CX)(R13*1)
+	MOVOA   X5, -16(CX)(R13*1)
+	ADDQ    $0x20, R13
+	CMPQ    R8, R13
+	JAE     emit_lit_memmove_long_match_emit_encodeBlockAsm1Klarge_forward_sse_loop_32
+	MOVOU   X0, (CX)
+	MOVOU   X1, 16(CX)
+	MOVOU   X2, -32(CX)(R8*1)
+	MOVOU   X3, -16(CX)(R8*1)
+	MOVQ    R9, CX
 	PCALIGN $0x10
 
 match_nolits_copy_encodeBlockAsm1K:
@@ -8069,11 +8042,10 @@ matchlen_match2_match_nolit2_encodeBlockAsm1K:
 	JZ   match_nolit2_end_encodeBlockAsm1K
 
 matchlen_match1_match_nolit2_encodeBlockAsm1K:
-	MOVB (R8)(R11*1), R9
-	CMPB (SI)(R11*1), R9
-	JNE  match_nolit2_end_encodeBlockAsm1K
-	LEAL 1(R11), R11
-	JMP  match_nolit2_end_encodeBlockAsm1K
+	MOVB    (R8)(R11*1), R9
+	CMPB    (SI)(R11*1), R9
+	JNE     match_nolit2_end_encodeBlockAsm1K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit2_end_encodeBlockAsm1K:
@@ -8575,11 +8547,10 @@ matchlen_match2_repeat_extend_encodeFastBlockAsm:
 	JZ   repeat_extend_forward_end_encodeFastBlockAsm
 
 matchlen_match1_repeat_extend_encodeFastBlockAsm:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  repeat_extend_forward_end_encodeFastBlockAsm
-	LEAL 1(R11), R11
-	JMP  repeat_extend_forward_end_encodeFastBlockAsm
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     repeat_extend_forward_end_encodeFastBlockAsm
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeFastBlockAsm:
@@ -8737,11 +8708,10 @@ matchlen_match2_match_nolit_encodeFastBlockAsm:
 	JZ   match_nolit_end_encodeFastBlockAsm
 
 matchlen_match1_match_nolit_encodeFastBlockAsm:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  match_nolit_end_encodeFastBlockAsm
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeFastBlockAsm
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     match_nolit_end_encodeFastBlockAsm
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeFastBlockAsm:
@@ -8897,19 +8867,18 @@ emit_lit_memmove_long_match_emit_encodeFastBlockAsmlarge_big_loop_back:
 	JNA   emit_lit_memmove_long_match_emit_encodeFastBlockAsmlarge_big_loop_back
 
 emit_lit_memmove_long_match_emit_encodeFastBlockAsmlarge_forward_sse_loop_32:
-	MOVOU -32(DI)(R13*1), X4
-	MOVOU -16(DI)(R13*1), X5
-	MOVOA X4, -32(CX)(R13*1)
-	MOVOA X5, -16(CX)(R13*1)
-	ADDQ  $0x20, R13
-	CMPQ  R8, R13
-	JAE   emit_lit_memmove_long_match_emit_encodeFastBlockAsmlarge_forward_sse_loop_32
-	MOVOU X0, (CX)
-	MOVOU X1, 16(CX)
-	MOVOU X2, -32(CX)(R8*1)
-	MOVOU X3, -16(CX)(R8*1)
-	MOVQ  R9, CX
-	JMP   match_nolits_copy_encodeFastBlockAsm
+	MOVOU   -32(DI)(R13*1), X4
+	MOVOU   -16(DI)(R13*1), X5
+	MOVOA   X4, -32(CX)(R13*1)
+	MOVOA   X5, -16(CX)(R13*1)
+	ADDQ    $0x20, R13
+	CMPQ    R8, R13
+	JAE     emit_lit_memmove_long_match_emit_encodeFastBlockAsmlarge_forward_sse_loop_32
+	MOVOU   X0, (CX)
+	MOVOU   X1, 16(CX)
+	MOVOU   X2, -32(CX)(R8*1)
+	MOVOU   X3, -16(CX)(R8*1)
+	MOVQ    R9, CX
 	PCALIGN $0x10
 
 match_nolits_copy_encodeFastBlockAsm:
@@ -9169,11 +9138,10 @@ matchlen_match2_match_nolit2_encodeFastBlockAsm:
 	JZ   match_nolit2_end_encodeFastBlockAsm
 
 matchlen_match1_match_nolit2_encodeFastBlockAsm:
-	MOVB (R8)(R11*1), R9
-	CMPB (SI)(R11*1), R9
-	JNE  match_nolit2_end_encodeFastBlockAsm
-	LEAL 1(R11), R11
-	JMP  match_nolit2_end_encodeFastBlockAsm
+	MOVB    (R8)(R11*1), R9
+	CMPB    (SI)(R11*1), R9
+	JNE     match_nolit2_end_encodeFastBlockAsm
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit2_end_encodeFastBlockAsm:
@@ -9683,11 +9651,10 @@ matchlen_match2_repeat_extend_encodeFastBlockAsm2MB:
 	JZ   repeat_extend_forward_end_encodeFastBlockAsm2MB
 
 matchlen_match1_repeat_extend_encodeFastBlockAsm2MB:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  repeat_extend_forward_end_encodeFastBlockAsm2MB
-	LEAL 1(R11), R11
-	JMP  repeat_extend_forward_end_encodeFastBlockAsm2MB
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     repeat_extend_forward_end_encodeFastBlockAsm2MB
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeFastBlockAsm2MB:
@@ -9839,11 +9806,10 @@ matchlen_match2_match_nolit_encodeFastBlockAsm2MB:
 	JZ   match_nolit_end_encodeFastBlockAsm2MB
 
 matchlen_match1_match_nolit_encodeFastBlockAsm2MB:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  match_nolit_end_encodeFastBlockAsm2MB
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeFastBlockAsm2MB
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     match_nolit_end_encodeFastBlockAsm2MB
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeFastBlockAsm2MB:
@@ -9999,19 +9965,18 @@ emit_lit_memmove_long_match_emit_encodeFastBlockAsm2MBlarge_big_loop_back:
 	JNA   emit_lit_memmove_long_match_emit_encodeFastBlockAsm2MBlarge_big_loop_back
 
 emit_lit_memmove_long_match_emit_encodeFastBlockAsm2MBlarge_forward_sse_loop_32:
-	MOVOU -32(DI)(R13*1), X4
-	MOVOU -16(DI)(R13*1), X5
-	MOVOA X4, -32(CX)(R13*1)
-	MOVOA X5, -16(CX)(R13*1)
-	ADDQ  $0x20, R13
-	CMPQ  R8, R13
-	JAE   emit_lit_memmove_long_match_emit_encodeFastBlockAsm2MBlarge_forward_sse_loop_32
-	MOVOU X0, (CX)
-	MOVOU X1, 16(CX)
-	MOVOU X2, -32(CX)(R8*1)
-	MOVOU X3, -16(CX)(R8*1)
-	MOVQ  R9, CX
-	JMP   match_nolits_copy_encodeFastBlockAsm2MB
+	MOVOU   -32(DI)(R13*1), X4
+	MOVOU   -16(DI)(R13*1), X5
+	MOVOA   X4, -32(CX)(R13*1)
+	MOVOA   X5, -16(CX)(R13*1)
+	ADDQ    $0x20, R13
+	CMPQ    R8, R13
+	JAE     emit_lit_memmove_long_match_emit_encodeFastBlockAsm2MBlarge_forward_sse_loop_32
+	MOVOU   X0, (CX)
+	MOVOU   X1, 16(CX)
+	MOVOU   X2, -32(CX)(R8*1)
+	MOVOU   X3, -16(CX)(R8*1)
+	MOVQ    R9, CX
 	PCALIGN $0x10
 
 match_nolits_copy_encodeFastBlockAsm2MB:
@@ -10265,11 +10230,10 @@ matchlen_match2_match_nolit2_encodeFastBlockAsm2MB:
 	JZ   match_nolit2_end_encodeFastBlockAsm2MB
 
 matchlen_match1_match_nolit2_encodeFastBlockAsm2MB:
-	MOVB (R8)(R11*1), R9
-	CMPB (SI)(R11*1), R9
-	JNE  match_nolit2_end_encodeFastBlockAsm2MB
-	LEAL 1(R11), R11
-	JMP  match_nolit2_end_encodeFastBlockAsm2MB
+	MOVB    (R8)(R11*1), R9
+	CMPB    (SI)(R11*1), R9
+	JNE     match_nolit2_end_encodeFastBlockAsm2MB
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit2_end_encodeFastBlockAsm2MB:
@@ -10779,11 +10743,10 @@ matchlen_match2_repeat_extend_encodeFastBlockAsm512K:
 	JZ   repeat_extend_forward_end_encodeFastBlockAsm512K
 
 matchlen_match1_repeat_extend_encodeFastBlockAsm512K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  repeat_extend_forward_end_encodeFastBlockAsm512K
-	LEAL 1(R11), R11
-	JMP  repeat_extend_forward_end_encodeFastBlockAsm512K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     repeat_extend_forward_end_encodeFastBlockAsm512K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeFastBlockAsm512K:
@@ -10935,11 +10898,10 @@ matchlen_match2_match_nolit_encodeFastBlockAsm512K:
 	JZ   match_nolit_end_encodeFastBlockAsm512K
 
 matchlen_match1_match_nolit_encodeFastBlockAsm512K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  match_nolit_end_encodeFastBlockAsm512K
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeFastBlockAsm512K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     match_nolit_end_encodeFastBlockAsm512K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeFastBlockAsm512K:
@@ -11095,19 +11057,18 @@ emit_lit_memmove_long_match_emit_encodeFastBlockAsm512Klarge_big_loop_back:
 	JNA   emit_lit_memmove_long_match_emit_encodeFastBlockAsm512Klarge_big_loop_back
 
 emit_lit_memmove_long_match_emit_encodeFastBlockAsm512Klarge_forward_sse_loop_32:
-	MOVOU -32(DI)(R13*1), X4
-	MOVOU -16(DI)(R13*1), X5
-	MOVOA X4, -32(CX)(R13*1)
-	MOVOA X5, -16(CX)(R13*1)
-	ADDQ  $0x20, R13
-	CMPQ  R8, R13
-	JAE   emit_lit_memmove_long_match_emit_encodeFastBlockAsm512Klarge_forward_sse_loop_32
-	MOVOU X0, (CX)
-	MOVOU X1, 16(CX)
-	MOVOU X2, -32(CX)(R8*1)
-	MOVOU X3, -16(CX)(R8*1)
-	MOVQ  R9, CX
-	JMP   match_nolits_copy_encodeFastBlockAsm512K
+	MOVOU   -32(DI)(R13*1), X4
+	MOVOU   -16(DI)(R13*1), X5
+	MOVOA   X4, -32(CX)(R13*1)
+	MOVOA   X5, -16(CX)(R13*1)
+	ADDQ    $0x20, R13
+	CMPQ    R8, R13
+	JAE     emit_lit_memmove_long_match_emit_encodeFastBlockAsm512Klarge_forward_sse_loop_32
+	MOVOU   X0, (CX)
+	MOVOU   X1, 16(CX)
+	MOVOU   X2, -32(CX)(R8*1)
+	MOVOU   X3, -16(CX)(R8*1)
+	MOVQ    R9, CX
 	PCALIGN $0x10
 
 match_nolits_copy_encodeFastBlockAsm512K:
@@ -11361,11 +11322,10 @@ matchlen_match2_match_nolit2_encodeFastBlockAsm512K:
 	JZ   match_nolit2_end_encodeFastBlockAsm512K
 
 matchlen_match1_match_nolit2_encodeFastBlockAsm512K:
-	MOVB (R8)(R11*1), R9
-	CMPB (SI)(R11*1), R9
-	JNE  match_nolit2_end_encodeFastBlockAsm512K
-	LEAL 1(R11), R11
-	JMP  match_nolit2_end_encodeFastBlockAsm512K
+	MOVB    (R8)(R11*1), R9
+	CMPB    (SI)(R11*1), R9
+	JNE     match_nolit2_end_encodeFastBlockAsm512K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit2_end_encodeFastBlockAsm512K:
@@ -11874,11 +11834,10 @@ matchlen_match2_repeat_extend_encodeFastBlockAsm64K:
 	JZ   repeat_extend_forward_end_encodeFastBlockAsm64K
 
 matchlen_match1_repeat_extend_encodeFastBlockAsm64K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  repeat_extend_forward_end_encodeFastBlockAsm64K
-	LEAL 1(R11), R11
-	JMP  repeat_extend_forward_end_encodeFastBlockAsm64K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     repeat_extend_forward_end_encodeFastBlockAsm64K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeFastBlockAsm64K:
@@ -12030,11 +11989,10 @@ matchlen_match2_match_nolit_encodeFastBlockAsm64K:
 	JZ   match_nolit_end_encodeFastBlockAsm64K
 
 matchlen_match1_match_nolit_encodeFastBlockAsm64K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  match_nolit_end_encodeFastBlockAsm64K
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeFastBlockAsm64K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     match_nolit_end_encodeFastBlockAsm64K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeFastBlockAsm64K:
@@ -12189,19 +12147,18 @@ emit_lit_memmove_long_match_emit_encodeFastBlockAsm64Klarge_big_loop_back:
 	JNA   emit_lit_memmove_long_match_emit_encodeFastBlockAsm64Klarge_big_loop_back
 
 emit_lit_memmove_long_match_emit_encodeFastBlockAsm64Klarge_forward_sse_loop_32:
-	MOVOU -32(DI)(R13*1), X4
-	MOVOU -16(DI)(R13*1), X5
-	MOVOA X4, -32(CX)(R13*1)
-	MOVOA X5, -16(CX)(R13*1)
-	ADDQ  $0x20, R13
-	CMPQ  R8, R13
-	JAE   emit_lit_memmove_long_match_emit_encodeFastBlockAsm64Klarge_forward_sse_loop_32
-	MOVOU X0, (CX)
-	MOVOU X1, 16(CX)
-	MOVOU X2, -32(CX)(R8*1)
-	MOVOU X3, -16(CX)(R8*1)
-	MOVQ  R9, CX
-	JMP   match_nolits_copy_encodeFastBlockAsm64K
+	MOVOU   -32(DI)(R13*1), X4
+	MOVOU   -16(DI)(R13*1), X5
+	MOVOA   X4, -32(CX)(R13*1)
+	MOVOA   X5, -16(CX)(R13*1)
+	ADDQ    $0x20, R13
+	CMPQ    R8, R13
+	JAE     emit_lit_memmove_long_match_emit_encodeFastBlockAsm64Klarge_forward_sse_loop_32
+	MOVOU   X0, (CX)
+	MOVOU   X1, 16(CX)
+	MOVOU   X2, -32(CX)(R8*1)
+	MOVOU   X3, -16(CX)(R8*1)
+	MOVQ    R9, CX
 	PCALIGN $0x10
 
 match_nolits_copy_encodeFastBlockAsm64K:
@@ -12412,11 +12369,10 @@ matchlen_match2_match_nolit2_encodeFastBlockAsm64K:
 	JZ   match_nolit2_end_encodeFastBlockAsm64K
 
 matchlen_match1_match_nolit2_encodeFastBlockAsm64K:
-	MOVB (R8)(R11*1), R9
-	CMPB (SI)(R11*1), R9
-	JNE  match_nolit2_end_encodeFastBlockAsm64K
-	LEAL 1(R11), R11
-	JMP  match_nolit2_end_encodeFastBlockAsm64K
+	MOVB    (R8)(R11*1), R9
+	CMPB    (SI)(R11*1), R9
+	JNE     match_nolit2_end_encodeFastBlockAsm64K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit2_end_encodeFastBlockAsm64K:
@@ -12916,11 +12872,10 @@ matchlen_match2_repeat_extend_encodeFastBlockAsm16K:
 	JZ   repeat_extend_forward_end_encodeFastBlockAsm16K
 
 matchlen_match1_repeat_extend_encodeFastBlockAsm16K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  repeat_extend_forward_end_encodeFastBlockAsm16K
-	LEAL 1(R11), R11
-	JMP  repeat_extend_forward_end_encodeFastBlockAsm16K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     repeat_extend_forward_end_encodeFastBlockAsm16K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeFastBlockAsm16K:
@@ -13072,11 +13027,10 @@ matchlen_match2_match_nolit_encodeFastBlockAsm16K:
 	JZ   match_nolit_end_encodeFastBlockAsm16K
 
 matchlen_match1_match_nolit_encodeFastBlockAsm16K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  match_nolit_end_encodeFastBlockAsm16K
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeFastBlockAsm16K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     match_nolit_end_encodeFastBlockAsm16K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeFastBlockAsm16K:
@@ -13223,19 +13177,18 @@ emit_lit_memmove_long_match_emit_encodeFastBlockAsm16Klarge_big_loop_back:
 	JNA   emit_lit_memmove_long_match_emit_encodeFastBlockAsm16Klarge_big_loop_back
 
 emit_lit_memmove_long_match_emit_encodeFastBlockAsm16Klarge_forward_sse_loop_32:
-	MOVOU -32(DI)(R13*1), X4
-	MOVOU -16(DI)(R13*1), X5
-	MOVOA X4, -32(CX)(R13*1)
-	MOVOA X5, -16(CX)(R13*1)
-	ADDQ  $0x20, R13
-	CMPQ  R8, R13
-	JAE   emit_lit_memmove_long_match_emit_encodeFastBlockAsm16Klarge_forward_sse_loop_32
-	MOVOU X0, (CX)
-	MOVOU X1, 16(CX)
-	MOVOU X2, -32(CX)(R8*1)
-	MOVOU X3, -16(CX)(R8*1)
-	MOVQ  R9, CX
-	JMP   match_nolits_copy_encodeFastBlockAsm16K
+	MOVOU   -32(DI)(R13*1), X4
+	MOVOU   -16(DI)(R13*1), X5
+	MOVOA   X4, -32(CX)(R13*1)
+	MOVOA   X5, -16(CX)(R13*1)
+	ADDQ    $0x20, R13
+	CMPQ    R8, R13
+	JAE     emit_lit_memmove_long_match_emit_encodeFastBlockAsm16Klarge_forward_sse_loop_32
+	MOVOU   X0, (CX)
+	MOVOU   X1, 16(CX)
+	MOVOU   X2, -32(CX)(R8*1)
+	MOVOU   X3, -16(CX)(R8*1)
+	MOVQ    R9, CX
 	PCALIGN $0x10
 
 match_nolits_copy_encodeFastBlockAsm16K:
@@ -13446,11 +13399,10 @@ matchlen_match2_match_nolit2_encodeFastBlockAsm16K:
 	JZ   match_nolit2_end_encodeFastBlockAsm16K
 
 matchlen_match1_match_nolit2_encodeFastBlockAsm16K:
-	MOVB (R8)(R11*1), R9
-	CMPB (SI)(R11*1), R9
-	JNE  match_nolit2_end_encodeFastBlockAsm16K
-	LEAL 1(R11), R11
-	JMP  match_nolit2_end_encodeFastBlockAsm16K
+	MOVB    (R8)(R11*1), R9
+	CMPB    (SI)(R11*1), R9
+	JNE     match_nolit2_end_encodeFastBlockAsm16K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit2_end_encodeFastBlockAsm16K:
@@ -13942,11 +13894,10 @@ matchlen_match2_repeat_extend_encodeFastBlockAsm4K:
 	JZ   repeat_extend_forward_end_encodeFastBlockAsm4K
 
 matchlen_match1_repeat_extend_encodeFastBlockAsm4K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  repeat_extend_forward_end_encodeFastBlockAsm4K
-	LEAL 1(R11), R11
-	JMP  repeat_extend_forward_end_encodeFastBlockAsm4K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     repeat_extend_forward_end_encodeFastBlockAsm4K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeFastBlockAsm4K:
@@ -14098,11 +14049,10 @@ matchlen_match2_match_nolit_encodeFastBlockAsm4K:
 	JZ   match_nolit_end_encodeFastBlockAsm4K
 
 matchlen_match1_match_nolit_encodeFastBlockAsm4K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  match_nolit_end_encodeFastBlockAsm4K
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeFastBlockAsm4K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     match_nolit_end_encodeFastBlockAsm4K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeFastBlockAsm4K:
@@ -14249,19 +14199,18 @@ emit_lit_memmove_long_match_emit_encodeFastBlockAsm4Klarge_big_loop_back:
 	JNA   emit_lit_memmove_long_match_emit_encodeFastBlockAsm4Klarge_big_loop_back
 
 emit_lit_memmove_long_match_emit_encodeFastBlockAsm4Klarge_forward_sse_loop_32:
-	MOVOU -32(DI)(R13*1), X4
-	MOVOU -16(DI)(R13*1), X5
-	MOVOA X4, -32(CX)(R13*1)
-	MOVOA X5, -16(CX)(R13*1)
-	ADDQ  $0x20, R13
-	CMPQ  R8, R13
-	JAE   emit_lit_memmove_long_match_emit_encodeFastBlockAsm4Klarge_forward_sse_loop_32
-	MOVOU X0, (CX)
-	MOVOU X1, 16(CX)
-	MOVOU X2, -32(CX)(R8*1)
-	MOVOU X3, -16(CX)(R8*1)
-	MOVQ  R9, CX
-	JMP   match_nolits_copy_encodeFastBlockAsm4K
+	MOVOU   -32(DI)(R13*1), X4
+	MOVOU   -16(DI)(R13*1), X5
+	MOVOA   X4, -32(CX)(R13*1)
+	MOVOA   X5, -16(CX)(R13*1)
+	ADDQ    $0x20, R13
+	CMPQ    R8, R13
+	JAE     emit_lit_memmove_long_match_emit_encodeFastBlockAsm4Klarge_forward_sse_loop_32
+	MOVOU   X0, (CX)
+	MOVOU   X1, 16(CX)
+	MOVOU   X2, -32(CX)(R8*1)
+	MOVOU   X3, -16(CX)(R8*1)
+	MOVQ    R9, CX
 	PCALIGN $0x10
 
 match_nolits_copy_encodeFastBlockAsm4K:
@@ -14472,11 +14421,10 @@ matchlen_match2_match_nolit2_encodeFastBlockAsm4K:
 	JZ   match_nolit2_end_encodeFastBlockAsm4K
 
 matchlen_match1_match_nolit2_encodeFastBlockAsm4K:
-	MOVB (R8)(R11*1), R9
-	CMPB (SI)(R11*1), R9
-	JNE  match_nolit2_end_encodeFastBlockAsm4K
-	LEAL 1(R11), R11
-	JMP  match_nolit2_end_encodeFastBlockAsm4K
+	MOVB    (R8)(R11*1), R9
+	CMPB    (SI)(R11*1), R9
+	JNE     match_nolit2_end_encodeFastBlockAsm4K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit2_end_encodeFastBlockAsm4K:
@@ -14968,11 +14916,10 @@ matchlen_match2_repeat_extend_encodeFastBlockAsm1K:
 	JZ   repeat_extend_forward_end_encodeFastBlockAsm1K
 
 matchlen_match1_repeat_extend_encodeFastBlockAsm1K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  repeat_extend_forward_end_encodeFastBlockAsm1K
-	LEAL 1(R11), R11
-	JMP  repeat_extend_forward_end_encodeFastBlockAsm1K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     repeat_extend_forward_end_encodeFastBlockAsm1K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeFastBlockAsm1K:
@@ -15124,11 +15071,10 @@ matchlen_match2_match_nolit_encodeFastBlockAsm1K:
 	JZ   match_nolit_end_encodeFastBlockAsm1K
 
 matchlen_match1_match_nolit_encodeFastBlockAsm1K:
-	MOVB (R9)(R11*1), R10
-	CMPB (SI)(R11*1), R10
-	JNE  match_nolit_end_encodeFastBlockAsm1K
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeFastBlockAsm1K
+	MOVB    (R9)(R11*1), R10
+	CMPB    (SI)(R11*1), R10
+	JNE     match_nolit_end_encodeFastBlockAsm1K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeFastBlockAsm1K:
@@ -15275,19 +15221,18 @@ emit_lit_memmove_long_match_emit_encodeFastBlockAsm1Klarge_big_loop_back:
 	JNA   emit_lit_memmove_long_match_emit_encodeFastBlockAsm1Klarge_big_loop_back
 
 emit_lit_memmove_long_match_emit_encodeFastBlockAsm1Klarge_forward_sse_loop_32:
-	MOVOU -32(DI)(R13*1), X4
-	MOVOU -16(DI)(R13*1), X5
-	MOVOA X4, -32(CX)(R13*1)
-	MOVOA X5, -16(CX)(R13*1)
-	ADDQ  $0x20, R13
-	CMPQ  R8, R13
-	JAE   emit_lit_memmove_long_match_emit_encodeFastBlockAsm1Klarge_forward_sse_loop_32
-	MOVOU X0, (CX)
-	MOVOU X1, 16(CX)
-	MOVOU X2, -32(CX)(R8*1)
-	MOVOU X3, -16(CX)(R8*1)
-	MOVQ  R9, CX
-	JMP   match_nolits_copy_encodeFastBlockAsm1K
+	MOVOU   -32(DI)(R13*1), X4
+	MOVOU   -16(DI)(R13*1), X5
+	MOVOA   X4, -32(CX)(R13*1)
+	MOVOA   X5, -16(CX)(R13*1)
+	ADDQ    $0x20, R13
+	CMPQ    R8, R13
+	JAE     emit_lit_memmove_long_match_emit_encodeFastBlockAsm1Klarge_forward_sse_loop_32
+	MOVOU   X0, (CX)
+	MOVOU   X1, 16(CX)
+	MOVOU   X2, -32(CX)(R8*1)
+	MOVOU   X3, -16(CX)(R8*1)
+	MOVQ    R9, CX
 	PCALIGN $0x10
 
 match_nolits_copy_encodeFastBlockAsm1K:
@@ -15498,11 +15443,10 @@ matchlen_match2_match_nolit2_encodeFastBlockAsm1K:
 	JZ   match_nolit2_end_encodeFastBlockAsm1K
 
 matchlen_match1_match_nolit2_encodeFastBlockAsm1K:
-	MOVB (R8)(R11*1), R9
-	CMPB (SI)(R11*1), R9
-	JNE  match_nolit2_end_encodeFastBlockAsm1K
-	LEAL 1(R11), R11
-	JMP  match_nolit2_end_encodeFastBlockAsm1K
+	MOVB    (R8)(R11*1), R9
+	CMPB    (SI)(R11*1), R9
+	JNE     match_nolit2_end_encodeFastBlockAsm1K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit2_end_encodeFastBlockAsm1K:
@@ -16043,11 +15987,10 @@ matchlen_match2_repeat_extend_encodeBetterBlockAsm:
 	JZ   repeat_extend_forward_end_encodeBetterBlockAsm
 
 matchlen_match1_repeat_extend_encodeBetterBlockAsm:
-	MOVB (R8)(R10*1), R9
-	CMPB (SI)(R10*1), R9
-	JNE  repeat_extend_forward_end_encodeBetterBlockAsm
-	LEAL 1(R10), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm
+	MOVB    (R8)(R10*1), R9
+	CMPB    (SI)(R10*1), R9
+	JNE     repeat_extend_forward_end_encodeBetterBlockAsm
+	LEAL    1(R10), R10
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeBetterBlockAsm:
@@ -16257,11 +16200,10 @@ matchlen_match2_match_nolit_encodeBetterBlockAsm:
 	JZ   match_nolit_end_encodeBetterBlockAsm
 
 matchlen_match1_match_nolit_encodeBetterBlockAsm:
-	MOVB (R8)(R11*1), R10
-	CMPB (R9)(R11*1), R10
-	JNE  match_nolit_end_encodeBetterBlockAsm
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm
+	MOVB    (R8)(R11*1), R10
+	CMPB    (R9)(R11*1), R10
+	JNE     match_nolit_end_encodeBetterBlockAsm
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeBetterBlockAsm:
@@ -17503,11 +17445,10 @@ matchlen_match2_repeat_extend_encodeBetterBlockAsm2MB:
 	JZ   repeat_extend_forward_end_encodeBetterBlockAsm2MB
 
 matchlen_match1_repeat_extend_encodeBetterBlockAsm2MB:
-	MOVB (R8)(R10*1), R9
-	CMPB (SI)(R10*1), R9
-	JNE  repeat_extend_forward_end_encodeBetterBlockAsm2MB
-	LEAL 1(R10), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm2MB
+	MOVB    (R8)(R10*1), R9
+	CMPB    (SI)(R10*1), R9
+	JNE     repeat_extend_forward_end_encodeBetterBlockAsm2MB
+	LEAL    1(R10), R10
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeBetterBlockAsm2MB:
@@ -17711,11 +17652,10 @@ matchlen_match2_match_nolit_encodeBetterBlockAsm2MB:
 	JZ   match_nolit_end_encodeBetterBlockAsm2MB
 
 matchlen_match1_match_nolit_encodeBetterBlockAsm2MB:
-	MOVB (R8)(R11*1), R10
-	CMPB (R9)(R11*1), R10
-	JNE  match_nolit_end_encodeBetterBlockAsm2MB
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm2MB
+	MOVB    (R8)(R11*1), R10
+	CMPB    (R9)(R11*1), R10
+	JNE     match_nolit_end_encodeBetterBlockAsm2MB
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeBetterBlockAsm2MB:
@@ -18966,11 +18906,10 @@ matchlen_match2_repeat_extend_encodeBetterBlockAsm512K:
 	JZ   repeat_extend_forward_end_encodeBetterBlockAsm512K
 
 matchlen_match1_repeat_extend_encodeBetterBlockAsm512K:
-	MOVB (R8)(R10*1), R9
-	CMPB (SI)(R10*1), R9
-	JNE  repeat_extend_forward_end_encodeBetterBlockAsm512K
-	LEAL 1(R10), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm512K
+	MOVB    (R8)(R10*1), R9
+	CMPB    (SI)(R10*1), R9
+	JNE     repeat_extend_forward_end_encodeBetterBlockAsm512K
+	LEAL    1(R10), R10
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeBetterBlockAsm512K:
@@ -19174,11 +19113,10 @@ matchlen_match2_match_nolit_encodeBetterBlockAsm512K:
 	JZ   match_nolit_end_encodeBetterBlockAsm512K
 
 matchlen_match1_match_nolit_encodeBetterBlockAsm512K:
-	MOVB (R8)(R11*1), R10
-	CMPB (R9)(R11*1), R10
-	JNE  match_nolit_end_encodeBetterBlockAsm512K
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm512K
+	MOVB    (R8)(R11*1), R10
+	CMPB    (R9)(R11*1), R10
+	JNE     match_nolit_end_encodeBetterBlockAsm512K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeBetterBlockAsm512K:
@@ -20438,11 +20376,10 @@ matchlen_match2_repeat_extend_encodeBetterBlockAsm64K:
 	JZ   repeat_extend_forward_end_encodeBetterBlockAsm64K
 
 matchlen_match1_repeat_extend_encodeBetterBlockAsm64K:
-	MOVB (R8)(R10*1), R9
-	CMPB (SI)(R10*1), R9
-	JNE  repeat_extend_forward_end_encodeBetterBlockAsm64K
-	LEAL 1(R10), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm64K
+	MOVB    (R8)(R10*1), R9
+	CMPB    (SI)(R10*1), R9
+	JNE     repeat_extend_forward_end_encodeBetterBlockAsm64K
+	LEAL    1(R10), R10
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeBetterBlockAsm64K:
@@ -20646,11 +20583,10 @@ matchlen_match2_match_nolit_encodeBetterBlockAsm64K:
 	JZ   match_nolit_end_encodeBetterBlockAsm64K
 
 matchlen_match1_match_nolit_encodeBetterBlockAsm64K:
-	MOVB (R8)(R11*1), R10
-	CMPB (R9)(R11*1), R10
-	JNE  match_nolit_end_encodeBetterBlockAsm64K
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm64K
+	MOVB    (R8)(R11*1), R10
+	CMPB    (R9)(R11*1), R10
+	JNE     match_nolit_end_encodeBetterBlockAsm64K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeBetterBlockAsm64K:
@@ -21791,11 +21727,10 @@ matchlen_match2_repeat_extend_encodeBetterBlockAsm16K:
 	JZ   repeat_extend_forward_end_encodeBetterBlockAsm16K
 
 matchlen_match1_repeat_extend_encodeBetterBlockAsm16K:
-	MOVB (R8)(R10*1), R9
-	CMPB (SI)(R10*1), R9
-	JNE  repeat_extend_forward_end_encodeBetterBlockAsm16K
-	LEAL 1(R10), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm16K
+	MOVB    (R8)(R10*1), R9
+	CMPB    (SI)(R10*1), R9
+	JNE     repeat_extend_forward_end_encodeBetterBlockAsm16K
+	LEAL    1(R10), R10
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeBetterBlockAsm16K:
@@ -21999,11 +21934,10 @@ matchlen_match2_match_nolit_encodeBetterBlockAsm16K:
 	JZ   match_nolit_end_encodeBetterBlockAsm16K
 
 matchlen_match1_match_nolit_encodeBetterBlockAsm16K:
-	MOVB (R8)(R11*1), R10
-	CMPB (R9)(R11*1), R10
-	JNE  match_nolit_end_encodeBetterBlockAsm16K
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm16K
+	MOVB    (R8)(R11*1), R10
+	CMPB    (R9)(R11*1), R10
+	JNE     match_nolit_end_encodeBetterBlockAsm16K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeBetterBlockAsm16K:
@@ -23120,11 +23054,10 @@ matchlen_match2_repeat_extend_encodeBetterBlockAsm4K:
 	JZ   repeat_extend_forward_end_encodeBetterBlockAsm4K
 
 matchlen_match1_repeat_extend_encodeBetterBlockAsm4K:
-	MOVB (R8)(R10*1), R9
-	CMPB (SI)(R10*1), R9
-	JNE  repeat_extend_forward_end_encodeBetterBlockAsm4K
-	LEAL 1(R10), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm4K
+	MOVB    (R8)(R10*1), R9
+	CMPB    (SI)(R10*1), R9
+	JNE     repeat_extend_forward_end_encodeBetterBlockAsm4K
+	LEAL    1(R10), R10
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeBetterBlockAsm4K:
@@ -23328,11 +23261,10 @@ matchlen_match2_match_nolit_encodeBetterBlockAsm4K:
 	JZ   match_nolit_end_encodeBetterBlockAsm4K
 
 matchlen_match1_match_nolit_encodeBetterBlockAsm4K:
-	MOVB (R8)(R11*1), R10
-	CMPB (R9)(R11*1), R10
-	JNE  match_nolit_end_encodeBetterBlockAsm4K
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm4K
+	MOVB    (R8)(R11*1), R10
+	CMPB    (R9)(R11*1), R10
+	JNE     match_nolit_end_encodeBetterBlockAsm4K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeBetterBlockAsm4K:
@@ -24449,11 +24381,10 @@ matchlen_match2_repeat_extend_encodeBetterBlockAsm1K:
 	JZ   repeat_extend_forward_end_encodeBetterBlockAsm1K
 
 matchlen_match1_repeat_extend_encodeBetterBlockAsm1K:
-	MOVB (R8)(R10*1), R9
-	CMPB (SI)(R10*1), R9
-	JNE  repeat_extend_forward_end_encodeBetterBlockAsm1K
-	LEAL 1(R10), R10
-	JMP  repeat_extend_forward_end_encodeBetterBlockAsm1K
+	MOVB    (R8)(R10*1), R9
+	CMPB    (SI)(R10*1), R9
+	JNE     repeat_extend_forward_end_encodeBetterBlockAsm1K
+	LEAL    1(R10), R10
 	PCALIGN $0x10
 
 repeat_extend_forward_end_encodeBetterBlockAsm1K:
@@ -24657,11 +24588,10 @@ matchlen_match2_match_nolit_encodeBetterBlockAsm1K:
 	JZ   match_nolit_end_encodeBetterBlockAsm1K
 
 matchlen_match1_match_nolit_encodeBetterBlockAsm1K:
-	MOVB (R8)(R11*1), R10
-	CMPB (R9)(R11*1), R10
-	JNE  match_nolit_end_encodeBetterBlockAsm1K
-	LEAL 1(R11), R11
-	JMP  match_nolit_end_encodeBetterBlockAsm1K
+	MOVB    (R8)(R11*1), R10
+	CMPB    (R9)(R11*1), R10
+	JNE     match_nolit_end_encodeBetterBlockAsm1K
+	LEAL    1(R11), R11
 	PCALIGN $0x10
 
 match_nolit_end_encodeBetterBlockAsm1K:
