@@ -20,7 +20,7 @@ package main
 // ../asm_arm64.s. -stubs takes no such suffix and is spelled in full. The
 // asymmetry is avo's, not a typo: spelling -out with the suffix already on it
 // yields asm_arm64_arm64.s.
-//go:generate go run gen.go -out ../asm.s -stubs ../asm_arm64.go -arch arm64 -arm64gen -pkg=minlz
+//go:generate go run gen.go -out ../asm.s -stubs ../asm_arm64.go -arch arm64 -arm64gen -arm64-promote-stack-slots -pkg=minlz
 //go:generate gofmt -w ../asm_arm64.go
 
 import (
@@ -30,11 +30,11 @@ import (
 	"runtime"
 	"strings"
 
-	. "github.com/mmcloughlin/avo/build"
-	"github.com/mmcloughlin/avo/buildtags"
-	"github.com/mmcloughlin/avo/ir"
-	. "github.com/mmcloughlin/avo/operand"
-	"github.com/mmcloughlin/avo/reg"
+	. "github.com/honeycombio/avo/build"
+	"github.com/honeycombio/avo/buildtags"
+	"github.com/honeycombio/avo/ir"
+	. "github.com/honeycombio/avo/operand"
+	"github.com/honeycombio/avo/reg"
 )
 
 const (
