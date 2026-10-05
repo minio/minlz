@@ -32,6 +32,11 @@ func FuzzEncodingBlocks(f *testing.F) {
 	fuzz.AddFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, false)
 	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, testing.Short())
 	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, testing.Short())
+	for delta := 1; delta <= 2; delta++ {
+		if b := buildMaxOffsetBoundary(0, delta); b != nil {
+			f.Add(b)
+		}
+	}
 
 	for i := range testFiles {
 		if err := downloadBenchmarkFiles(f, testFiles[i].filename); err != nil {
@@ -240,6 +245,11 @@ func FuzzStreamEncode(f *testing.F) {
 	fuzz.AddFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, false)
 	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, false)
 	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, false)
+	for delta := 1; delta <= 2; delta++ {
+		if b := buildMaxOffsetBoundary(0, delta); b != nil {
+			f.Add(b)
+		}
+	}
 
 	var encoders []*Writer
 	for l := LevelSuperFast; l <= LevelSmallest; l++ {

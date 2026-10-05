@@ -148,14 +148,14 @@ func encodeBlockGo(dst, src []byte) (d int) {
 				break
 			}
 			candidate = int(table[hash2])
-			if candidate2 >= minSrcPos && uint32(cv>>8) == load32(src, candidate2) {
+			if candidate2 > minSrcPos && uint32(cv>>8) == load32(src, candidate2) {
 				table[hash2] = uint32(s + 2)
 				candidate = candidate2
 				s++
 				break
 			}
 			table[hash2] = uint32(s + 2)
-			if candidate >= minSrcPos && uint32(cv>>16) == load32(src, candidate) {
+			if candidate >= minSrcPos+2 && uint32(cv>>16) == load32(src, candidate) {
 				s += 2
 				break
 			}
