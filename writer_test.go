@@ -584,3 +584,15 @@ func TestBigEncodeBufferSync(t *testing.T) {
 	}
 	t.Log(n)
 }
+
+func TestIndexStreamSmall(t *testing.T) {
+	var buf bytes.Buffer
+	w := NewWriter(&buf)
+	w.Write(bytes.Repeat([]byte("abcdefgh"), 100))
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := IndexStream(bytes.NewReader(buf.Bytes())); err != nil {
+		t.Fatal(err)
+	}
+}

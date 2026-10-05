@@ -476,9 +476,6 @@ func IndexStream(r io.Reader) ([]byte, error) {
 			readHeader = true
 		}
 		chunkLen := int(buf[1]) | int(buf[2])<<8 | int(buf[3])<<16
-		if chunkLen < checksumSize {
-			return nil, ErrCorrupt
-		}
 
 		i.TotalCompressed += int64(chunkLen)
 		_, err = io.ReadFull(r, buf[:chunkLen])
@@ -489,6 +486,9 @@ func IndexStream(r io.Reader) ([]byte, error) {
 		switch chunkType {
 		case chunkTypeLegacyCompressedData, chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC:
 			// Section 4.2. Compressed data (chunk type 0x00).
+			if chunkLen < checksumSize {
+				return nil, ErrCorrupt
+			}
 			// Skip checksum.
 			dLen, err := DecodedLen(buf[checksumSize:])
 			if err != nil {
@@ -509,7 +509,7 @@ func IndexStream(r io.Reader) ([]byte, error) {
 			continue
 		case chunkTypeUncompressedData:
 			n2 := chunkLen - checksumSize
-			if n2 > maxBlockSize {
+			if n2 < 0 || n2 > maxBlockSize {
 				return nil, ErrCorrupt
 			}
 			if i.estBlockUncomp == 0 {
@@ -542,7 +542,6 @@ func IndexStream(r io.Reader) ([]byte, error) {
 
 		if chunkType <= maxNonSkippableChunk {
 			// Section 4.5. Reserved unskippable chunks (chunk types 0x03-0x3f).
-			fmt.Println("UN:", chunkType)
 			return nil, ErrUnsupported
 		}
 		// Skip user chunks and padding.
