@@ -988,3 +988,66 @@ func TestBetterSkipClampMatchesAsm(t *testing.T) {
 		}
 	}
 }
+
+// buildMaxOffsetBoundary places a hash1/hash2 match at offset maxCopy3Offset+delta.
+// See https://github.com/minio/minlz/issues/75
+func buildMaxOffsetBoundary(seed int64, delta int) []byte {
+	const M = maxCopy3Offset
+	p := 9
+	q := p + M + delta
+	n := q + 4096
+	rng := rand.New(rand.NewSource(seed))
+	src := make([]byte, n)
+	rng.Read(src)
+	// Regular short matches keep nextEmit close, so the skip step stays small.
+	for i := 2000; i+128 < n; i += 128 {
+		copy(src[i+64:i+128], src[i+64-1000:i+128-1000])
+	}
+	copy(src[q-202:q-2], src[q-1202:q-1002])
+	marker := []byte("\xfeSeNtInL")
+	copy(src[p:], marker)
+	copy(src[q:], marker)
+	src[q-2] = src[q-1002] ^ 0xff
+	src[q-1] = src[p-1] ^ 0xff
+	// Keep the marker's hash bucket holding p: scrub colliding filler windows.
+	hm := hash6(load64(src, p), 15)
+	for changed := true; changed; {
+		changed = false
+		for i := 0; i+8 <= n; i++ {
+			if i == p || i == q || hash6(load64(src, i), 15) != hm {
+				continue
+			}
+			j := i + 5
+			if (j >= p && j < p+8) || (j >= q-1210 && j < q+8) {
+				j = i
+			}
+			if (j >= p && j < p+8) || (j >= q-1210 && j < q+8) {
+				return nil
+			}
+			src[j] ^= 0x5a
+			changed = true
+		}
+	}
+	return src
+}
+
+func TestMaxOffsetBoundary(t *testing.T) {
+	for _, level := range []int{LevelFastest, LevelBalanced, LevelSmallest} {
+		for delta := range 4 {
+			for seed := range int64(10) {
+				src := buildMaxOffsetBoundary(seed, delta)
+				if src == nil {
+					continue
+				}
+				enc, err := Encode(nil, src, level)
+				if err != nil {
+					t.Fatal(err)
+				}
+				dec, err := Decode(nil, enc)
+				if err != nil || !bytes.Equal(dec, src) {
+					t.Errorf("level=%d delta=%d seed=%d: roundtrip mismatch (err=%v)", level, delta, seed, err)
+				}
+			}
+		}
+	}
+}
