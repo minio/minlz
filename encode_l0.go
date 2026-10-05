@@ -143,14 +143,14 @@ func encodeFastBlockGo(dst, src []byte) (d int) {
 				break
 			}
 			candidate = int(table[hash2])
-			if candidate2 >= minSrcPos && cv1 == load64(src, candidate2) {
+			if candidate2 > minSrcPos && cv1 == load64(src, candidate2) {
 				table[hash2] = uint32(s + 2)
 				candidate = candidate2
 				s++
 				break
 			}
 			table[hash2] = uint32(s + 2)
-			if candidate >= minSrcPos && cv2 == load64(src, candidate) {
+			if candidate >= minSrcPos+2 && cv2 == load64(src, candidate) {
 				s += 2
 				break
 			}
