@@ -1905,19 +1905,6 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 
 				// Jumps at end
 			}
-			// REPEAT
-			{
-				Label("match_is_repeat_" + name)
-				// Emit....
-				o.emitLiteralsDstP(nextEmitL, base, src, dst, "match_emit_repeat_"+name)
-				// s += length (length is destroyed, use it now)
-				ADDL(length.As32(), s)
-
-				// length += 4
-				ADDL(U8(4), length.As32())
-				MOVQ(q(s), nextEmitL) // nextEmit = s
-				o.emitRepeat("match_nolit_repeat_"+name, length, nil, dst, LabelRef("match_nolit_emitcopy_end_"+name))
-			}
 		}
 		Label("match_nolit_emitcopy_end_" + name)
 
@@ -2391,11 +2378,27 @@ func (o options) emitRepeat(name string, length reg.GPVirtual, retval reg.GPVirt
 	Label("emit_repeat_again_" + name)
 
 	// if length <= 28 - one byte
-	storeLen := GP64()
-	LEAL(Mem{Base: length.As32(), Disp: -1}, storeLen.As32())
 	CMPL(length.As32(), U8(29))
-	JBE(LabelRef("repeat_one_" + name)) // (subtract one)
+	JBE(LabelRef("repeat_one_" + name))
+	o.emitRepeatLong(name, length, retval, dstBase, end)
 
+	Label("repeat_one_" + name)
+	if !o.skipOutput {
+		storeLen := GP64()
+		XORL(storeLen.As32(), storeLen.As32())
+		LEAL(Mem{Base: storeLen, Index: length.As32(), Scale: 8, Disp: tagRepeat - (1 * 8)}, storeLen.As32())
+		MOVB(storeLen.As8(), Mem{Base: dstBase}) // dst[0] = (length-1)<<3 | tagRepeat
+	}
+	if retval != nil {
+		ADDQ(U8(1), retval) // i += 1
+	}
+	ADDQ(U8(1), dstBase) // dst += 1
+	JMP(end)
+}
+
+// emitRepeatLong is emitRepeat for length >= 30.
+func (o options) emitRepeatLong(name string, length reg.GPVirtual, retval reg.GPVirtual, dstBase reg.GPVirtual, end LabelRef) {
+	storeLen := GP64()
 	// length < 256 (-1-29)
 	LEAL(Mem{Base: length.As32(), Disp: -30}, storeLen.As32())
 	CMPL(length.As32(), U32(1+29+256))
@@ -2436,18 +2439,6 @@ func (o options) emitRepeat(name string, length reg.GPVirtual, retval reg.GPVirt
 		ADDQ(U8(2), retval) // i += 2
 	}
 	ADDQ(U8(2), dstBase) // dst += 2
-	JMP(end)
-
-	Label("repeat_one_" + name)
-	if !o.skipOutput {
-		XORL(storeLen.As32(), storeLen.As32())
-		LEAL(Mem{Base: storeLen, Index: length.As32(), Scale: 8, Disp: tagRepeat - (1 * 8)}, storeLen.As32())
-		MOVB(storeLen.As8(), Mem{Base: dstBase}) // dst[0] = (length-1)<<3 | tagRepeat
-	}
-	if retval != nil {
-		ADDQ(U8(1), retval) // i += 1
-	}
-	ADDQ(U8(1), dstBase) // dst += 1
 	JMP(end)
 }
 
@@ -2794,7 +2785,8 @@ func (o options) emitCopy(name string, length, offset, retval, dstBase reg.GPVir
 		}
 		ADDQ(U8(2), dstBase) // dst+=2
 		SUBL(U8(18), length.As32())
-		o.emitRepeat("emit_copy1_do_repeat_"+name, length, retval, dstBase, end)
+		// length >= 256 here, so skip the one-byte check.
+		o.emitRepeatLong("emit_copy1_do_repeat_"+name, length, retval, dstBase, end)
 	}
 
 	// Emit as 2 byte offset.
