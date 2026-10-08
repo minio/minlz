@@ -4613,7 +4613,7 @@ repeat_extend_back_end_encodeBlockAsm64K:
 	MOVWU R6, R5
 	SUBW  R19, R5, R5
 	ADD   R5, R1, R8
-	ADD   $4, R8, R8
+	ADD   $3, R8, R8
 	CMP   R21, R8
 	BLO   dst_size_check_ok_1
 	MOVD  $0x00000000, R16
@@ -4631,24 +4631,12 @@ dst_size_check_ok_1:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_repeat_emit_lits_encodeBlockAsm64K
-	BLO   three_bytes_repeat_emit_lits_encodeBlockAsm64K
-	MOVWU R8, R9
-	LSRW  $0x10, R9, R9
-	MOVD  $0xf8, R16
+	MOVD  $0xf0, R16
 	MOVB  R16, (R1)
 	MOVH  R8, 1(R1)
-	MOVB  R9, 3(R1)
-	ADD   $0x04, R1, R1
+	ADD   $0x03, R1, R1
 	ADDW  $0x1d, R8, R8
 	JMP   memmove_long_repeat_emit_lits_encodeBlockAsm64K
-
-three_bytes_repeat_emit_lits_encodeBlockAsm64K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_repeat_emit_lits_encodeBlockAsm64K
 
 two_bytes_repeat_emit_lits_encodeBlockAsm64K:
 	MOVD $0xe8, R16
@@ -5215,7 +5203,7 @@ repeat_one_match_emit_repeat_copy2_encodeBlockAsm64K:
 
 match_emit_lits_copy_encodeBlockAsm64K:
 	ADD  R7, R1, R8
-	ADD  $4, R8, R8
+	ADD  $3, R8, R8
 	CMP  R21, R8
 	BLO  dst_size_check_ok_3
 	MOVD $0x00000000, R16
@@ -5231,24 +5219,12 @@ dst_size_check_ok_3:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_match_emit_encodeBlockAsm64K
-	BLO   three_bytes_match_emit_encodeBlockAsm64K
-	MOVWU R8, R9
-	LSRW  $0x10, R9, R9
-	MOVD  $0xf8, R16
+	MOVD  $0xf0, R16
 	MOVB  R16, (R1)
 	MOVH  R8, 1(R1)
-	MOVB  R9, 3(R1)
-	ADD   $0x04, R1, R1
+	ADD   $0x03, R1, R1
 	ADDW  $0x1d, R8, R8
 	JMP   memmove_long_match_emit_encodeBlockAsm64K
-
-three_bytes_match_emit_encodeBlockAsm64K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_match_emit_encodeBlockAsm64K
 
 two_bytes_match_emit_encodeBlockAsm64K:
 	MOVD $0xe8, R16
@@ -5680,7 +5656,7 @@ emit_remainder_encodeBlockAsm64K:
 	BEQ   emit_remainder_end_encodeBlockAsm64K
 	ADD   R19, R3, R19
 	ADD   R0, R1, R3
-	ADD   $4, R3, R3
+	ADD   $3, R3, R3
 	CMP   R21, R3
 	BLO   dst_size_check_ok_5
 	MOVD  $0x00000000, R16
@@ -5696,24 +5672,12 @@ dst_size_check_ok_5:
 	SUBW  $0x1d, R3, R3
 	CMPW  $0x00000100, R3
 	BLO   two_bytes_emit_remainder_encodeBlockAsm64K
-	BLO   three_bytes_emit_remainder_encodeBlockAsm64K
-	MOVWU R3, R5
-	LSRW  $0x10, R5, R5
-	MOVD  $0xf8, R16
+	MOVD  $0xf0, R16
 	MOVB  R16, (R1)
 	MOVH  R3, 1(R1)
-	MOVB  R5, 3(R1)
-	ADD   $0x04, R1, R1
+	ADD   $0x03, R1, R1
 	ADDW  $0x1d, R3, R3
 	JMP   memmove_long_emit_remainder_encodeBlockAsm64K
-
-three_bytes_emit_remainder_encodeBlockAsm64K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R3, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R3, R3
-	JMP  memmove_long_emit_remainder_encodeBlockAsm64K
 
 two_bytes_emit_remainder_encodeBlockAsm64K:
 	MOVD $0xe8, R16
@@ -6031,15 +5995,12 @@ dst_size_check_ok_1:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_repeat_emit_lits_encodeBlockAsm16K
-	BLO   three_bytes_repeat_emit_lits_encodeBlockAsm16K
-
-three_bytes_repeat_emit_lits_encodeBlockAsm16K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_repeat_emit_lits_encodeBlockAsm16K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R8, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R8, R8
+	JMP   memmove_long_repeat_emit_lits_encodeBlockAsm16K
 
 two_bytes_repeat_emit_lits_encodeBlockAsm16K:
 	MOVD $0xe8, R16
@@ -6622,15 +6583,12 @@ dst_size_check_ok_3:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_match_emit_encodeBlockAsm16K
-	BLO   three_bytes_match_emit_encodeBlockAsm16K
-
-three_bytes_match_emit_encodeBlockAsm16K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_match_emit_encodeBlockAsm16K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R8, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R8, R8
+	JMP   memmove_long_match_emit_encodeBlockAsm16K
 
 two_bytes_match_emit_encodeBlockAsm16K:
 	MOVD $0xe8, R16
@@ -7078,15 +7036,12 @@ dst_size_check_ok_5:
 	SUBW  $0x1d, R3, R3
 	CMPW  $0x00000100, R3
 	BLO   two_bytes_emit_remainder_encodeBlockAsm16K
-	BLO   three_bytes_emit_remainder_encodeBlockAsm16K
-
-three_bytes_emit_remainder_encodeBlockAsm16K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R3, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R3, R3
-	JMP  memmove_long_emit_remainder_encodeBlockAsm16K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R3, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R3, R3
+	JMP   memmove_long_emit_remainder_encodeBlockAsm16K
 
 two_bytes_emit_remainder_encodeBlockAsm16K:
 	MOVD $0xe8, R16
@@ -7404,15 +7359,12 @@ dst_size_check_ok_1:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_repeat_emit_lits_encodeBlockAsm4K
-	BLO   three_bytes_repeat_emit_lits_encodeBlockAsm4K
-
-three_bytes_repeat_emit_lits_encodeBlockAsm4K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_repeat_emit_lits_encodeBlockAsm4K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R8, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R8, R8
+	JMP   memmove_long_repeat_emit_lits_encodeBlockAsm4K
 
 two_bytes_repeat_emit_lits_encodeBlockAsm4K:
 	MOVD $0xe8, R16
@@ -7995,15 +7947,12 @@ dst_size_check_ok_3:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_match_emit_encodeBlockAsm4K
-	BLO   three_bytes_match_emit_encodeBlockAsm4K
-
-three_bytes_match_emit_encodeBlockAsm4K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_match_emit_encodeBlockAsm4K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R8, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R8, R8
+	JMP   memmove_long_match_emit_encodeBlockAsm4K
 
 two_bytes_match_emit_encodeBlockAsm4K:
 	MOVD $0xe8, R16
@@ -8451,15 +8400,12 @@ dst_size_check_ok_5:
 	SUBW  $0x1d, R3, R3
 	CMPW  $0x00000100, R3
 	BLO   two_bytes_emit_remainder_encodeBlockAsm4K
-	BLO   three_bytes_emit_remainder_encodeBlockAsm4K
-
-three_bytes_emit_remainder_encodeBlockAsm4K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R3, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R3, R3
-	JMP  memmove_long_emit_remainder_encodeBlockAsm4K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R3, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R3, R3
+	JMP   memmove_long_emit_remainder_encodeBlockAsm4K
 
 two_bytes_emit_remainder_encodeBlockAsm4K:
 	MOVD $0xe8, R16
@@ -8777,15 +8723,12 @@ dst_size_check_ok_1:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_repeat_emit_lits_encodeBlockAsm1K
-	BLO   three_bytes_repeat_emit_lits_encodeBlockAsm1K
-
-three_bytes_repeat_emit_lits_encodeBlockAsm1K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_repeat_emit_lits_encodeBlockAsm1K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R8, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R8, R8
+	JMP   memmove_long_repeat_emit_lits_encodeBlockAsm1K
 
 two_bytes_repeat_emit_lits_encodeBlockAsm1K:
 	MOVD $0xe8, R16
@@ -9368,15 +9311,12 @@ dst_size_check_ok_3:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_match_emit_encodeBlockAsm1K
-	BLO   three_bytes_match_emit_encodeBlockAsm1K
-
-three_bytes_match_emit_encodeBlockAsm1K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_match_emit_encodeBlockAsm1K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R8, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R8, R8
+	JMP   memmove_long_match_emit_encodeBlockAsm1K
 
 two_bytes_match_emit_encodeBlockAsm1K:
 	MOVD $0xe8, R16
@@ -9824,15 +9764,12 @@ dst_size_check_ok_5:
 	SUBW  $0x1d, R3, R3
 	CMPW  $0x00000100, R3
 	BLO   two_bytes_emit_remainder_encodeBlockAsm1K
-	BLO   three_bytes_emit_remainder_encodeBlockAsm1K
-
-three_bytes_emit_remainder_encodeBlockAsm1K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R3, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R3, R3
-	JMP  memmove_long_emit_remainder_encodeBlockAsm1K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R3, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R3, R3
+	JMP   memmove_long_emit_remainder_encodeBlockAsm1K
 
 two_bytes_emit_remainder_encodeBlockAsm1K:
 	MOVD $0xe8, R16
@@ -14126,7 +14063,7 @@ search_loop_encodeFastBlockAsm64K:
 	MOVWU R6, R5
 	SUBW  R19, R5, R5
 	ADD   R5, R1, R8
-	ADD   $4, R8, R8
+	ADD   $3, R8, R8
 	CMP   R21, R8
 	BLO   dst_size_check_ok_1
 	MOVD  $0x00000000, R16
@@ -14144,24 +14081,12 @@ dst_size_check_ok_1:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_repeat_emit_lits_encodeFastBlockAsm64K
-	BLO   three_bytes_repeat_emit_lits_encodeFastBlockAsm64K
-	MOVWU R8, R9
-	LSRW  $0x10, R9, R9
-	MOVD  $0xf8, R16
+	MOVD  $0xf0, R16
 	MOVB  R16, (R1)
 	MOVH  R8, 1(R1)
-	MOVB  R9, 3(R1)
-	ADD   $0x04, R1, R1
+	ADD   $0x03, R1, R1
 	ADDW  $0x1d, R8, R8
 	JMP   memmove_long_repeat_emit_lits_encodeFastBlockAsm64K
-
-three_bytes_repeat_emit_lits_encodeFastBlockAsm64K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_repeat_emit_lits_encodeFastBlockAsm64K
 
 two_bytes_repeat_emit_lits_encodeFastBlockAsm64K:
 	MOVD $0xe8, R16
@@ -14637,7 +14562,7 @@ match_nolit_end_encodeFastBlockAsm64K:
 	BEQ   match_nolits_copy_encodeFastBlockAsm64K
 	ADD   R6, R3, R6
 	ADD   R7, R1, R8
-	ADD   $4, R8, R8
+	ADD   $3, R8, R8
 	CMP   R21, R8
 	BLO   dst_size_check_ok_3
 	MOVD  $0x00000000, R16
@@ -14653,24 +14578,12 @@ dst_size_check_ok_3:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_match_emit_encodeFastBlockAsm64K
-	BLO   three_bytes_match_emit_encodeFastBlockAsm64K
-	MOVWU R8, R9
-	LSRW  $0x10, R9, R9
-	MOVD  $0xf8, R16
+	MOVD  $0xf0, R16
 	MOVB  R16, (R1)
 	MOVH  R8, 1(R1)
-	MOVB  R9, 3(R1)
-	ADD   $0x04, R1, R1
+	ADD   $0x03, R1, R1
 	ADDW  $0x1d, R8, R8
 	JMP   memmove_long_match_emit_encodeFastBlockAsm64K
-
-three_bytes_match_emit_encodeFastBlockAsm64K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_match_emit_encodeFastBlockAsm64K
 
 two_bytes_match_emit_encodeFastBlockAsm64K:
 	MOVD $0xe8, R16
@@ -15101,7 +15014,7 @@ emit_remainder_encodeFastBlockAsm64K:
 	BEQ   emit_remainder_end_encodeFastBlockAsm64K
 	ADD   R19, R3, R19
 	ADD   R0, R1, R3
-	ADD   $4, R3, R3
+	ADD   $3, R3, R3
 	CMP   R21, R3
 	BLO   dst_size_check_ok_5
 	MOVD  $0x00000000, R16
@@ -15117,24 +15030,12 @@ dst_size_check_ok_5:
 	SUBW  $0x1d, R3, R3
 	CMPW  $0x00000100, R3
 	BLO   two_bytes_emit_remainder_encodeFastBlockAsm64K
-	BLO   three_bytes_emit_remainder_encodeFastBlockAsm64K
-	MOVWU R3, R5
-	LSRW  $0x10, R5, R5
-	MOVD  $0xf8, R16
+	MOVD  $0xf0, R16
 	MOVB  R16, (R1)
 	MOVH  R3, 1(R1)
-	MOVB  R5, 3(R1)
-	ADD   $0x04, R1, R1
+	ADD   $0x03, R1, R1
 	ADDW  $0x1d, R3, R3
 	JMP   memmove_long_emit_remainder_encodeFastBlockAsm64K
-
-three_bytes_emit_remainder_encodeFastBlockAsm64K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R3, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R3, R3
-	JMP  memmove_long_emit_remainder_encodeFastBlockAsm64K
 
 two_bytes_emit_remainder_encodeFastBlockAsm64K:
 	MOVD $0xe8, R16
@@ -15429,15 +15330,12 @@ dst_size_check_ok_1:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_repeat_emit_lits_encodeFastBlockAsm16K
-	BLO   three_bytes_repeat_emit_lits_encodeFastBlockAsm16K
-
-three_bytes_repeat_emit_lits_encodeFastBlockAsm16K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_repeat_emit_lits_encodeFastBlockAsm16K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R8, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R8, R8
+	JMP   memmove_long_repeat_emit_lits_encodeFastBlockAsm16K
 
 two_bytes_repeat_emit_lits_encodeFastBlockAsm16K:
 	MOVD $0xe8, R16
@@ -15929,15 +15827,12 @@ dst_size_check_ok_3:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_match_emit_encodeFastBlockAsm16K
-	BLO   three_bytes_match_emit_encodeFastBlockAsm16K
-
-three_bytes_match_emit_encodeFastBlockAsm16K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_match_emit_encodeFastBlockAsm16K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R8, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R8, R8
+	JMP   memmove_long_match_emit_encodeFastBlockAsm16K
 
 two_bytes_match_emit_encodeFastBlockAsm16K:
 	MOVD $0xe8, R16
@@ -16384,15 +16279,12 @@ dst_size_check_ok_5:
 	SUBW  $0x1d, R3, R3
 	CMPW  $0x00000100, R3
 	BLO   two_bytes_emit_remainder_encodeFastBlockAsm16K
-	BLO   three_bytes_emit_remainder_encodeFastBlockAsm16K
-
-three_bytes_emit_remainder_encodeFastBlockAsm16K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R3, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R3, R3
-	JMP  memmove_long_emit_remainder_encodeFastBlockAsm16K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R3, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R3, R3
+	JMP   memmove_long_emit_remainder_encodeFastBlockAsm16K
 
 two_bytes_emit_remainder_encodeFastBlockAsm16K:
 	MOVD $0xe8, R16
@@ -16687,15 +16579,12 @@ dst_size_check_ok_1:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_repeat_emit_lits_encodeFastBlockAsm4K
-	BLO   three_bytes_repeat_emit_lits_encodeFastBlockAsm4K
-
-three_bytes_repeat_emit_lits_encodeFastBlockAsm4K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_repeat_emit_lits_encodeFastBlockAsm4K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R8, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R8, R8
+	JMP   memmove_long_repeat_emit_lits_encodeFastBlockAsm4K
 
 two_bytes_repeat_emit_lits_encodeFastBlockAsm4K:
 	MOVD $0xe8, R16
@@ -17187,15 +17076,12 @@ dst_size_check_ok_3:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_match_emit_encodeFastBlockAsm4K
-	BLO   three_bytes_match_emit_encodeFastBlockAsm4K
-
-three_bytes_match_emit_encodeFastBlockAsm4K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_match_emit_encodeFastBlockAsm4K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R8, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R8, R8
+	JMP   memmove_long_match_emit_encodeFastBlockAsm4K
 
 two_bytes_match_emit_encodeFastBlockAsm4K:
 	MOVD $0xe8, R16
@@ -17642,15 +17528,12 @@ dst_size_check_ok_5:
 	SUBW  $0x1d, R3, R3
 	CMPW  $0x00000100, R3
 	BLO   two_bytes_emit_remainder_encodeFastBlockAsm4K
-	BLO   three_bytes_emit_remainder_encodeFastBlockAsm4K
-
-three_bytes_emit_remainder_encodeFastBlockAsm4K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R3, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R3, R3
-	JMP  memmove_long_emit_remainder_encodeFastBlockAsm4K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R3, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R3, R3
+	JMP   memmove_long_emit_remainder_encodeFastBlockAsm4K
 
 two_bytes_emit_remainder_encodeFastBlockAsm4K:
 	MOVD $0xe8, R16
@@ -17945,15 +17828,12 @@ dst_size_check_ok_1:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_repeat_emit_lits_encodeFastBlockAsm1K
-	BLO   three_bytes_repeat_emit_lits_encodeFastBlockAsm1K
-
-three_bytes_repeat_emit_lits_encodeFastBlockAsm1K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_repeat_emit_lits_encodeFastBlockAsm1K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R8, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R8, R8
+	JMP   memmove_long_repeat_emit_lits_encodeFastBlockAsm1K
 
 two_bytes_repeat_emit_lits_encodeFastBlockAsm1K:
 	MOVD $0xe8, R16
@@ -18445,15 +18325,12 @@ dst_size_check_ok_3:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_match_emit_encodeFastBlockAsm1K
-	BLO   three_bytes_match_emit_encodeFastBlockAsm1K
-
-three_bytes_match_emit_encodeFastBlockAsm1K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_match_emit_encodeFastBlockAsm1K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R8, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R8, R8
+	JMP   memmove_long_match_emit_encodeFastBlockAsm1K
 
 two_bytes_match_emit_encodeFastBlockAsm1K:
 	MOVD $0xe8, R16
@@ -18900,15 +18777,12 @@ dst_size_check_ok_5:
 	SUBW  $0x1d, R3, R3
 	CMPW  $0x00000100, R3
 	BLO   two_bytes_emit_remainder_encodeFastBlockAsm1K
-	BLO   three_bytes_emit_remainder_encodeFastBlockAsm1K
-
-three_bytes_emit_remainder_encodeFastBlockAsm1K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R3, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R3, R3
-	JMP  memmove_long_emit_remainder_encodeFastBlockAsm1K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R3, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R3, R3
+	JMP   memmove_long_emit_remainder_encodeFastBlockAsm1K
 
 two_bytes_emit_remainder_encodeFastBlockAsm1K:
 	MOVD $0xe8, R16
@@ -23728,7 +23602,7 @@ repeat_extend_back_end_encodeBetterBlockAsm64K:
 	MOVWU R3, R5
 	SUB   R19, R5, R5
 	ADD   R5, R1, R5
-	ADD   $4, R5, R5
+	ADD   $3, R5, R5
 	CMP   R23, R5
 	BLO   repeat_dst_size_check_encodeBetterBlockAsm64K
 	MOVD  $0x00000000, R16
@@ -23753,24 +23627,12 @@ repeat_dst_size_check_encodeBetterBlockAsm64K:
 	SUBW  $0x1d, R5, R5
 	CMPW  $0x00000100, R5
 	BLO   two_bytes_repeat_emit_encodeBetterBlockAsm64K
-	BLO   three_bytes_repeat_emit_encodeBetterBlockAsm64K
-	MOVWU R5, R8
-	LSRW  $0x10, R8, R8
-	MOVD  $0xf8, R16
+	MOVD  $0xf0, R16
 	MOVB  R16, (R1)
 	MOVH  R5, 1(R1)
-	MOVB  R8, 3(R1)
-	ADD   $0x04, R1, R1
+	ADD   $0x03, R1, R1
 	ADDW  $0x1d, R5, R5
 	JMP   memmove_long_repeat_emit_encodeBetterBlockAsm64K
-
-three_bytes_repeat_emit_encodeBetterBlockAsm64K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R5, R5
-	JMP  memmove_long_repeat_emit_encodeBetterBlockAsm64K
 
 two_bytes_repeat_emit_encodeBetterBlockAsm64K:
 	MOVD $0xe8, R16
@@ -24187,7 +24049,7 @@ match_extend_back_end_encodeBetterBlockAsm64K:
 	MOVWU R0, R3
 	SUB   R19, R3, R3
 	ADD   R3, R1, R3
-	ADD   $4, R3, R3
+	ADD   $3, R3, R3
 	CMP   R23, R3
 	BLO   match_dst_size_check_encodeBetterBlockAsm64K
 	MOVD  $0x00000000, R16
@@ -24396,24 +24258,12 @@ match_emit_lits_encodeBetterBlockAsm64K:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_match_emit_encodeBetterBlockAsm64K
-	BLO   three_bytes_match_emit_encodeBetterBlockAsm64K
-	MOVWU R8, R9
-	LSRW  $0x10, R9, R9
-	MOVD  $0xf8, R16
+	MOVD  $0xf0, R16
 	MOVB  R16, (R1)
 	MOVH  R8, 1(R1)
-	MOVB  R9, 3(R1)
-	ADD   $0x04, R1, R1
+	ADD   $0x03, R1, R1
 	ADDW  $0x1d, R8, R8
 	JMP   memmove_long_match_emit_encodeBetterBlockAsm64K
-
-three_bytes_match_emit_encodeBetterBlockAsm64K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_match_emit_encodeBetterBlockAsm64K
 
 two_bytes_match_emit_encodeBetterBlockAsm64K:
 	MOVD $0xe8, R16
@@ -24765,7 +24615,7 @@ emit_remainder_encodeBetterBlockAsm64K:
 	MOVD src_len+32(FP), R0
 	SUB  R19, R0, R0
 	ADD  R0, R1, R0
-	ADD  $4, R0, R0
+	ADD  $3, R0, R0
 	CMP  R23, R0
 	BLO  emit_remainder_ok_encodeBetterBlockAsm64K
 	MOVD $0x00000000, R16
@@ -24792,24 +24642,12 @@ emit_remainder_ok_encodeBetterBlockAsm64K:
 	SUBW  $0x1d, R2, R2
 	CMPW  $0x00000100, R2
 	BLO   two_bytes_emit_remainder_encodeBetterBlockAsm64K
-	BLO   three_bytes_emit_remainder_encodeBetterBlockAsm64K
-	MOVWU R2, R3
-	LSRW  $0x10, R3, R3
-	MOVD  $0xf8, R16
+	MOVD  $0xf0, R16
 	MOVB  R16, (R1)
 	MOVH  R2, 1(R1)
-	MOVB  R3, 3(R1)
-	ADD   $0x04, R1, R1
+	ADD   $0x03, R1, R1
 	ADDW  $0x1d, R2, R2
 	JMP   memmove_long_emit_remainder_encodeBetterBlockAsm64K
-
-three_bytes_emit_remainder_encodeBetterBlockAsm64K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R2, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R2, R2
-	JMP  memmove_long_emit_remainder_encodeBetterBlockAsm64K
 
 two_bytes_emit_remainder_encodeBetterBlockAsm64K:
 	MOVD $0xe8, R16
@@ -25139,15 +24977,12 @@ repeat_dst_size_check_encodeBetterBlockAsm16K:
 	SUBW  $0x1d, R5, R5
 	CMPW  $0x00000100, R5
 	BLO   two_bytes_repeat_emit_encodeBetterBlockAsm16K
-	BLO   three_bytes_repeat_emit_encodeBetterBlockAsm16K
-
-three_bytes_repeat_emit_encodeBetterBlockAsm16K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R5, R5
-	JMP  memmove_long_repeat_emit_encodeBetterBlockAsm16K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R5, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R5, R5
+	JMP   memmove_long_repeat_emit_encodeBetterBlockAsm16K
 
 two_bytes_repeat_emit_encodeBetterBlockAsm16K:
 	MOVD $0xe8, R16
@@ -25773,15 +25608,12 @@ match_emit_lits_encodeBetterBlockAsm16K:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_match_emit_encodeBetterBlockAsm16K
-	BLO   three_bytes_match_emit_encodeBetterBlockAsm16K
-
-three_bytes_match_emit_encodeBetterBlockAsm16K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_match_emit_encodeBetterBlockAsm16K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R8, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R8, R8
+	JMP   memmove_long_match_emit_encodeBetterBlockAsm16K
 
 two_bytes_match_emit_encodeBetterBlockAsm16K:
 	MOVD $0xe8, R16
@@ -26160,15 +25992,12 @@ emit_remainder_ok_encodeBetterBlockAsm16K:
 	SUBW  $0x1d, R2, R2
 	CMPW  $0x00000100, R2
 	BLO   two_bytes_emit_remainder_encodeBetterBlockAsm16K
-	BLO   three_bytes_emit_remainder_encodeBetterBlockAsm16K
-
-three_bytes_emit_remainder_encodeBetterBlockAsm16K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R2, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R2, R2
-	JMP  memmove_long_emit_remainder_encodeBetterBlockAsm16K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R2, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R2, R2
+	JMP   memmove_long_emit_remainder_encodeBetterBlockAsm16K
 
 two_bytes_emit_remainder_encodeBetterBlockAsm16K:
 	MOVD $0xe8, R16
@@ -26498,15 +26327,12 @@ repeat_dst_size_check_encodeBetterBlockAsm4K:
 	SUBW  $0x1d, R5, R5
 	CMPW  $0x00000100, R5
 	BLO   two_bytes_repeat_emit_encodeBetterBlockAsm4K
-	BLO   three_bytes_repeat_emit_encodeBetterBlockAsm4K
-
-three_bytes_repeat_emit_encodeBetterBlockAsm4K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R5, R5
-	JMP  memmove_long_repeat_emit_encodeBetterBlockAsm4K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R5, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R5, R5
+	JMP   memmove_long_repeat_emit_encodeBetterBlockAsm4K
 
 two_bytes_repeat_emit_encodeBetterBlockAsm4K:
 	MOVD $0xe8, R16
@@ -27132,15 +26958,12 @@ match_emit_lits_encodeBetterBlockAsm4K:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_match_emit_encodeBetterBlockAsm4K
-	BLO   three_bytes_match_emit_encodeBetterBlockAsm4K
-
-three_bytes_match_emit_encodeBetterBlockAsm4K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_match_emit_encodeBetterBlockAsm4K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R8, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R8, R8
+	JMP   memmove_long_match_emit_encodeBetterBlockAsm4K
 
 two_bytes_match_emit_encodeBetterBlockAsm4K:
 	MOVD $0xe8, R16
@@ -27519,15 +27342,12 @@ emit_remainder_ok_encodeBetterBlockAsm4K:
 	SUBW  $0x1d, R2, R2
 	CMPW  $0x00000100, R2
 	BLO   two_bytes_emit_remainder_encodeBetterBlockAsm4K
-	BLO   three_bytes_emit_remainder_encodeBetterBlockAsm4K
-
-three_bytes_emit_remainder_encodeBetterBlockAsm4K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R2, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R2, R2
-	JMP  memmove_long_emit_remainder_encodeBetterBlockAsm4K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R2, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R2, R2
+	JMP   memmove_long_emit_remainder_encodeBetterBlockAsm4K
 
 two_bytes_emit_remainder_encodeBetterBlockAsm4K:
 	MOVD $0xe8, R16
@@ -27857,15 +27677,12 @@ repeat_dst_size_check_encodeBetterBlockAsm1K:
 	SUBW  $0x1d, R5, R5
 	CMPW  $0x00000100, R5
 	BLO   two_bytes_repeat_emit_encodeBetterBlockAsm1K
-	BLO   three_bytes_repeat_emit_encodeBetterBlockAsm1K
-
-three_bytes_repeat_emit_encodeBetterBlockAsm1K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R5, R5
-	JMP  memmove_long_repeat_emit_encodeBetterBlockAsm1K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R5, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R5, R5
+	JMP   memmove_long_repeat_emit_encodeBetterBlockAsm1K
 
 two_bytes_repeat_emit_encodeBetterBlockAsm1K:
 	MOVD $0xe8, R16
@@ -28491,15 +28308,12 @@ match_emit_lits_encodeBetterBlockAsm1K:
 	SUBW  $0x1d, R8, R8
 	CMPW  $0x00000100, R8
 	BLO   two_bytes_match_emit_encodeBetterBlockAsm1K
-	BLO   three_bytes_match_emit_encodeBetterBlockAsm1K
-
-three_bytes_match_emit_encodeBetterBlockAsm1K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R8, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R8, R8
-	JMP  memmove_long_match_emit_encodeBetterBlockAsm1K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R8, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R8, R8
+	JMP   memmove_long_match_emit_encodeBetterBlockAsm1K
 
 two_bytes_match_emit_encodeBetterBlockAsm1K:
 	MOVD $0xe8, R16
@@ -28878,15 +28692,12 @@ emit_remainder_ok_encodeBetterBlockAsm1K:
 	SUBW  $0x1d, R2, R2
 	CMPW  $0x00000100, R2
 	BLO   two_bytes_emit_remainder_encodeBetterBlockAsm1K
-	BLO   three_bytes_emit_remainder_encodeBetterBlockAsm1K
-
-three_bytes_emit_remainder_encodeBetterBlockAsm1K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R2, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R2, R2
-	JMP  memmove_long_emit_remainder_encodeBetterBlockAsm1K
+	MOVD  $0xf0, R16
+	MOVB  R16, (R1)
+	MOVH  R2, 1(R1)
+	ADD   $0x03, R1, R1
+	ADDW  $0x1d, R2, R2
+	JMP   memmove_long_emit_remainder_encodeBetterBlockAsm1K
 
 two_bytes_emit_remainder_encodeBetterBlockAsm1K:
 	MOVD $0xe8, R16

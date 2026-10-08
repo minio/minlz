@@ -1187,15 +1187,17 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 	RET()
 }
 
+// maxLitOverheadFor returns the largest literal header emitLiteral writes
+// for literals of up to n bytes.
 func maxLitOverheadFor(n int) int {
 	switch {
 	case n == 0:
 		return 0
 	case n < 30:
 		return 1
-	case n < 1<<8:
+	case n < 30+1<<8:
 		return 2
-	case n < 1<<16:
+	case n < 30+1<<16:
 		return 3
 	}
 	return 4
@@ -2207,14 +2209,12 @@ func (o options) emitLiteral(name string, litLen, retval, dstBase, litBase reg.G
 	SUBL(U8(29), n.As32())
 	CMPL(n.As32(), U32(1<<8))
 	JB(LabelRef("two_bytes_" + name))
+	// The 3-byte form covers literals up to 30+65535 bytes, so only size
+	// classes that allow longer literals need the 4-byte form.
 	if o.maxLen >= 30+1<<16 {
 		CMPL(n.As32(), U32(1<<16))
 		JB(LabelRef("three_bytes_" + name))
-	} else {
-		JB(LabelRef("three_bytes_" + name))
-	}
 
-	if o.maxLen >= 1<<16 {
 		Label("four_bytes_" + name)
 		if !o.skipOutput {
 			MOVL(n, n16)

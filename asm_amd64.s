@@ -3780,7 +3780,7 @@ repeat_extend_back_end_encodeBlockAsm64K:
 	MOVL DI, SI
 	MOVQ 16(SP), R8
 	SUBL R8, SI
-	LEAQ 4(CX)(SI*1), R9
+	LEAQ 3(CX)(SI*1), R9
 	CMPQ R9, (SP)
 	JB   dst_size_check_ok_1
 	MOVQ $0x00000000, ret+56(FP)
@@ -3796,17 +3796,6 @@ dst_size_check_ok_1:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_repeat_emit_lits_encodeBlockAsm64K
-	JB   three_bytes_repeat_emit_lits_encodeBlockAsm64K
-	MOVL R9, R10
-	SHRL $0x10, R10
-	MOVB $0xf8, (CX)
-	MOVW R9, 1(CX)
-	MOVB R10, 3(CX)
-	ADDQ $0x04, CX
-	ADDL $0x1d, R9
-	JMP  memmove_long_repeat_emit_lits_encodeBlockAsm64K
-
-three_bytes_repeat_emit_lits_encodeBlockAsm64K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -4257,7 +4246,7 @@ repeat_one_match_emit_repeat_copy2_encodeBlockAsm64K:
 	JMP  match_nolit_emitcopy_end_encodeBlockAsm64K
 
 match_emit_lits_copy_encodeBlockAsm64K:
-	LEAQ 4(CX)(R8*1), R9
+	LEAQ 3(CX)(R8*1), R9
 	CMPQ R9, (SP)
 	JB   dst_size_check_ok_3
 	MOVQ $0x00000000, ret+56(FP)
@@ -4271,17 +4260,6 @@ dst_size_check_ok_3:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_match_emit_encodeBlockAsm64K
-	JB   three_bytes_match_emit_encodeBlockAsm64K
-	MOVL R9, R10
-	SHRL $0x10, R10
-	MOVB $0xf8, (CX)
-	MOVW R9, 1(CX)
-	MOVB R10, 3(CX)
-	ADDQ $0x04, CX
-	ADDL $0x1d, R9
-	JMP  memmove_long_match_emit_encodeBlockAsm64K
-
-three_bytes_match_emit_encodeBlockAsm64K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -4631,7 +4609,7 @@ emit_remainder_encodeBlockAsm64K:
 	SUBL DX, AX
 	JZ   emit_remainder_end_encodeBlockAsm64K
 	LEAQ (BX)(DX*1), DX
-	LEAQ 4(CX)(AX*1), BX
+	LEAQ 3(CX)(AX*1), BX
 	CMPQ BX, (SP)
 	JB   dst_size_check_ok_5
 	MOVQ $0x00000000, ret+56(FP)
@@ -4645,17 +4623,6 @@ dst_size_check_ok_5:
 	SUBL $0x1d, BX
 	CMPL BX, $0x00000100
 	JB   two_bytes_emit_remainder_encodeBlockAsm64K
-	JB   three_bytes_emit_remainder_encodeBlockAsm64K
-	MOVL BX, SI
-	SHRL $0x10, SI
-	MOVB $0xf8, (CX)
-	MOVW BX, 1(CX)
-	MOVB SI, 3(CX)
-	ADDQ $0x04, CX
-	ADDL $0x1d, BX
-	JMP  memmove_long_emit_remainder_encodeBlockAsm64K
-
-three_bytes_emit_remainder_encodeBlockAsm64K:
 	MOVB $0xf0, (CX)
 	MOVW BX, 1(CX)
 	ADDQ $0x03, CX
@@ -4928,9 +4895,6 @@ dst_size_check_ok_1:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_repeat_emit_lits_encodeBlockAsm16K
-	JB   three_bytes_repeat_emit_lits_encodeBlockAsm16K
-
-three_bytes_repeat_emit_lits_encodeBlockAsm16K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -5395,9 +5359,6 @@ dst_size_check_ok_3:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_match_emit_encodeBlockAsm16K
-	JB   three_bytes_match_emit_encodeBlockAsm16K
-
-three_bytes_match_emit_encodeBlockAsm16K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -5761,9 +5722,6 @@ dst_size_check_ok_5:
 	SUBL $0x1d, BX
 	CMPL BX, $0x00000100
 	JB   two_bytes_emit_remainder_encodeBlockAsm16K
-	JB   three_bytes_emit_remainder_encodeBlockAsm16K
-
-three_bytes_emit_remainder_encodeBlockAsm16K:
 	MOVB $0xf0, (CX)
 	MOVW BX, 1(CX)
 	ADDQ $0x03, CX
@@ -6036,9 +5994,6 @@ dst_size_check_ok_1:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_repeat_emit_lits_encodeBlockAsm4K
-	JB   three_bytes_repeat_emit_lits_encodeBlockAsm4K
-
-three_bytes_repeat_emit_lits_encodeBlockAsm4K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -6503,9 +6458,6 @@ dst_size_check_ok_3:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_match_emit_encodeBlockAsm4K
-	JB   three_bytes_match_emit_encodeBlockAsm4K
-
-three_bytes_match_emit_encodeBlockAsm4K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -6869,9 +6821,6 @@ dst_size_check_ok_5:
 	SUBL $0x1d, BX
 	CMPL BX, $0x00000100
 	JB   two_bytes_emit_remainder_encodeBlockAsm4K
-	JB   three_bytes_emit_remainder_encodeBlockAsm4K
-
-three_bytes_emit_remainder_encodeBlockAsm4K:
 	MOVB $0xf0, (CX)
 	MOVW BX, 1(CX)
 	ADDQ $0x03, CX
@@ -7144,9 +7093,6 @@ dst_size_check_ok_1:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_repeat_emit_lits_encodeBlockAsm1K
-	JB   three_bytes_repeat_emit_lits_encodeBlockAsm1K
-
-three_bytes_repeat_emit_lits_encodeBlockAsm1K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -7611,9 +7557,6 @@ dst_size_check_ok_3:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_match_emit_encodeBlockAsm1K
-	JB   three_bytes_match_emit_encodeBlockAsm1K
-
-three_bytes_match_emit_encodeBlockAsm1K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -7977,9 +7920,6 @@ dst_size_check_ok_5:
 	SUBL $0x1d, BX
 	CMPL BX, $0x00000100
 	JB   two_bytes_emit_remainder_encodeBlockAsm1K
-	JB   three_bytes_emit_remainder_encodeBlockAsm1K
-
-three_bytes_emit_remainder_encodeBlockAsm1K:
 	MOVB $0xf0, (CX)
 	MOVW BX, 1(CX)
 	ADDQ $0x03, CX
@@ -11465,7 +11405,7 @@ search_loop_encodeFastBlockAsm64K:
 	MOVL    DI, SI
 	MOVQ    16(SP), R8
 	SUBL    R8, SI
-	LEAQ    4(CX)(SI*1), R9
+	LEAQ    3(CX)(SI*1), R9
 	CMPQ    R9, (SP)
 	JB      dst_size_check_ok_1
 	MOVQ    $0x00000000, ret+56(FP)
@@ -11481,17 +11421,6 @@ dst_size_check_ok_1:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_repeat_emit_lits_encodeFastBlockAsm64K
-	JB   three_bytes_repeat_emit_lits_encodeFastBlockAsm64K
-	MOVL R9, R10
-	SHRL $0x10, R10
-	MOVB $0xf8, (CX)
-	MOVW R9, 1(CX)
-	MOVB R10, 3(CX)
-	ADDQ $0x04, CX
-	ADDL $0x1d, R9
-	JMP  memmove_long_repeat_emit_lits_encodeFastBlockAsm64K
-
-three_bytes_repeat_emit_lits_encodeFastBlockAsm64K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -11866,7 +11795,7 @@ match_nolit_end_encodeFastBlockAsm64K:
 	SUBL DI, R8
 	JZ   match_nolits_copy_encodeFastBlockAsm64K
 	LEAQ (BX)(DI*1), DI
-	LEAQ 4(CX)(R8*1), R9
+	LEAQ 3(CX)(R8*1), R9
 	CMPQ R9, (SP)
 	JB   dst_size_check_ok_3
 	MOVQ $0x00000000, ret+56(FP)
@@ -11880,17 +11809,6 @@ dst_size_check_ok_3:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_match_emit_encodeFastBlockAsm64K
-	JB   three_bytes_match_emit_encodeFastBlockAsm64K
-	MOVL R9, R10
-	SHRL $0x10, R10
-	MOVB $0xf8, (CX)
-	MOVW R9, 1(CX)
-	MOVB R10, 3(CX)
-	ADDQ $0x04, CX
-	ADDL $0x1d, R9
-	JMP  memmove_long_match_emit_encodeFastBlockAsm64K
-
-three_bytes_match_emit_encodeFastBlockAsm64K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -12238,7 +12156,7 @@ emit_remainder_encodeFastBlockAsm64K:
 	SUBL DX, AX
 	JZ   emit_remainder_end_encodeFastBlockAsm64K
 	LEAQ (BX)(DX*1), DX
-	LEAQ 4(CX)(AX*1), BX
+	LEAQ 3(CX)(AX*1), BX
 	CMPQ BX, (SP)
 	JB   dst_size_check_ok_5
 	MOVQ $0x00000000, ret+56(FP)
@@ -12252,17 +12170,6 @@ dst_size_check_ok_5:
 	SUBL $0x1d, BX
 	CMPL BX, $0x00000100
 	JB   two_bytes_emit_remainder_encodeFastBlockAsm64K
-	JB   three_bytes_emit_remainder_encodeFastBlockAsm64K
-	MOVL BX, SI
-	SHRL $0x10, SI
-	MOVB $0xf8, (CX)
-	MOVW BX, 1(CX)
-	MOVB SI, 3(CX)
-	ADDQ $0x04, CX
-	ADDL $0x1d, BX
-	JMP  memmove_long_emit_remainder_encodeFastBlockAsm64K
-
-three_bytes_emit_remainder_encodeFastBlockAsm64K:
 	MOVB $0xf0, (CX)
 	MOVW BX, 1(CX)
 	ADDQ $0x03, CX
@@ -12514,9 +12421,6 @@ dst_size_check_ok_1:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_repeat_emit_lits_encodeFastBlockAsm16K
-	JB   three_bytes_repeat_emit_lits_encodeFastBlockAsm16K
-
-three_bytes_repeat_emit_lits_encodeFastBlockAsm16K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -12905,9 +12809,6 @@ dst_size_check_ok_3:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_match_emit_encodeFastBlockAsm16K
-	JB   three_bytes_match_emit_encodeFastBlockAsm16K
-
-three_bytes_match_emit_encodeFastBlockAsm16K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -13269,9 +13170,6 @@ dst_size_check_ok_5:
 	SUBL $0x1d, BX
 	CMPL BX, $0x00000100
 	JB   two_bytes_emit_remainder_encodeFastBlockAsm16K
-	JB   three_bytes_emit_remainder_encodeFastBlockAsm16K
-
-three_bytes_emit_remainder_encodeFastBlockAsm16K:
 	MOVB $0xf0, (CX)
 	MOVW BX, 1(CX)
 	ADDQ $0x03, CX
@@ -13523,9 +13421,6 @@ dst_size_check_ok_1:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_repeat_emit_lits_encodeFastBlockAsm4K
-	JB   three_bytes_repeat_emit_lits_encodeFastBlockAsm4K
-
-three_bytes_repeat_emit_lits_encodeFastBlockAsm4K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -13914,9 +13809,6 @@ dst_size_check_ok_3:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_match_emit_encodeFastBlockAsm4K
-	JB   three_bytes_match_emit_encodeFastBlockAsm4K
-
-three_bytes_match_emit_encodeFastBlockAsm4K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -14278,9 +14170,6 @@ dst_size_check_ok_5:
 	SUBL $0x1d, BX
 	CMPL BX, $0x00000100
 	JB   two_bytes_emit_remainder_encodeFastBlockAsm4K
-	JB   three_bytes_emit_remainder_encodeFastBlockAsm4K
-
-three_bytes_emit_remainder_encodeFastBlockAsm4K:
 	MOVB $0xf0, (CX)
 	MOVW BX, 1(CX)
 	ADDQ $0x03, CX
@@ -14532,9 +14421,6 @@ dst_size_check_ok_1:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_repeat_emit_lits_encodeFastBlockAsm1K
-	JB   three_bytes_repeat_emit_lits_encodeFastBlockAsm1K
-
-three_bytes_repeat_emit_lits_encodeFastBlockAsm1K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -14923,9 +14809,6 @@ dst_size_check_ok_3:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_match_emit_encodeFastBlockAsm1K
-	JB   three_bytes_match_emit_encodeFastBlockAsm1K
-
-three_bytes_match_emit_encodeFastBlockAsm1K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -15287,9 +15170,6 @@ dst_size_check_ok_5:
 	SUBL $0x1d, BX
 	CMPL BX, $0x00000100
 	JB   two_bytes_emit_remainder_encodeFastBlockAsm1K
-	JB   three_bytes_emit_remainder_encodeFastBlockAsm1K
-
-three_bytes_emit_remainder_encodeFastBlockAsm1K:
 	MOVB $0xf0, (CX)
 	MOVW BX, 1(CX)
 	ADDQ $0x03, CX
@@ -19297,7 +19177,7 @@ repeat_extend_back_loop_encodeBetterBlockAsm64K:
 repeat_extend_back_end_encodeBetterBlockAsm64K:
 	MOVL BX, SI
 	SUBQ 16(SP), SI
-	LEAQ 4(CX)(SI*1), SI
+	LEAQ 3(CX)(SI*1), SI
 	CMPQ SI, (SP)
 	JB   repeat_dst_size_check_encodeBetterBlockAsm64K
 	MOVQ $0x00000000, ret+56(FP)
@@ -19320,17 +19200,6 @@ repeat_dst_size_check_encodeBetterBlockAsm64K:
 	SUBL $0x1d, SI
 	CMPL SI, $0x00000100
 	JB   two_bytes_repeat_emit_encodeBetterBlockAsm64K
-	JB   three_bytes_repeat_emit_encodeBetterBlockAsm64K
-	MOVL SI, R9
-	SHRL $0x10, R9
-	MOVB $0xf8, (CX)
-	MOVW SI, 1(CX)
-	MOVB R9, 3(CX)
-	ADDQ $0x04, CX
-	ADDL $0x1d, SI
-	JMP  memmove_long_repeat_emit_encodeBetterBlockAsm64K
-
-three_bytes_repeat_emit_encodeBetterBlockAsm64K:
 	MOVB $0xf0, (CX)
 	MOVW SI, 1(CX)
 	ADDQ $0x03, CX
@@ -19671,7 +19540,7 @@ match_extend_back_loop_encodeBetterBlockAsm64K:
 match_extend_back_end_encodeBetterBlockAsm64K:
 	MOVL AX, BX
 	SUBQ 16(SP), BX
-	LEAQ 4(CX)(BX*1), BX
+	LEAQ 3(CX)(BX*1), BX
 	CMPQ BX, (SP)
 	JB   match_dst_size_check_encodeBetterBlockAsm64K
 	MOVQ $0x00000000, ret+56(FP)
@@ -19838,17 +19707,6 @@ match_emit_lits_encodeBetterBlockAsm64K:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_match_emit_encodeBetterBlockAsm64K
-	JB   three_bytes_match_emit_encodeBetterBlockAsm64K
-	MOVL R9, R10
-	SHRL $0x10, R10
-	MOVB $0xf8, (CX)
-	MOVW R9, 1(CX)
-	MOVB R10, 3(CX)
-	ADDQ $0x04, CX
-	ADDL $0x1d, R9
-	JMP  memmove_long_match_emit_encodeBetterBlockAsm64K
-
-three_bytes_match_emit_encodeBetterBlockAsm64K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -20143,7 +20001,7 @@ index_loop_encodeBetterBlockAsm64K:
 emit_remainder_encodeBetterBlockAsm64K:
 	MOVQ src_len+32(FP), AX
 	SUBQ 16(SP), AX
-	LEAQ 4(CX)(AX*1), AX
+	LEAQ 3(CX)(AX*1), AX
 	CMPQ AX, (SP)
 	JB   emit_remainder_ok_encodeBetterBlockAsm64K
 	MOVQ $0x00000000, ret+56(FP)
@@ -20168,17 +20026,6 @@ emit_remainder_ok_encodeBetterBlockAsm64K:
 	SUBL $0x1d, DX
 	CMPL DX, $0x00000100
 	JB   two_bytes_emit_remainder_encodeBetterBlockAsm64K
-	JB   three_bytes_emit_remainder_encodeBetterBlockAsm64K
-	MOVL DX, BX
-	SHRL $0x10, BX
-	MOVB $0xf8, (CX)
-	MOVW DX, 1(CX)
-	MOVB BL, 3(CX)
-	ADDQ $0x04, CX
-	ADDL $0x1d, DX
-	JMP  memmove_long_emit_remainder_encodeBetterBlockAsm64K
-
-three_bytes_emit_remainder_encodeBetterBlockAsm64K:
 	MOVB $0xf0, (CX)
 	MOVW DX, 1(CX)
 	ADDQ $0x03, CX
@@ -20460,9 +20307,6 @@ repeat_dst_size_check_encodeBetterBlockAsm16K:
 	SUBL $0x1d, SI
 	CMPL SI, $0x00000100
 	JB   two_bytes_repeat_emit_encodeBetterBlockAsm16K
-	JB   three_bytes_repeat_emit_encodeBetterBlockAsm16K
-
-three_bytes_repeat_emit_encodeBetterBlockAsm16K:
 	MOVB $0xf0, (CX)
 	MOVW SI, 1(CX)
 	ADDQ $0x03, CX
@@ -20970,9 +20814,6 @@ match_emit_lits_encodeBetterBlockAsm16K:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_match_emit_encodeBetterBlockAsm16K
-	JB   three_bytes_match_emit_encodeBetterBlockAsm16K
-
-three_bytes_match_emit_encodeBetterBlockAsm16K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -21292,9 +21133,6 @@ emit_remainder_ok_encodeBetterBlockAsm16K:
 	SUBL $0x1d, DX
 	CMPL DX, $0x00000100
 	JB   two_bytes_emit_remainder_encodeBetterBlockAsm16K
-	JB   three_bytes_emit_remainder_encodeBetterBlockAsm16K
-
-three_bytes_emit_remainder_encodeBetterBlockAsm16K:
 	MOVB $0xf0, (CX)
 	MOVW DX, 1(CX)
 	ADDQ $0x03, CX
@@ -21576,9 +21414,6 @@ repeat_dst_size_check_encodeBetterBlockAsm4K:
 	SUBL $0x1d, SI
 	CMPL SI, $0x00000100
 	JB   two_bytes_repeat_emit_encodeBetterBlockAsm4K
-	JB   three_bytes_repeat_emit_encodeBetterBlockAsm4K
-
-three_bytes_repeat_emit_encodeBetterBlockAsm4K:
 	MOVB $0xf0, (CX)
 	MOVW SI, 1(CX)
 	ADDQ $0x03, CX
@@ -22086,9 +21921,6 @@ match_emit_lits_encodeBetterBlockAsm4K:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_match_emit_encodeBetterBlockAsm4K
-	JB   three_bytes_match_emit_encodeBetterBlockAsm4K
-
-three_bytes_match_emit_encodeBetterBlockAsm4K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -22408,9 +22240,6 @@ emit_remainder_ok_encodeBetterBlockAsm4K:
 	SUBL $0x1d, DX
 	CMPL DX, $0x00000100
 	JB   two_bytes_emit_remainder_encodeBetterBlockAsm4K
-	JB   three_bytes_emit_remainder_encodeBetterBlockAsm4K
-
-three_bytes_emit_remainder_encodeBetterBlockAsm4K:
 	MOVB $0xf0, (CX)
 	MOVW DX, 1(CX)
 	ADDQ $0x03, CX
@@ -22692,9 +22521,6 @@ repeat_dst_size_check_encodeBetterBlockAsm1K:
 	SUBL $0x1d, SI
 	CMPL SI, $0x00000100
 	JB   two_bytes_repeat_emit_encodeBetterBlockAsm1K
-	JB   three_bytes_repeat_emit_encodeBetterBlockAsm1K
-
-three_bytes_repeat_emit_encodeBetterBlockAsm1K:
 	MOVB $0xf0, (CX)
 	MOVW SI, 1(CX)
 	ADDQ $0x03, CX
@@ -23202,9 +23028,6 @@ match_emit_lits_encodeBetterBlockAsm1K:
 	SUBL $0x1d, R9
 	CMPL R9, $0x00000100
 	JB   two_bytes_match_emit_encodeBetterBlockAsm1K
-	JB   three_bytes_match_emit_encodeBetterBlockAsm1K
-
-three_bytes_match_emit_encodeBetterBlockAsm1K:
 	MOVB $0xf0, (CX)
 	MOVW R9, 1(CX)
 	ADDQ $0x03, CX
@@ -23524,9 +23347,6 @@ emit_remainder_ok_encodeBetterBlockAsm1K:
 	SUBL $0x1d, DX
 	CMPL DX, $0x00000100
 	JB   two_bytes_emit_remainder_encodeBetterBlockAsm1K
-	JB   three_bytes_emit_remainder_encodeBetterBlockAsm1K
-
-three_bytes_emit_remainder_encodeBetterBlockAsm1K:
 	MOVB $0xf0, (CX)
 	MOVW DX, 1(CX)
 	ADDQ $0x03, CX
