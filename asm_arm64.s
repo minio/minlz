@@ -414,8 +414,6 @@ repeat_extend_forward_end_encodeBlockAsm:
 	SUBW  R6, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeBlockAsm
 	SUB   $30, R5, R6
@@ -723,8 +721,6 @@ match_emit_copy2lits_encodeBlockAsm:
 	BEQ   match_nolit_emitcopy_end_encodeBlockAsm
 
 	// emitRepeat
-	SUB   $1, R8, R5
-	MOVWU R5, R5
 	CMPW  $0x1d, R8
 	BLS   repeat_one_match_emit_repeat_copy2_encodeBlockAsm
 	SUB   $30, R8, R23
@@ -1048,12 +1044,6 @@ emit_copy1_repeat_match_nolit_encodeBlockAsm:
 	MOVH  R23, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeBlockAsm
 	SUB   $30, R10, R23
 	MOVWU R23, R23
 	CMPW  $0x0000011e, R10
@@ -1079,15 +1069,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeBlockAsm:
 	MOVB R23, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeBlockAsm
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeBlockAsm:
-	MOVD  $0, R23
-	ADD   R10<<3, R23, R23
-	SUB   $4, R23, R23
-	MOVWU R23, R23
-	MOVB  R23, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBlockAsm
 
 two_byte_match_nolit_encodeBlockAsm:
 	// emitCopy2
@@ -1946,8 +1927,6 @@ repeat_extend_forward_end_encodeBlockAsm2MB:
 	SUBW  R6, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeBlockAsm2MB
 	SUB   $30, R5, R6
@@ -2249,8 +2228,6 @@ match_emit_copy2lits_encodeBlockAsm2MB:
 	BEQ   match_nolit_emitcopy_end_encodeBlockAsm2MB
 
 	// emitRepeat
-	SUB   $1, R8, R5
-	MOVWU R5, R5
 	CMPW  $0x1d, R8
 	BLS   repeat_one_match_emit_repeat_copy2_encodeBlockAsm2MB
 	SUB   $30, R8, R23
@@ -2574,12 +2551,6 @@ emit_copy1_repeat_match_nolit_encodeBlockAsm2MB:
 	MOVH  R23, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeBlockAsm2MB
 	SUB   $30, R10, R23
 	MOVWU R23, R23
 	CMPW  $0x0000011e, R10
@@ -2605,15 +2576,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeBlockAsm2MB:
 	MOVB R23, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeBlockAsm2MB
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeBlockAsm2MB:
-	MOVD  $0, R23
-	ADD   R10<<3, R23, R23
-	SUB   $4, R23, R23
-	MOVWU R23, R23
-	MOVB  R23, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBlockAsm2MB
 
 two_byte_match_nolit_encodeBlockAsm2MB:
 	// emitCopy2
@@ -3465,8 +3427,6 @@ repeat_extend_forward_end_encodeBlockAsm512K:
 	SUBW  R6, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeBlockAsm512K
 	SUB   $30, R5, R6
@@ -3768,8 +3728,6 @@ match_emit_copy2lits_encodeBlockAsm512K:
 	BEQ   match_nolit_emitcopy_end_encodeBlockAsm512K
 
 	// emitRepeat
-	SUB   $1, R8, R5
-	MOVWU R5, R5
 	CMPW  $0x1d, R8
 	BLS   repeat_one_match_emit_repeat_copy2_encodeBlockAsm512K
 	SUB   $30, R8, R23
@@ -4093,12 +4051,6 @@ emit_copy1_repeat_match_nolit_encodeBlockAsm512K:
 	MOVH  R23, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeBlockAsm512K
 	SUB   $30, R10, R23
 	MOVWU R23, R23
 	CMPW  $0x0000011e, R10
@@ -4124,15 +4076,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeBlockAsm512K:
 	MOVB R23, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeBlockAsm512K
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeBlockAsm512K:
-	MOVD  $0, R23
-	ADD   R10<<3, R23, R23
-	SUB   $4, R23, R23
-	MOVWU R23, R23
-	MOVB  R23, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBlockAsm512K
 
 two_byte_match_nolit_encodeBlockAsm512K:
 	// emitCopy2
@@ -4983,8 +4926,6 @@ repeat_extend_forward_end_encodeBlockAsm64K:
 	SUBW  R6, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeBlockAsm64K
 	SUB   $30, R5, R6
@@ -5235,8 +5176,6 @@ match_nolit_end_encodeBlockAsm64K:
 	BEQ   match_nolit_emitcopy_end_encodeBlockAsm64K
 
 	// emitRepeat
-	SUB   $1, R8, R5
-	MOVWU R5, R5
 	CMPW  $0x1d, R8
 	BLS   repeat_one_match_emit_repeat_copy2_encodeBlockAsm64K
 	SUB   $30, R8, R23
@@ -5513,12 +5452,6 @@ emit_copy1_repeat_match_nolit_encodeBlockAsm64K:
 	MOVH  R23, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeBlockAsm64K
 	SUB   $30, R10, R23
 	MOVWU R23, R23
 	CMPW  $0x0000011e, R10
@@ -5544,15 +5477,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeBlockAsm64K:
 	MOVB R23, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeBlockAsm64K
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeBlockAsm64K:
-	MOVD  $0, R23
-	ADD   R10<<3, R23, R23
-	SUB   $4, R23, R23
-	MOVWU R23, R23
-	MOVB  R23, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBlockAsm64K
 
 two_byte_match_nolit_encodeBlockAsm64K:
 	// emitCopy2
@@ -6393,8 +6317,6 @@ repeat_extend_forward_end_encodeBlockAsm16K:
 	SUBW  R6, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeBlockAsm16K
 	SUB   $30, R5, R6
@@ -6645,8 +6567,6 @@ match_nolit_end_encodeBlockAsm16K:
 	BEQ   match_nolit_emitcopy_end_encodeBlockAsm16K
 
 	// emitRepeat
-	SUB   $1, R8, R5
-	MOVWU R5, R5
 	CMPW  $0x1d, R8
 	BLS   repeat_one_match_emit_repeat_copy2_encodeBlockAsm16K
 	SUB   $30, R8, R23
@@ -6914,12 +6834,6 @@ emit_copy1_repeat_match_nolit_encodeBlockAsm16K:
 	MOVH  R23, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeBlockAsm16K
 	SUB   $30, R10, R23
 	MOVWU R23, R23
 	CMPW  $0x0000011e, R10
@@ -6945,15 +6859,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeBlockAsm16K:
 	MOVB R23, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeBlockAsm16K
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeBlockAsm16K:
-	MOVD  $0, R23
-	ADD   R10<<3, R23, R23
-	SUB   $4, R23, R23
-	MOVWU R23, R23
-	MOVB  R23, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBlockAsm16K
 
 two_byte_match_nolit_encodeBlockAsm16K:
 	// emitCopy2
@@ -7785,8 +7690,6 @@ repeat_extend_forward_end_encodeBlockAsm4K:
 	SUBW  R6, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeBlockAsm4K
 	SUB   $30, R5, R6
@@ -8037,8 +7940,6 @@ match_nolit_end_encodeBlockAsm4K:
 	BEQ   match_nolit_emitcopy_end_encodeBlockAsm4K
 
 	// emitRepeat
-	SUB   $1, R8, R5
-	MOVWU R5, R5
 	CMPW  $0x1d, R8
 	BLS   repeat_one_match_emit_repeat_copy2_encodeBlockAsm4K
 	SUB   $30, R8, R23
@@ -8306,12 +8207,6 @@ emit_copy1_repeat_match_nolit_encodeBlockAsm4K:
 	MOVH  R23, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeBlockAsm4K
 	SUB   $30, R10, R23
 	MOVWU R23, R23
 	CMPW  $0x0000011e, R10
@@ -8337,15 +8232,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeBlockAsm4K:
 	MOVB R23, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeBlockAsm4K
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeBlockAsm4K:
-	MOVD  $0, R23
-	ADD   R10<<3, R23, R23
-	SUB   $4, R23, R23
-	MOVWU R23, R23
-	MOVB  R23, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBlockAsm4K
 
 two_byte_match_nolit_encodeBlockAsm4K:
 	// emitCopy2
@@ -9177,8 +9063,6 @@ repeat_extend_forward_end_encodeBlockAsm1K:
 	SUBW  R6, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeBlockAsm1K
 	SUB   $30, R5, R6
@@ -9429,8 +9313,6 @@ match_nolit_end_encodeBlockAsm1K:
 	BEQ   match_nolit_emitcopy_end_encodeBlockAsm1K
 
 	// emitRepeat
-	SUB   $1, R8, R5
-	MOVWU R5, R5
 	CMPW  $0x1d, R8
 	BLS   repeat_one_match_emit_repeat_copy2_encodeBlockAsm1K
 	SUB   $30, R8, R23
@@ -9698,12 +9580,6 @@ emit_copy1_repeat_match_nolit_encodeBlockAsm1K:
 	MOVH  R23, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeBlockAsm1K
 	SUB   $30, R10, R23
 	MOVWU R23, R23
 	CMPW  $0x0000011e, R10
@@ -9729,15 +9605,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeBlockAsm1K:
 	MOVB R23, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeBlockAsm1K
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeBlockAsm1K:
-	MOVD  $0, R23
-	ADD   R10<<3, R23, R23
-	SUB   $4, R23, R23
-	MOVWU R23, R23
-	MOVB  R23, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBlockAsm1K
 
 two_byte_match_nolit_encodeBlockAsm1K:
 	// emitCopy2
@@ -10558,8 +10425,6 @@ repeat_extend_forward_end_encodeFastBlockAsm:
 	SUBW  R6, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeFastBlockAsm
 	SUB   $30, R5, R6
@@ -11048,12 +10913,6 @@ emit_copy1_repeat_match_nolit_encodeFastBlockAsm:
 	MOVH  R23, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm
 	SUB   $30, R10, R23
 	MOVWU R23, R23
 	CMPW  $0x0000011e, R10
@@ -11079,15 +10938,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm:
 	MOVB R23, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeFastBlockAsm
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm:
-	MOVD  $0, R23
-	ADD   R10<<3, R23, R23
-	SUB   $4, R23, R23
-	MOVWU R23, R23
-	MOVB  R23, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeFastBlockAsm
 
 two_byte_match_nolit_encodeFastBlockAsm:
 	// emitCopy2
@@ -11922,8 +11772,6 @@ repeat_extend_forward_end_encodeFastBlockAsm2MB:
 	SUBW  R6, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeFastBlockAsm2MB
 	SUB   $30, R5, R6
@@ -12406,12 +12254,6 @@ emit_copy1_repeat_match_nolit_encodeFastBlockAsm2MB:
 	MOVH  R23, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm2MB
 	SUB   $30, R10, R23
 	MOVWU R23, R23
 	CMPW  $0x0000011e, R10
@@ -12437,15 +12279,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm2MB:
 	MOVB R23, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeFastBlockAsm2MB
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm2MB:
-	MOVD  $0, R23
-	ADD   R10<<3, R23, R23
-	SUB   $4, R23, R23
-	MOVWU R23, R23
-	MOVB  R23, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeFastBlockAsm2MB
 
 two_byte_match_nolit_encodeFastBlockAsm2MB:
 	// emitCopy2
@@ -13273,8 +13106,6 @@ repeat_extend_forward_end_encodeFastBlockAsm512K:
 	SUBW  R6, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeFastBlockAsm512K
 	SUB   $30, R5, R6
@@ -13757,12 +13588,6 @@ emit_copy1_repeat_match_nolit_encodeFastBlockAsm512K:
 	MOVH  R23, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm512K
 	SUB   $30, R10, R23
 	MOVWU R23, R23
 	CMPW  $0x0000011e, R10
@@ -13788,15 +13613,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm512K:
 	MOVB R23, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeFastBlockAsm512K
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm512K:
-	MOVD  $0, R23
-	ADD   R10<<3, R23, R23
-	SUB   $4, R23, R23
-	MOVWU R23, R23
-	MOVB  R23, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeFastBlockAsm512K
 
 two_byte_match_nolit_encodeFastBlockAsm512K:
 	// emitCopy2
@@ -14623,8 +14439,6 @@ repeat_extend_forward_end_encodeFastBlockAsm64K:
 	SUBW  R6, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeFastBlockAsm64K
 	SUB   $30, R5, R6
@@ -15060,12 +14874,6 @@ emit_copy1_repeat_match_nolit_encodeFastBlockAsm64K:
 	MOVH  R23, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm64K
 	SUB   $30, R10, R23
 	MOVWU R23, R23
 	CMPW  $0x0000011e, R10
@@ -15091,15 +14899,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm64K:
 	MOVB R23, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeFastBlockAsm64K
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm64K:
-	MOVD  $0, R23
-	ADD   R10<<3, R23, R23
-	SUB   $4, R23, R23
-	MOVWU R23, R23
-	MOVB  R23, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeFastBlockAsm64K
 
 two_byte_match_nolit_encodeFastBlockAsm64K:
 	// emitCopy2
@@ -15916,8 +15715,6 @@ repeat_extend_forward_end_encodeFastBlockAsm16K:
 	SUBW  R6, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeFastBlockAsm16K
 	SUB   $30, R5, R6
@@ -16344,12 +16141,6 @@ emit_copy1_repeat_match_nolit_encodeFastBlockAsm16K:
 	MOVH  R23, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm16K
 	SUB   $30, R10, R23
 	MOVWU R23, R23
 	CMPW  $0x0000011e, R10
@@ -16375,15 +16166,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm16K:
 	MOVB R23, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeFastBlockAsm16K
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm16K:
-	MOVD  $0, R23
-	ADD   R10<<3, R23, R23
-	SUB   $4, R23, R23
-	MOVWU R23, R23
-	MOVB  R23, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeFastBlockAsm16K
 
 two_byte_match_nolit_encodeFastBlockAsm16K:
 	// emitCopy2
@@ -17191,8 +16973,6 @@ repeat_extend_forward_end_encodeFastBlockAsm4K:
 	SUBW  R6, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeFastBlockAsm4K
 	SUB   $30, R5, R6
@@ -17619,12 +17399,6 @@ emit_copy1_repeat_match_nolit_encodeFastBlockAsm4K:
 	MOVH  R23, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm4K
 	SUB   $30, R10, R23
 	MOVWU R23, R23
 	CMPW  $0x0000011e, R10
@@ -17650,15 +17424,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm4K:
 	MOVB R23, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeFastBlockAsm4K
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm4K:
-	MOVD  $0, R23
-	ADD   R10<<3, R23, R23
-	SUB   $4, R23, R23
-	MOVWU R23, R23
-	MOVB  R23, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeFastBlockAsm4K
 
 two_byte_match_nolit_encodeFastBlockAsm4K:
 	// emitCopy2
@@ -18466,8 +18231,6 @@ repeat_extend_forward_end_encodeFastBlockAsm1K:
 	SUBW  R6, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeFastBlockAsm1K
 	SUB   $30, R5, R6
@@ -18894,12 +18657,6 @@ emit_copy1_repeat_match_nolit_encodeFastBlockAsm1K:
 	MOVH  R23, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm1K
 	SUB   $30, R10, R23
 	MOVWU R23, R23
 	CMPW  $0x0000011e, R10
@@ -18925,15 +18682,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm1K:
 	MOVB R23, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeFastBlockAsm1K
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeFastBlockAsm1K:
-	MOVD  $0, R23
-	ADD   R10<<3, R23, R23
-	SUB   $4, R23, R23
-	MOVWU R23, R23
-	MOVB  R23, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeFastBlockAsm1K
 
 two_byte_match_nolit_encodeFastBlockAsm1K:
 	// emitCopy2
@@ -19798,8 +19546,6 @@ repeat_extend_forward_end_encodeBetterBlockAsm:
 	SUBW  R3, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeBetterBlockAsm
 	SUB   $30, R5, R6
@@ -20110,8 +19856,6 @@ match_length_ok_encodeBetterBlockAsm:
 	BEQ   match_nolit_emitcopy_end_encodeBetterBlockAsm
 
 	// emitRepeat
-	SUB   $1, R8, R5
-	MOVWU R5, R5
 	CMPW  $0x1d, R8
 	BLS   repeat_one_match_emit_repeat_copy2_encodeBetterBlockAsm
 	SUB   $30, R8, R5
@@ -20488,12 +20232,6 @@ emit_copy1_repeat_match_nolit_encodeBetterBlockAsm:
 	MOVH  R5, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm
 	SUB   $30, R10, R5
 	MOVWU R5, R5
 	CMPW  $0x0000011e, R10
@@ -20519,15 +20257,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm:
 	MOVB R5, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm:
-	MOVD  $0, R5
-	ADD   R10<<3, R5, R5
-	SUB   $4, R5, R5
-	MOVWU R5, R5
-	MOVB  R5, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm
 
 two_byte_match_nolit_encodeBetterBlockAsm:
 	// emitCopy2
@@ -20570,249 +20299,6 @@ emit_copy2_0_match_nolit_encodeBetterBlockAsm_emit2:
 	MOVWU R5, R5
 	MOVB  R5, (R1)
 	ADD   $0x03, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm
-
-	// emitLiteralsDstP
-	MOVD  R19, R5
-	CMPW  R3, R5
-	BEQ   emit_literal_done_match_emit_repeat_encodeBetterBlockAsm
-	MOVWU R3, R6
-	MOVD  R3, R19
-	ADD   R5, R2, R7
-	SUBW  R5, R6, R6
-
-	// emitLiteral
-	SUB   $1, R6, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R5
-	BLO   one_byte_match_emit_repeat_encodeBetterBlockAsm
-	SUBW  $0x1d, R5, R5
-	CMPW  $0x00000100, R5
-	BLO   two_bytes_match_emit_repeat_encodeBetterBlockAsm
-	CMPW  $0x00010000, R5
-	BLO   three_bytes_match_emit_repeat_encodeBetterBlockAsm
-	MOVWU R5, R8
-	LSRW  $0x10, R8, R8
-	MOVD  $0xf8, R16
-	MOVB  R16, (R1)
-	MOVH  R5, 1(R1)
-	MOVB  R8, 3(R1)
-	ADD   $0x04, R1, R1
-	ADDW  $0x1d, R5, R5
-	JMP   memmove_long_match_emit_repeat_encodeBetterBlockAsm
-
-three_bytes_match_emit_repeat_encodeBetterBlockAsm:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R5, R5
-	JMP  memmove_long_match_emit_repeat_encodeBetterBlockAsm
-
-two_bytes_match_emit_repeat_encodeBetterBlockAsm:
-	MOVD $0xe8, R16
-	MOVB R16, (R1)
-	MOVB R5, 1(R1)
-	ADDW $0x1d, R5, R5
-	ADD  $0x02, R1, R1
-	CMPW $0x40, R5
-	BLO  memmove_midmatch_emit_repeat_encodeBetterBlockAsm
-	JMP  memmove_long_match_emit_repeat_encodeBetterBlockAsm
-
-one_byte_match_emit_repeat_encodeBetterBlockAsm:
-	LSLW $0x03, R5, R16
-	BFI  $0, R16, $8, R5
-	MOVB R5, (R1)
-	ADD  $0x01, R1, R1
-	ADD  R6, R1, R5
-
-	// genMemMoveShort
-	// margin: 16, min move: 1
-	CMP $0x10, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm_memmove_move_8through16
-	CMP $0x20, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm_memmove_move_17through32
-	JMP emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm_memmove_move_33through64
-	PCALIGN $0x10
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm_memmove_move_8through16:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm_memmove_move_17through32:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm_memmove_move_33through64:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	MOVD 16(R7), R8
-	MOVD 24(R7), R9
-	MOVD R8, 16(R1)
-	MOVD R9, 24(R1)
-	ADD  R6, R7, R15
-	MOVD -32(R15), R8
-	ADD  R6, R7, R15
-	MOVD -24(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -32(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -24(R15)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-
-memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm:
-	MOVD R5, R1
-	JMP  emit_literal_done_match_emit_repeat_encodeBetterBlockAsm
-
-memmove_midmatch_emit_repeat_encodeBetterBlockAsm:
-	ADD R6, R1, R5
-
-	// genMemMoveShort
-	// margin: 15, min move: 30
-	CMP $0x20, R6
-	BLS emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm_memmove_move_17through32
-	JMP emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm_memmove_move_33through64
-
-emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm_memmove_move_17through32:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_mid_end_copy_match_emit_repeat_encodeBetterBlockAsm
-
-emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm_memmove_move_33through64:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	MOVD 16(R7), R8
-	MOVD 24(R7), R9
-	MOVD R8, 16(R1)
-	MOVD R9, 24(R1)
-	ADD  R6, R7, R15
-	MOVD -32(R15), R8
-	ADD  R6, R7, R15
-	MOVD -24(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -32(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -24(R15)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-
-memmove_mid_end_copy_match_emit_repeat_encodeBetterBlockAsm:
-	MOVD R5, R1
-	JMP  emit_literal_done_match_emit_repeat_encodeBetterBlockAsm
-
-memmove_long_match_emit_repeat_encodeBetterBlockAsm:
-	ADD R6, R1, R5
-
-	// genMemMoveLong
-	MOVD    R7, R11
-	MOVD    R1, R12
-	MOVD    R6, R13
-	PCALIGN $0x10
-
-emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsmlarge_big_loop_back:
-	MOVD (R11), R8
-	MOVD 8(R11), R9
-	MOVD R8, (R12)
-	MOVD R9, 8(R12)
-	ADD  $0x10, R11, R11
-	ADD  $0x10, R12, R12
-	SUB  $0x10, R13, R13
-	CMP  $0x10, R13
-	BHS  emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsmlarge_big_loop_back
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	MOVD R5, R1
-
-emit_literal_done_match_emit_repeat_encodeBetterBlockAsm:
-	ADDW R10, R0, R0
-	ADDW $0x04, R10, R10
-	MOVD R0, R19
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_match_nolit_repeat_encodeBetterBlockAsm
-	SUB   $30, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x0000011e, R10
-	BLO   repeat_two_match_nolit_repeat_encodeBetterBlockAsm
-	CMPW  $0x0001001e, R10
-	BLO   repeat_three_match_nolit_repeat_encodeBetterBlockAsm
-	MOVD  $0xfc, R16
-	MOVB  R16, (R1)
-	MOVW  R5, 1(R1)
-	ADD   $0x04, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm
-
-repeat_three_match_nolit_repeat_encodeBetterBlockAsm:
-	MOVD $0xf4, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm
-
-repeat_two_match_nolit_repeat_encodeBetterBlockAsm:
-	MOVD $0xec, R16
-	MOVB R16, (R1)
-	MOVB R5, 1(R1)
-	ADD  $0x02, R1, R1
-	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm
-
-repeat_one_match_nolit_repeat_encodeBetterBlockAsm:
-	MOVD  $0, R5
-	ADD   R10<<3, R5, R5
-	SUB   $4, R5, R5
-	MOVWU R5, R5
-	MOVB  R5, (R1)
-	ADD   $0x01, R1, R1
 
 match_nolit_emitcopy_end_encodeBetterBlockAsm:
 	CMP  R22, R0
@@ -21562,8 +21048,6 @@ repeat_extend_forward_end_encodeBetterBlockAsm2MB:
 	SUBW  R3, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeBetterBlockAsm2MB
 	SUB   $30, R5, R6
@@ -21868,8 +21352,6 @@ match_length_ok_encodeBetterBlockAsm2MB:
 	BEQ   match_nolit_emitcopy_end_encodeBetterBlockAsm2MB
 
 	// emitRepeat
-	SUB   $1, R8, R5
-	MOVWU R5, R5
 	CMPW  $0x1d, R8
 	BLS   repeat_one_match_emit_repeat_copy2_encodeBetterBlockAsm2MB
 	SUB   $30, R8, R5
@@ -22246,12 +21728,6 @@ emit_copy1_repeat_match_nolit_encodeBetterBlockAsm2MB:
 	MOVH  R5, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm2MB
 	SUB   $30, R10, R5
 	MOVWU R5, R5
 	CMPW  $0x0000011e, R10
@@ -22277,15 +21753,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm2MB:
 	MOVB R5, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm2MB
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm2MB:
-	MOVD  $0, R5
-	ADD   R10<<3, R5, R5
-	SUB   $4, R5, R5
-	MOVWU R5, R5
-	MOVB  R5, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm2MB
 
 two_byte_match_nolit_encodeBetterBlockAsm2MB:
 	// emitCopy2
@@ -22328,249 +21795,6 @@ emit_copy2_0_match_nolit_encodeBetterBlockAsm2MB_emit2:
 	MOVWU R5, R5
 	MOVB  R5, (R1)
 	ADD   $0x03, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm2MB
-
-	// emitLiteralsDstP
-	MOVD  R19, R5
-	CMPW  R3, R5
-	BEQ   emit_literal_done_match_emit_repeat_encodeBetterBlockAsm2MB
-	MOVWU R3, R6
-	MOVD  R3, R19
-	ADD   R5, R2, R7
-	SUBW  R5, R6, R6
-
-	// emitLiteral
-	SUB   $1, R6, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R5
-	BLO   one_byte_match_emit_repeat_encodeBetterBlockAsm2MB
-	SUBW  $0x1d, R5, R5
-	CMPW  $0x00000100, R5
-	BLO   two_bytes_match_emit_repeat_encodeBetterBlockAsm2MB
-	CMPW  $0x00010000, R5
-	BLO   three_bytes_match_emit_repeat_encodeBetterBlockAsm2MB
-	MOVWU R5, R8
-	LSRW  $0x10, R8, R8
-	MOVD  $0xf8, R16
-	MOVB  R16, (R1)
-	MOVH  R5, 1(R1)
-	MOVB  R8, 3(R1)
-	ADD   $0x04, R1, R1
-	ADDW  $0x1d, R5, R5
-	JMP   memmove_long_match_emit_repeat_encodeBetterBlockAsm2MB
-
-three_bytes_match_emit_repeat_encodeBetterBlockAsm2MB:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R5, R5
-	JMP  memmove_long_match_emit_repeat_encodeBetterBlockAsm2MB
-
-two_bytes_match_emit_repeat_encodeBetterBlockAsm2MB:
-	MOVD $0xe8, R16
-	MOVB R16, (R1)
-	MOVB R5, 1(R1)
-	ADDW $0x1d, R5, R5
-	ADD  $0x02, R1, R1
-	CMPW $0x40, R5
-	BLO  memmove_midmatch_emit_repeat_encodeBetterBlockAsm2MB
-	JMP  memmove_long_match_emit_repeat_encodeBetterBlockAsm2MB
-
-one_byte_match_emit_repeat_encodeBetterBlockAsm2MB:
-	LSLW $0x03, R5, R16
-	BFI  $0, R16, $8, R5
-	MOVB R5, (R1)
-	ADD  $0x01, R1, R1
-	ADD  R6, R1, R5
-
-	// genMemMoveShort
-	// margin: 16, min move: 1
-	CMP $0x10, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm2MB_memmove_move_8through16
-	CMP $0x20, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm2MB_memmove_move_17through32
-	JMP emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm2MB_memmove_move_33through64
-	PCALIGN $0x10
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm2MB_memmove_move_8through16:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm2MB
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm2MB_memmove_move_17through32:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm2MB
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm2MB_memmove_move_33through64:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	MOVD 16(R7), R8
-	MOVD 24(R7), R9
-	MOVD R8, 16(R1)
-	MOVD R9, 24(R1)
-	ADD  R6, R7, R15
-	MOVD -32(R15), R8
-	ADD  R6, R7, R15
-	MOVD -24(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -32(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -24(R15)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-
-memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm2MB:
-	MOVD R5, R1
-	JMP  emit_literal_done_match_emit_repeat_encodeBetterBlockAsm2MB
-
-memmove_midmatch_emit_repeat_encodeBetterBlockAsm2MB:
-	ADD R6, R1, R5
-
-	// genMemMoveShort
-	// margin: 15, min move: 30
-	CMP $0x20, R6
-	BLS emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm2MB_memmove_move_17through32
-	JMP emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm2MB_memmove_move_33through64
-
-emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm2MB_memmove_move_17through32:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_mid_end_copy_match_emit_repeat_encodeBetterBlockAsm2MB
-
-emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm2MB_memmove_move_33through64:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	MOVD 16(R7), R8
-	MOVD 24(R7), R9
-	MOVD R8, 16(R1)
-	MOVD R9, 24(R1)
-	ADD  R6, R7, R15
-	MOVD -32(R15), R8
-	ADD  R6, R7, R15
-	MOVD -24(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -32(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -24(R15)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-
-memmove_mid_end_copy_match_emit_repeat_encodeBetterBlockAsm2MB:
-	MOVD R5, R1
-	JMP  emit_literal_done_match_emit_repeat_encodeBetterBlockAsm2MB
-
-memmove_long_match_emit_repeat_encodeBetterBlockAsm2MB:
-	ADD R6, R1, R5
-
-	// genMemMoveLong
-	MOVD    R7, R11
-	MOVD    R1, R12
-	MOVD    R6, R13
-	PCALIGN $0x10
-
-emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm2MBlarge_big_loop_back:
-	MOVD (R11), R8
-	MOVD 8(R11), R9
-	MOVD R8, (R12)
-	MOVD R9, 8(R12)
-	ADD  $0x10, R11, R11
-	ADD  $0x10, R12, R12
-	SUB  $0x10, R13, R13
-	CMP  $0x10, R13
-	BHS  emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm2MBlarge_big_loop_back
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	MOVD R5, R1
-
-emit_literal_done_match_emit_repeat_encodeBetterBlockAsm2MB:
-	ADDW R10, R0, R0
-	ADDW $0x04, R10, R10
-	MOVD R0, R19
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_match_nolit_repeat_encodeBetterBlockAsm2MB
-	SUB   $30, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x0000011e, R10
-	BLO   repeat_two_match_nolit_repeat_encodeBetterBlockAsm2MB
-	CMPW  $0x0001001e, R10
-	BLO   repeat_three_match_nolit_repeat_encodeBetterBlockAsm2MB
-	MOVD  $0xfc, R16
-	MOVB  R16, (R1)
-	MOVW  R5, 1(R1)
-	ADD   $0x04, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm2MB
-
-repeat_three_match_nolit_repeat_encodeBetterBlockAsm2MB:
-	MOVD $0xf4, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm2MB
-
-repeat_two_match_nolit_repeat_encodeBetterBlockAsm2MB:
-	MOVD $0xec, R16
-	MOVB R16, (R1)
-	MOVB R5, 1(R1)
-	ADD  $0x02, R1, R1
-	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm2MB
-
-repeat_one_match_nolit_repeat_encodeBetterBlockAsm2MB:
-	MOVD  $0, R5
-	ADD   R10<<3, R5, R5
-	SUB   $4, R5, R5
-	MOVWU R5, R5
-	MOVB  R5, (R1)
-	ADD   $0x01, R1, R1
 
 match_nolit_emitcopy_end_encodeBetterBlockAsm2MB:
 	CMP  R22, R0
@@ -23329,8 +22553,6 @@ repeat_extend_forward_end_encodeBetterBlockAsm512K:
 	SUBW  R3, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeBetterBlockAsm512K
 	SUB   $30, R5, R6
@@ -23635,8 +22857,6 @@ match_length_ok_encodeBetterBlockAsm512K:
 	BEQ   match_nolit_emitcopy_end_encodeBetterBlockAsm512K
 
 	// emitRepeat
-	SUB   $1, R8, R5
-	MOVWU R5, R5
 	CMPW  $0x1d, R8
 	BLS   repeat_one_match_emit_repeat_copy2_encodeBetterBlockAsm512K
 	SUB   $30, R8, R5
@@ -24022,12 +23242,6 @@ emit_copy1_repeat_match_nolit_encodeBetterBlockAsm512K:
 	MOVH  R5, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm512K
 	SUB   $30, R10, R5
 	MOVWU R5, R5
 	CMPW  $0x0000011e, R10
@@ -24053,15 +23267,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm512K:
 	MOVB R5, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm512K
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm512K:
-	MOVD  $0, R5
-	ADD   R10<<3, R5, R5
-	SUB   $4, R5, R5
-	MOVWU R5, R5
-	MOVB  R5, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm512K
 
 two_byte_match_nolit_encodeBetterBlockAsm512K:
 	// emitCopy2
@@ -24104,258 +23309,6 @@ emit_copy2_0_match_nolit_encodeBetterBlockAsm512K_emit2:
 	MOVWU R5, R5
 	MOVB  R5, (R1)
 	ADD   $0x03, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm512K
-
-	// emitLiteralsDstP
-	MOVD  R19, R5
-	CMPW  R3, R5
-	BEQ   emit_literal_done_match_emit_repeat_encodeBetterBlockAsm512K
-	MOVWU R3, R6
-	MOVD  R3, R19
-	ADD   R5, R2, R7
-	SUBW  R5, R6, R6
-
-	// emitLiteral
-	SUB   $1, R6, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R5
-	BLO   one_byte_match_emit_repeat_encodeBetterBlockAsm512K
-	SUBW  $0x1d, R5, R5
-	CMPW  $0x00000100, R5
-	BLO   two_bytes_match_emit_repeat_encodeBetterBlockAsm512K
-	CMPW  $0x00010000, R5
-	BLO   three_bytes_match_emit_repeat_encodeBetterBlockAsm512K
-	MOVWU R5, R8
-	LSRW  $0x10, R8, R8
-	MOVD  $0xf8, R16
-	MOVB  R16, (R1)
-	MOVH  R5, 1(R1)
-	MOVB  R8, 3(R1)
-	ADD   $0x04, R1, R1
-	ADDW  $0x1d, R5, R5
-	JMP   memmove_long_match_emit_repeat_encodeBetterBlockAsm512K
-
-three_bytes_match_emit_repeat_encodeBetterBlockAsm512K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R5, R5
-	JMP  memmove_long_match_emit_repeat_encodeBetterBlockAsm512K
-
-two_bytes_match_emit_repeat_encodeBetterBlockAsm512K:
-	MOVD $0xe8, R16
-	MOVB R16, (R1)
-	MOVB R5, 1(R1)
-	ADDW $0x1d, R5, R5
-	ADD  $0x02, R1, R1
-	CMPW $0x40, R5
-	BLO  memmove_midmatch_emit_repeat_encodeBetterBlockAsm512K
-	JMP  memmove_long_match_emit_repeat_encodeBetterBlockAsm512K
-
-one_byte_match_emit_repeat_encodeBetterBlockAsm512K:
-	LSLW $0x03, R5, R16
-	BFI  $0, R16, $8, R5
-	MOVB R5, (R1)
-	ADD  $0x01, R1, R1
-	ADD  R6, R1, R5
-
-	// genMemMoveShort
-	// margin: 8, min move: 1
-	CMP $0x08, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm512K_memmove_move_8
-	CMP $0x10, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm512K_memmove_move_8through16
-	CMP $0x20, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm512K_memmove_move_17through32
-	JMP emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm512K_memmove_move_33through64
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm512K_memmove_move_8:
-	MOVD (R7), R8
-	MOVD R8, (R1)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm512K
-	PCALIGN $0x10
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm512K_memmove_move_8through16:
-	MOVD (R7), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	MOVD R8, (R1)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm512K
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm512K_memmove_move_17through32:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm512K
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm512K_memmove_move_33through64:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	MOVD 16(R7), R8
-	MOVD 24(R7), R9
-	MOVD R8, 16(R1)
-	MOVD R9, 24(R1)
-	ADD  R6, R7, R15
-	MOVD -32(R15), R8
-	ADD  R6, R7, R15
-	MOVD -24(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -32(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -24(R15)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-
-memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm512K:
-	MOVD R5, R1
-	JMP  emit_literal_done_match_emit_repeat_encodeBetterBlockAsm512K
-
-memmove_midmatch_emit_repeat_encodeBetterBlockAsm512K:
-	ADD R6, R1, R5
-
-	// genMemMoveShort
-	// margin: 8, min move: 30
-	CMP $0x20, R6
-	BLS emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm512K_memmove_move_17through32
-	JMP emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm512K_memmove_move_33through64
-
-emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm512K_memmove_move_17through32:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_mid_end_copy_match_emit_repeat_encodeBetterBlockAsm512K
-
-emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm512K_memmove_move_33through64:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	MOVD 16(R7), R8
-	MOVD 24(R7), R9
-	MOVD R8, 16(R1)
-	MOVD R9, 24(R1)
-	ADD  R6, R7, R15
-	MOVD -32(R15), R8
-	ADD  R6, R7, R15
-	MOVD -24(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -32(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -24(R15)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-
-memmove_mid_end_copy_match_emit_repeat_encodeBetterBlockAsm512K:
-	MOVD R5, R1
-	JMP  emit_literal_done_match_emit_repeat_encodeBetterBlockAsm512K
-
-memmove_long_match_emit_repeat_encodeBetterBlockAsm512K:
-	ADD R6, R1, R5
-
-	// genMemMoveLong
-	MOVD    R7, R11
-	MOVD    R1, R12
-	MOVD    R6, R13
-	PCALIGN $0x10
-
-emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm512Klarge_big_loop_back:
-	MOVD (R11), R8
-	MOVD 8(R11), R9
-	MOVD R8, (R12)
-	MOVD R9, 8(R12)
-	ADD  $0x10, R11, R11
-	ADD  $0x10, R12, R12
-	SUB  $0x10, R13, R13
-	CMP  $0x10, R13
-	BHS  emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm512Klarge_big_loop_back
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	MOVD R5, R1
-
-emit_literal_done_match_emit_repeat_encodeBetterBlockAsm512K:
-	ADDW R10, R0, R0
-	ADDW $0x04, R10, R10
-	MOVD R0, R19
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_match_nolit_repeat_encodeBetterBlockAsm512K
-	SUB   $30, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x0000011e, R10
-	BLO   repeat_two_match_nolit_repeat_encodeBetterBlockAsm512K
-	CMPW  $0x0001001e, R10
-	BLO   repeat_three_match_nolit_repeat_encodeBetterBlockAsm512K
-	MOVD  $0xfc, R16
-	MOVB  R16, (R1)
-	MOVW  R5, 1(R1)
-	ADD   $0x04, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm512K
-
-repeat_three_match_nolit_repeat_encodeBetterBlockAsm512K:
-	MOVD $0xf4, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm512K
-
-repeat_two_match_nolit_repeat_encodeBetterBlockAsm512K:
-	MOVD $0xec, R16
-	MOVB R16, (R1)
-	MOVB R5, 1(R1)
-	ADD  $0x02, R1, R1
-	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm512K
-
-repeat_one_match_nolit_repeat_encodeBetterBlockAsm512K:
-	MOVD  $0, R5
-	ADD   R10<<3, R5, R5
-	SUB   $4, R5, R5
-	MOVWU R5, R5
-	MOVB  R5, (R1)
-	ADD   $0x01, R1, R1
 
 match_nolit_emitcopy_end_encodeBetterBlockAsm512K:
 	CMP  R22, R0
@@ -25104,8 +24057,6 @@ repeat_extend_forward_end_encodeBetterBlockAsm64K:
 	SUBW  R3, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeBetterBlockAsm64K
 	SUB   $30, R5, R6
@@ -25397,8 +24348,6 @@ match_nolit_end_encodeBetterBlockAsm64K:
 	BEQ   match_nolit_emitcopy_end_encodeBetterBlockAsm64K
 
 	// emitRepeat
-	SUB   $1, R8, R5
-	MOVWU R5, R5
 	CMPW  $0x1d, R8
 	BLS   repeat_one_match_emit_repeat_copy2_encodeBetterBlockAsm64K
 	SUB   $30, R8, R5
@@ -25680,12 +24629,6 @@ emit_copy1_repeat_match_nolit_encodeBetterBlockAsm64K:
 	MOVH  R5, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm64K
 	SUB   $30, R10, R5
 	MOVWU R5, R5
 	CMPW  $0x0000011e, R10
@@ -25711,15 +24654,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm64K:
 	MOVB R5, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm64K
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm64K:
-	MOVD  $0, R5
-	ADD   R10<<3, R5, R5
-	SUB   $4, R5, R5
-	MOVWU R5, R5
-	MOVB  R5, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm64K
 
 two_byte_match_nolit_encodeBetterBlockAsm64K:
 	// emitCopy2
@@ -25762,257 +24696,6 @@ emit_copy2_0_match_nolit_encodeBetterBlockAsm64K_emit2:
 	MOVWU R5, R5
 	MOVB  R5, (R1)
 	ADD   $0x03, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm64K
-
-	// emitLiteralsDstP
-	MOVD  R19, R5
-	CMPW  R3, R5
-	BEQ   emit_literal_done_match_emit_repeat_encodeBetterBlockAsm64K
-	MOVWU R3, R6
-	MOVD  R3, R19
-	ADD   R5, R2, R7
-	SUBW  R5, R6, R6
-
-	// emitLiteral
-	SUB   $1, R6, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R5
-	BLO   one_byte_match_emit_repeat_encodeBetterBlockAsm64K
-	SUBW  $0x1d, R5, R5
-	CMPW  $0x00000100, R5
-	BLO   two_bytes_match_emit_repeat_encodeBetterBlockAsm64K
-	BLO   three_bytes_match_emit_repeat_encodeBetterBlockAsm64K
-	MOVWU R5, R8
-	LSRW  $0x10, R8, R8
-	MOVD  $0xf8, R16
-	MOVB  R16, (R1)
-	MOVH  R5, 1(R1)
-	MOVB  R8, 3(R1)
-	ADD   $0x04, R1, R1
-	ADDW  $0x1d, R5, R5
-	JMP   memmove_long_match_emit_repeat_encodeBetterBlockAsm64K
-
-three_bytes_match_emit_repeat_encodeBetterBlockAsm64K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R5, R5
-	JMP  memmove_long_match_emit_repeat_encodeBetterBlockAsm64K
-
-two_bytes_match_emit_repeat_encodeBetterBlockAsm64K:
-	MOVD $0xe8, R16
-	MOVB R16, (R1)
-	MOVB R5, 1(R1)
-	ADDW $0x1d, R5, R5
-	ADD  $0x02, R1, R1
-	CMPW $0x40, R5
-	BLO  memmove_midmatch_emit_repeat_encodeBetterBlockAsm64K
-	JMP  memmove_long_match_emit_repeat_encodeBetterBlockAsm64K
-
-one_byte_match_emit_repeat_encodeBetterBlockAsm64K:
-	LSLW $0x03, R5, R16
-	BFI  $0, R16, $8, R5
-	MOVB R5, (R1)
-	ADD  $0x01, R1, R1
-	ADD  R6, R1, R5
-
-	// genMemMoveShort
-	// margin: 8, min move: 1
-	CMP $0x08, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm64K_memmove_move_8
-	CMP $0x10, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm64K_memmove_move_8through16
-	CMP $0x20, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm64K_memmove_move_17through32
-	JMP emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm64K_memmove_move_33through64
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm64K_memmove_move_8:
-	MOVD (R7), R8
-	MOVD R8, (R1)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm64K
-	PCALIGN $0x10
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm64K_memmove_move_8through16:
-	MOVD (R7), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	MOVD R8, (R1)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm64K
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm64K_memmove_move_17through32:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm64K
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm64K_memmove_move_33through64:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	MOVD 16(R7), R8
-	MOVD 24(R7), R9
-	MOVD R8, 16(R1)
-	MOVD R9, 24(R1)
-	ADD  R6, R7, R15
-	MOVD -32(R15), R8
-	ADD  R6, R7, R15
-	MOVD -24(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -32(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -24(R15)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-
-memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm64K:
-	MOVD R5, R1
-	JMP  emit_literal_done_match_emit_repeat_encodeBetterBlockAsm64K
-
-memmove_midmatch_emit_repeat_encodeBetterBlockAsm64K:
-	ADD R6, R1, R5
-
-	// genMemMoveShort
-	// margin: 8, min move: 30
-	CMP $0x20, R6
-	BLS emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm64K_memmove_move_17through32
-	JMP emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm64K_memmove_move_33through64
-
-emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm64K_memmove_move_17through32:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_mid_end_copy_match_emit_repeat_encodeBetterBlockAsm64K
-
-emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm64K_memmove_move_33through64:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	MOVD 16(R7), R8
-	MOVD 24(R7), R9
-	MOVD R8, 16(R1)
-	MOVD R9, 24(R1)
-	ADD  R6, R7, R15
-	MOVD -32(R15), R8
-	ADD  R6, R7, R15
-	MOVD -24(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -32(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -24(R15)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-
-memmove_mid_end_copy_match_emit_repeat_encodeBetterBlockAsm64K:
-	MOVD R5, R1
-	JMP  emit_literal_done_match_emit_repeat_encodeBetterBlockAsm64K
-
-memmove_long_match_emit_repeat_encodeBetterBlockAsm64K:
-	ADD R6, R1, R5
-
-	// genMemMoveLong
-	MOVD    R7, R11
-	MOVD    R1, R12
-	MOVD    R6, R13
-	PCALIGN $0x10
-
-emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm64Klarge_big_loop_back:
-	MOVD (R11), R8
-	MOVD 8(R11), R9
-	MOVD R8, (R12)
-	MOVD R9, 8(R12)
-	ADD  $0x10, R11, R11
-	ADD  $0x10, R12, R12
-	SUB  $0x10, R13, R13
-	CMP  $0x10, R13
-	BHS  emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm64Klarge_big_loop_back
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	MOVD R5, R1
-
-emit_literal_done_match_emit_repeat_encodeBetterBlockAsm64K:
-	ADDW R10, R0, R0
-	ADDW $0x04, R10, R10
-	MOVD R0, R19
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_match_nolit_repeat_encodeBetterBlockAsm64K
-	SUB   $30, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x0000011e, R10
-	BLO   repeat_two_match_nolit_repeat_encodeBetterBlockAsm64K
-	CMPW  $0x0001001e, R10
-	BLO   repeat_three_match_nolit_repeat_encodeBetterBlockAsm64K
-	MOVD  $0xfc, R16
-	MOVB  R16, (R1)
-	MOVW  R5, 1(R1)
-	ADD   $0x04, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm64K
-
-repeat_three_match_nolit_repeat_encodeBetterBlockAsm64K:
-	MOVD $0xf4, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm64K
-
-repeat_two_match_nolit_repeat_encodeBetterBlockAsm64K:
-	MOVD $0xec, R16
-	MOVB R16, (R1)
-	MOVB R5, 1(R1)
-	ADD  $0x02, R1, R1
-	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm64K
-
-repeat_one_match_nolit_repeat_encodeBetterBlockAsm64K:
-	MOVD  $0, R5
-	ADD   R10<<3, R5, R5
-	SUB   $4, R5, R5
-	MOVWU R5, R5
-	MOVB  R5, (R1)
-	ADD   $0x01, R1, R1
 
 match_nolit_emitcopy_end_encodeBetterBlockAsm64K:
 	CMP  R21, R0
@@ -26751,8 +25434,6 @@ repeat_extend_forward_end_encodeBetterBlockAsm16K:
 	SUBW  R3, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeBetterBlockAsm16K
 	SUB   $30, R5, R6
@@ -27044,8 +25725,6 @@ match_nolit_end_encodeBetterBlockAsm16K:
 	BEQ   match_nolit_emitcopy_end_encodeBetterBlockAsm16K
 
 	// emitRepeat
-	SUB   $1, R8, R5
-	MOVWU R5, R5
 	CMPW  $0x1d, R8
 	BLS   repeat_one_match_emit_repeat_copy2_encodeBetterBlockAsm16K
 	SUB   $30, R8, R5
@@ -27318,12 +25997,6 @@ emit_copy1_repeat_match_nolit_encodeBetterBlockAsm16K:
 	MOVH  R5, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm16K
 	SUB   $30, R10, R5
 	MOVWU R5, R5
 	CMPW  $0x0000011e, R10
@@ -27349,15 +26022,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm16K:
 	MOVB R5, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm16K
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm16K:
-	MOVD  $0, R5
-	ADD   R10<<3, R5, R5
-	SUB   $4, R5, R5
-	MOVWU R5, R5
-	MOVB  R5, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm16K
 
 two_byte_match_nolit_encodeBetterBlockAsm16K:
 	// emitCopy2
@@ -27400,248 +26064,6 @@ emit_copy2_0_match_nolit_encodeBetterBlockAsm16K_emit2:
 	MOVWU R5, R5
 	MOVB  R5, (R1)
 	ADD   $0x03, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm16K
-
-	// emitLiteralsDstP
-	MOVD  R19, R5
-	CMPW  R3, R5
-	BEQ   emit_literal_done_match_emit_repeat_encodeBetterBlockAsm16K
-	MOVWU R3, R6
-	MOVD  R3, R19
-	ADD   R5, R2, R7
-	SUBW  R5, R6, R6
-
-	// emitLiteral
-	SUB   $1, R6, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R5
-	BLO   one_byte_match_emit_repeat_encodeBetterBlockAsm16K
-	SUBW  $0x1d, R5, R5
-	CMPW  $0x00000100, R5
-	BLO   two_bytes_match_emit_repeat_encodeBetterBlockAsm16K
-	BLO   three_bytes_match_emit_repeat_encodeBetterBlockAsm16K
-
-three_bytes_match_emit_repeat_encodeBetterBlockAsm16K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R5, R5
-	JMP  memmove_long_match_emit_repeat_encodeBetterBlockAsm16K
-
-two_bytes_match_emit_repeat_encodeBetterBlockAsm16K:
-	MOVD $0xe8, R16
-	MOVB R16, (R1)
-	MOVB R5, 1(R1)
-	ADDW $0x1d, R5, R5
-	ADD  $0x02, R1, R1
-	CMPW $0x40, R5
-	BLO  memmove_midmatch_emit_repeat_encodeBetterBlockAsm16K
-	JMP  memmove_long_match_emit_repeat_encodeBetterBlockAsm16K
-
-one_byte_match_emit_repeat_encodeBetterBlockAsm16K:
-	LSLW $0x03, R5, R16
-	BFI  $0, R16, $8, R5
-	MOVB R5, (R1)
-	ADD  $0x01, R1, R1
-	ADD  R6, R1, R5
-
-	// genMemMoveShort
-	// margin: 8, min move: 1
-	CMP $0x08, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm16K_memmove_move_8
-	CMP $0x10, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm16K_memmove_move_8through16
-	CMP $0x20, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm16K_memmove_move_17through32
-	JMP emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm16K_memmove_move_33through64
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm16K_memmove_move_8:
-	MOVD (R7), R8
-	MOVD R8, (R1)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm16K
-	PCALIGN $0x10
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm16K_memmove_move_8through16:
-	MOVD (R7), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	MOVD R8, (R1)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm16K
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm16K_memmove_move_17through32:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm16K
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm16K_memmove_move_33through64:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	MOVD 16(R7), R8
-	MOVD 24(R7), R9
-	MOVD R8, 16(R1)
-	MOVD R9, 24(R1)
-	ADD  R6, R7, R15
-	MOVD -32(R15), R8
-	ADD  R6, R7, R15
-	MOVD -24(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -32(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -24(R15)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-
-memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm16K:
-	MOVD R5, R1
-	JMP  emit_literal_done_match_emit_repeat_encodeBetterBlockAsm16K
-
-memmove_midmatch_emit_repeat_encodeBetterBlockAsm16K:
-	ADD R6, R1, R5
-
-	// genMemMoveShort
-	// margin: 8, min move: 30
-	CMP $0x20, R6
-	BLS emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm16K_memmove_move_17through32
-	JMP emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm16K_memmove_move_33through64
-
-emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm16K_memmove_move_17through32:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_mid_end_copy_match_emit_repeat_encodeBetterBlockAsm16K
-
-emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm16K_memmove_move_33through64:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	MOVD 16(R7), R8
-	MOVD 24(R7), R9
-	MOVD R8, 16(R1)
-	MOVD R9, 24(R1)
-	ADD  R6, R7, R15
-	MOVD -32(R15), R8
-	ADD  R6, R7, R15
-	MOVD -24(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -32(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -24(R15)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-
-memmove_mid_end_copy_match_emit_repeat_encodeBetterBlockAsm16K:
-	MOVD R5, R1
-	JMP  emit_literal_done_match_emit_repeat_encodeBetterBlockAsm16K
-
-memmove_long_match_emit_repeat_encodeBetterBlockAsm16K:
-	ADD R6, R1, R5
-
-	// genMemMoveLong
-	MOVD    R7, R11
-	MOVD    R1, R12
-	MOVD    R6, R13
-	PCALIGN $0x10
-
-emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm16Klarge_big_loop_back:
-	MOVD (R11), R8
-	MOVD 8(R11), R9
-	MOVD R8, (R12)
-	MOVD R9, 8(R12)
-	ADD  $0x10, R11, R11
-	ADD  $0x10, R12, R12
-	SUB  $0x10, R13, R13
-	CMP  $0x10, R13
-	BHS  emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm16Klarge_big_loop_back
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	MOVD R5, R1
-
-emit_literal_done_match_emit_repeat_encodeBetterBlockAsm16K:
-	ADDW R10, R0, R0
-	ADDW $0x04, R10, R10
-	MOVD R0, R19
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_match_nolit_repeat_encodeBetterBlockAsm16K
-	SUB   $30, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x0000011e, R10
-	BLO   repeat_two_match_nolit_repeat_encodeBetterBlockAsm16K
-	CMPW  $0x0001001e, R10
-	BLO   repeat_three_match_nolit_repeat_encodeBetterBlockAsm16K
-	MOVD  $0xfc, R16
-	MOVB  R16, (R1)
-	MOVW  R5, 1(R1)
-	ADD   $0x04, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm16K
-
-repeat_three_match_nolit_repeat_encodeBetterBlockAsm16K:
-	MOVD $0xf4, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm16K
-
-repeat_two_match_nolit_repeat_encodeBetterBlockAsm16K:
-	MOVD $0xec, R16
-	MOVB R16, (R1)
-	MOVB R5, 1(R1)
-	ADD  $0x02, R1, R1
-	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm16K
-
-repeat_one_match_nolit_repeat_encodeBetterBlockAsm16K:
-	MOVD  $0, R5
-	ADD   R10<<3, R5, R5
-	SUB   $4, R5, R5
-	MOVWU R5, R5
-	MOVB  R5, (R1)
-	ADD   $0x01, R1, R1
 
 match_nolit_emitcopy_end_encodeBetterBlockAsm16K:
 	CMP  R21, R0
@@ -28371,8 +26793,6 @@ repeat_extend_forward_end_encodeBetterBlockAsm4K:
 	SUBW  R3, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeBetterBlockAsm4K
 	SUB   $30, R5, R6
@@ -28664,8 +27084,6 @@ match_nolit_end_encodeBetterBlockAsm4K:
 	BEQ   match_nolit_emitcopy_end_encodeBetterBlockAsm4K
 
 	// emitRepeat
-	SUB   $1, R8, R5
-	MOVWU R5, R5
 	CMPW  $0x1d, R8
 	BLS   repeat_one_match_emit_repeat_copy2_encodeBetterBlockAsm4K
 	SUB   $30, R8, R5
@@ -28938,12 +27356,6 @@ emit_copy1_repeat_match_nolit_encodeBetterBlockAsm4K:
 	MOVH  R5, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm4K
 	SUB   $30, R10, R5
 	MOVWU R5, R5
 	CMPW  $0x0000011e, R10
@@ -28969,15 +27381,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm4K:
 	MOVB R5, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm4K
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm4K:
-	MOVD  $0, R5
-	ADD   R10<<3, R5, R5
-	SUB   $4, R5, R5
-	MOVWU R5, R5
-	MOVB  R5, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm4K
 
 two_byte_match_nolit_encodeBetterBlockAsm4K:
 	// emitCopy2
@@ -29020,248 +27423,6 @@ emit_copy2_0_match_nolit_encodeBetterBlockAsm4K_emit2:
 	MOVWU R5, R5
 	MOVB  R5, (R1)
 	ADD   $0x03, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm4K
-
-	// emitLiteralsDstP
-	MOVD  R19, R5
-	CMPW  R3, R5
-	BEQ   emit_literal_done_match_emit_repeat_encodeBetterBlockAsm4K
-	MOVWU R3, R6
-	MOVD  R3, R19
-	ADD   R5, R2, R7
-	SUBW  R5, R6, R6
-
-	// emitLiteral
-	SUB   $1, R6, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R5
-	BLO   one_byte_match_emit_repeat_encodeBetterBlockAsm4K
-	SUBW  $0x1d, R5, R5
-	CMPW  $0x00000100, R5
-	BLO   two_bytes_match_emit_repeat_encodeBetterBlockAsm4K
-	BLO   three_bytes_match_emit_repeat_encodeBetterBlockAsm4K
-
-three_bytes_match_emit_repeat_encodeBetterBlockAsm4K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R5, R5
-	JMP  memmove_long_match_emit_repeat_encodeBetterBlockAsm4K
-
-two_bytes_match_emit_repeat_encodeBetterBlockAsm4K:
-	MOVD $0xe8, R16
-	MOVB R16, (R1)
-	MOVB R5, 1(R1)
-	ADDW $0x1d, R5, R5
-	ADD  $0x02, R1, R1
-	CMPW $0x40, R5
-	BLO  memmove_midmatch_emit_repeat_encodeBetterBlockAsm4K
-	JMP  memmove_long_match_emit_repeat_encodeBetterBlockAsm4K
-
-one_byte_match_emit_repeat_encodeBetterBlockAsm4K:
-	LSLW $0x03, R5, R16
-	BFI  $0, R16, $8, R5
-	MOVB R5, (R1)
-	ADD  $0x01, R1, R1
-	ADD  R6, R1, R5
-
-	// genMemMoveShort
-	// margin: 8, min move: 1
-	CMP $0x08, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm4K_memmove_move_8
-	CMP $0x10, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm4K_memmove_move_8through16
-	CMP $0x20, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm4K_memmove_move_17through32
-	JMP emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm4K_memmove_move_33through64
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm4K_memmove_move_8:
-	MOVD (R7), R8
-	MOVD R8, (R1)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm4K
-	PCALIGN $0x10
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm4K_memmove_move_8through16:
-	MOVD (R7), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	MOVD R8, (R1)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm4K
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm4K_memmove_move_17through32:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm4K
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm4K_memmove_move_33through64:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	MOVD 16(R7), R8
-	MOVD 24(R7), R9
-	MOVD R8, 16(R1)
-	MOVD R9, 24(R1)
-	ADD  R6, R7, R15
-	MOVD -32(R15), R8
-	ADD  R6, R7, R15
-	MOVD -24(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -32(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -24(R15)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-
-memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm4K:
-	MOVD R5, R1
-	JMP  emit_literal_done_match_emit_repeat_encodeBetterBlockAsm4K
-
-memmove_midmatch_emit_repeat_encodeBetterBlockAsm4K:
-	ADD R6, R1, R5
-
-	// genMemMoveShort
-	// margin: 8, min move: 30
-	CMP $0x20, R6
-	BLS emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm4K_memmove_move_17through32
-	JMP emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm4K_memmove_move_33through64
-
-emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm4K_memmove_move_17through32:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_mid_end_copy_match_emit_repeat_encodeBetterBlockAsm4K
-
-emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm4K_memmove_move_33through64:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	MOVD 16(R7), R8
-	MOVD 24(R7), R9
-	MOVD R8, 16(R1)
-	MOVD R9, 24(R1)
-	ADD  R6, R7, R15
-	MOVD -32(R15), R8
-	ADD  R6, R7, R15
-	MOVD -24(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -32(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -24(R15)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-
-memmove_mid_end_copy_match_emit_repeat_encodeBetterBlockAsm4K:
-	MOVD R5, R1
-	JMP  emit_literal_done_match_emit_repeat_encodeBetterBlockAsm4K
-
-memmove_long_match_emit_repeat_encodeBetterBlockAsm4K:
-	ADD R6, R1, R5
-
-	// genMemMoveLong
-	MOVD    R7, R11
-	MOVD    R1, R12
-	MOVD    R6, R13
-	PCALIGN $0x10
-
-emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm4Klarge_big_loop_back:
-	MOVD (R11), R8
-	MOVD 8(R11), R9
-	MOVD R8, (R12)
-	MOVD R9, 8(R12)
-	ADD  $0x10, R11, R11
-	ADD  $0x10, R12, R12
-	SUB  $0x10, R13, R13
-	CMP  $0x10, R13
-	BHS  emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm4Klarge_big_loop_back
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	MOVD R5, R1
-
-emit_literal_done_match_emit_repeat_encodeBetterBlockAsm4K:
-	ADDW R10, R0, R0
-	ADDW $0x04, R10, R10
-	MOVD R0, R19
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_match_nolit_repeat_encodeBetterBlockAsm4K
-	SUB   $30, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x0000011e, R10
-	BLO   repeat_two_match_nolit_repeat_encodeBetterBlockAsm4K
-	CMPW  $0x0001001e, R10
-	BLO   repeat_three_match_nolit_repeat_encodeBetterBlockAsm4K
-	MOVD  $0xfc, R16
-	MOVB  R16, (R1)
-	MOVW  R5, 1(R1)
-	ADD   $0x04, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm4K
-
-repeat_three_match_nolit_repeat_encodeBetterBlockAsm4K:
-	MOVD $0xf4, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm4K
-
-repeat_two_match_nolit_repeat_encodeBetterBlockAsm4K:
-	MOVD $0xec, R16
-	MOVB R16, (R1)
-	MOVB R5, 1(R1)
-	ADD  $0x02, R1, R1
-	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm4K
-
-repeat_one_match_nolit_repeat_encodeBetterBlockAsm4K:
-	MOVD  $0, R5
-	ADD   R10<<3, R5, R5
-	SUB   $4, R5, R5
-	MOVWU R5, R5
-	MOVB  R5, (R1)
-	ADD   $0x01, R1, R1
 
 match_nolit_emitcopy_end_encodeBetterBlockAsm4K:
 	CMP  R21, R0
@@ -29991,8 +28152,6 @@ repeat_extend_forward_end_encodeBetterBlockAsm1K:
 	SUBW  R3, R5, R5
 
 	// emitRepeat
-	SUB   $1, R5, R6
-	MOVWU R6, R6
 	CMPW  $0x1d, R5
 	BLS   repeat_one_match_repeat_encodeBetterBlockAsm1K
 	SUB   $30, R5, R6
@@ -30284,8 +28443,6 @@ match_nolit_end_encodeBetterBlockAsm1K:
 	BEQ   match_nolit_emitcopy_end_encodeBetterBlockAsm1K
 
 	// emitRepeat
-	SUB   $1, R8, R5
-	MOVWU R5, R5
 	CMPW  $0x1d, R8
 	BLS   repeat_one_match_emit_repeat_copy2_encodeBetterBlockAsm1K
 	SUB   $30, R8, R5
@@ -30558,12 +28715,6 @@ emit_copy1_repeat_match_nolit_encodeBetterBlockAsm1K:
 	MOVH  R5, (R1)
 	ADD   $0x02, R1, R1
 	SUBW  $0x12, R10, R10
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm1K
 	SUB   $30, R10, R5
 	MOVWU R5, R5
 	CMPW  $0x0000011e, R10
@@ -30589,15 +28740,6 @@ repeat_two_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm1K:
 	MOVB R5, 1(R1)
 	ADD  $0x02, R1, R1
 	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm1K
-
-repeat_one_emit_copy1_do_repeat_match_nolit_encodeBetterBlockAsm1K:
-	MOVD  $0, R5
-	ADD   R10<<3, R5, R5
-	SUB   $4, R5, R5
-	MOVWU R5, R5
-	MOVB  R5, (R1)
-	ADD   $0x01, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm1K
 
 two_byte_match_nolit_encodeBetterBlockAsm1K:
 	// emitCopy2
@@ -30640,248 +28782,6 @@ emit_copy2_0_match_nolit_encodeBetterBlockAsm1K_emit2:
 	MOVWU R5, R5
 	MOVB  R5, (R1)
 	ADD   $0x03, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm1K
-
-	// emitLiteralsDstP
-	MOVD  R19, R5
-	CMPW  R3, R5
-	BEQ   emit_literal_done_match_emit_repeat_encodeBetterBlockAsm1K
-	MOVWU R3, R6
-	MOVD  R3, R19
-	ADD   R5, R2, R7
-	SUBW  R5, R6, R6
-
-	// emitLiteral
-	SUB   $1, R6, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R5
-	BLO   one_byte_match_emit_repeat_encodeBetterBlockAsm1K
-	SUBW  $0x1d, R5, R5
-	CMPW  $0x00000100, R5
-	BLO   two_bytes_match_emit_repeat_encodeBetterBlockAsm1K
-	BLO   three_bytes_match_emit_repeat_encodeBetterBlockAsm1K
-
-three_bytes_match_emit_repeat_encodeBetterBlockAsm1K:
-	MOVD $0xf0, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	ADDW $0x1d, R5, R5
-	JMP  memmove_long_match_emit_repeat_encodeBetterBlockAsm1K
-
-two_bytes_match_emit_repeat_encodeBetterBlockAsm1K:
-	MOVD $0xe8, R16
-	MOVB R16, (R1)
-	MOVB R5, 1(R1)
-	ADDW $0x1d, R5, R5
-	ADD  $0x02, R1, R1
-	CMPW $0x40, R5
-	BLO  memmove_midmatch_emit_repeat_encodeBetterBlockAsm1K
-	JMP  memmove_long_match_emit_repeat_encodeBetterBlockAsm1K
-
-one_byte_match_emit_repeat_encodeBetterBlockAsm1K:
-	LSLW $0x03, R5, R16
-	BFI  $0, R16, $8, R5
-	MOVB R5, (R1)
-	ADD  $0x01, R1, R1
-	ADD  R6, R1, R5
-
-	// genMemMoveShort
-	// margin: 8, min move: 1
-	CMP $0x08, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm1K_memmove_move_8
-	CMP $0x10, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm1K_memmove_move_8through16
-	CMP $0x20, R6
-	BLS emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm1K_memmove_move_17through32
-	JMP emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm1K_memmove_move_33through64
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm1K_memmove_move_8:
-	MOVD (R7), R8
-	MOVD R8, (R1)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm1K
-	PCALIGN $0x10
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm1K_memmove_move_8through16:
-	MOVD (R7), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	MOVD R8, (R1)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm1K
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm1K_memmove_move_17through32:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm1K
-
-emit_lit_memmove_match_emit_repeat_encodeBetterBlockAsm1K_memmove_move_33through64:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	MOVD 16(R7), R8
-	MOVD 24(R7), R9
-	MOVD R8, 16(R1)
-	MOVD R9, 24(R1)
-	ADD  R6, R7, R15
-	MOVD -32(R15), R8
-	ADD  R6, R7, R15
-	MOVD -24(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -32(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -24(R15)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-
-memmove_end_copy_match_emit_repeat_encodeBetterBlockAsm1K:
-	MOVD R5, R1
-	JMP  emit_literal_done_match_emit_repeat_encodeBetterBlockAsm1K
-
-memmove_midmatch_emit_repeat_encodeBetterBlockAsm1K:
-	ADD R6, R1, R5
-
-	// genMemMoveShort
-	// margin: 8, min move: 30
-	CMP $0x20, R6
-	BLS emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm1K_memmove_move_17through32
-	JMP emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm1K_memmove_move_33through64
-
-emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm1K_memmove_move_17through32:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	JMP  memmove_mid_end_copy_match_emit_repeat_encodeBetterBlockAsm1K
-
-emit_lit_memmove_mid_match_emit_repeat_encodeBetterBlockAsm1K_memmove_move_33through64:
-	MOVD (R7), R8
-	MOVD 8(R7), R9
-	MOVD R8, (R1)
-	MOVD R9, 8(R1)
-	MOVD 16(R7), R8
-	MOVD 24(R7), R9
-	MOVD R8, 16(R1)
-	MOVD R9, 24(R1)
-	ADD  R6, R7, R15
-	MOVD -32(R15), R8
-	ADD  R6, R7, R15
-	MOVD -24(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -32(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -24(R15)
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-
-memmove_mid_end_copy_match_emit_repeat_encodeBetterBlockAsm1K:
-	MOVD R5, R1
-	JMP  emit_literal_done_match_emit_repeat_encodeBetterBlockAsm1K
-
-memmove_long_match_emit_repeat_encodeBetterBlockAsm1K:
-	ADD R6, R1, R5
-
-	// genMemMoveLong
-	MOVD    R7, R11
-	MOVD    R1, R12
-	MOVD    R6, R13
-	PCALIGN $0x10
-
-emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm1Klarge_big_loop_back:
-	MOVD (R11), R8
-	MOVD 8(R11), R9
-	MOVD R8, (R12)
-	MOVD R9, 8(R12)
-	ADD  $0x10, R11, R11
-	ADD  $0x10, R12, R12
-	SUB  $0x10, R13, R13
-	CMP  $0x10, R13
-	BHS  emit_lit_memmove_long_match_emit_repeat_encodeBetterBlockAsm1Klarge_big_loop_back
-	ADD  R6, R7, R15
-	MOVD -16(R15), R8
-	ADD  R6, R7, R15
-	MOVD -8(R15), R9
-	ADD  R6, R1, R15
-	MOVD R8, -16(R15)
-	ADD  R6, R1, R15
-	MOVD R9, -8(R15)
-	MOVD R5, R1
-
-emit_literal_done_match_emit_repeat_encodeBetterBlockAsm1K:
-	ADDW R10, R0, R0
-	ADDW $0x04, R10, R10
-	MOVD R0, R19
-
-	// emitRepeat
-	SUB   $1, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x1d, R10
-	BLS   repeat_one_match_nolit_repeat_encodeBetterBlockAsm1K
-	SUB   $30, R10, R5
-	MOVWU R5, R5
-	CMPW  $0x0000011e, R10
-	BLO   repeat_two_match_nolit_repeat_encodeBetterBlockAsm1K
-	CMPW  $0x0001001e, R10
-	BLO   repeat_three_match_nolit_repeat_encodeBetterBlockAsm1K
-	MOVD  $0xfc, R16
-	MOVB  R16, (R1)
-	MOVW  R5, 1(R1)
-	ADD   $0x04, R1, R1
-	JMP   match_nolit_emitcopy_end_encodeBetterBlockAsm1K
-
-repeat_three_match_nolit_repeat_encodeBetterBlockAsm1K:
-	MOVD $0xf4, R16
-	MOVB R16, (R1)
-	MOVH R5, 1(R1)
-	ADD  $0x03, R1, R1
-	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm1K
-
-repeat_two_match_nolit_repeat_encodeBetterBlockAsm1K:
-	MOVD $0xec, R16
-	MOVB R16, (R1)
-	MOVB R5, 1(R1)
-	ADD  $0x02, R1, R1
-	JMP  match_nolit_emitcopy_end_encodeBetterBlockAsm1K
-
-repeat_one_match_nolit_repeat_encodeBetterBlockAsm1K:
-	MOVD  $0, R5
-	ADD   R10<<3, R5, R5
-	SUB   $4, R5, R5
-	MOVWU R5, R5
-	MOVB  R5, (R1)
-	ADD   $0x01, R1, R1
 
 match_nolit_emitcopy_end_encodeBetterBlockAsm1K:
 	CMP  R21, R0
