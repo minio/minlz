@@ -1051,3 +1051,139 @@ func TestMaxOffsetBoundary(t *testing.T) {
 		}
 	}
 }
+
+// literalHeaderLen returns the size of the shortest header that can encode a
+// literal (or repeat) of n bytes.
+func literalHeaderLen(n int) int {
+	switch {
+	case n <= 29:
+		return 1
+	case n <= 30+0xff:
+		return 2
+	case n <= 30+0xffff:
+		return 3
+	}
+	return 4
+}
+
+// walkLiteralHeaders calls fn for every literal and repeat tag in a block
+// body, with the header size used and the length it encodes.
+func walkLiteralHeaders(t *testing.T, b []byte, fn func(hdr, length int, repeat bool)) {
+	t.Helper()
+	s := 0
+	for s < len(b) {
+		tag := b[s]
+		switch tag & 3 {
+		case tagLiteral:
+			var hdr, length int
+			switch x := tag >> 3; {
+			case x < 29:
+				hdr, length = 1, int(x)+1
+			case x == 29:
+				hdr, length = 2, 30+int(b[s+1])
+			case x == 30:
+				hdr, length = 3, 30+(int(b[s+1])|int(b[s+2])<<8)
+			default:
+				hdr, length = 4, 30+(int(b[s+1])|int(b[s+2])<<8|int(b[s+3])<<16)
+			}
+			repeat := tag&4 != 0
+			fn(hdr, length, repeat)
+			s += hdr
+			if !repeat {
+				s += length
+			}
+		case tagCopy1:
+			s += 2
+			if (tag>>2)&15 == 15 {
+				s++
+			}
+		case tagCopy2:
+			switch tag >> 2 {
+			case 61:
+				s += 4
+			case 62:
+				s += 5
+			case 63:
+				s += 6
+			default:
+				s += 3
+			}
+		case tagCopy2Fused: // or tagCopy3
+			lits := int(tag>>3) & 3
+			if tag&4 == 0 {
+				// Copy2 with 1-4 fused literals.
+				s += 3 + lits + 1
+				break
+			}
+			s += 4 + lits
+			switch int(tag>>5) | int(b[s-lits-3]&7)<<3 {
+			case 61:
+				s++
+			case 62:
+				s += 2
+			case 63:
+				s += 3
+			}
+		}
+	}
+	if s != len(b) {
+		t.Fatalf("token walk ended at %d, block is %d bytes", s, len(b))
+	}
+}
+
+// TestEncodeLiteralHeaderMinimal checks that every encoder writes literals
+// with the shortest header that fits their length, in every size class. See
+// https://github.com/minio/minlz/issues/79.
+func TestEncodeLiteralHeaderMinimal(t *testing.T) {
+	sizes := []int{1000, 4000, 16000, 60000, 500000, 2000000}
+	if !testing.Short() {
+		sizes = append(sizes, MaxBlockSize)
+	}
+	rng := rand.New(rand.NewSource(1))
+	for _, n := range sizes {
+		// Keep the incompressible run small enough that every level still
+		// compresses the block.
+		var litLens []int
+		for _, l := range []int{29, 30, 285, 286, 287, n / 4, 30 + 0xffff, 31 + 0xffff, 70000} {
+			if l <= n/4 {
+				litLens = append(litLens, l)
+			}
+		}
+		for _, litLen := range litLens {
+			// Compressible filler around one run of random bytes.
+			src := make([]byte, n)
+			for i := range src {
+				src[i] = "minlz literal headers "[i%22]
+			}
+			start := (n - litLen) / 2
+			rng.Read(src[start : start+litLen])
+			for level := LevelSuperFast; level <= LevelSmallest; level++ {
+				if level == LevelUncompressed {
+					continue
+				}
+				enc, err := Encode(nil, src, level)
+				if err != nil {
+					t.Fatal(err)
+				}
+				isMLZ, lits, block, _, err := isMinLZ(enc)
+				if err != nil || !isMLZ || lits {
+					t.Fatalf("n=%d litLen=%d level=%d: block was not compressed", n, litLen, level)
+				}
+				longest := 0
+				walkLiteralHeaders(t, block, func(hdr, length int, repeat bool) {
+					if !repeat {
+						longest = max(longest, length)
+					}
+					if want := literalHeaderLen(length); hdr != want {
+						t.Errorf("n=%d litLen=%d level=%d: repeat=%v length %d uses a %d-byte header, want %d",
+							n, litLen, level, repeat, length, hdr, want)
+					}
+				})
+				if longest < litLen-16 {
+					t.Errorf("n=%d litLen=%d level=%d: longest literal is %d bytes; test input is not doing its job",
+						n, litLen, level, longest)
+				}
+			}
+		}
+	}
+}
