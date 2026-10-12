@@ -1187,15 +1187,17 @@ func (o options) genEncodeBlockAsm(name string, tableBits, skipLog, hashBytes, m
 	RET()
 }
 
+// maxLitOverheadFor returns the largest literal header emitLiteral writes
+// for literals of up to n bytes.
 func maxLitOverheadFor(n int) int {
 	switch {
 	case n == 0:
 		return 0
 	case n < 30:
 		return 1
-	case n < 1<<8:
+	case n < 30+1<<8:
 		return 2
-	case n < 1<<16:
+	case n < 30+1<<16:
 		return 3
 	}
 	return 4
@@ -1905,19 +1907,6 @@ func (o options) genEncodeBetterBlockAsm(name string, lTableBits, sTableBits, sk
 
 				// Jumps at end
 			}
-			// REPEAT
-			{
-				Label("match_is_repeat_" + name)
-				// Emit....
-				o.emitLiteralsDstP(nextEmitL, base, src, dst, "match_emit_repeat_"+name)
-				// s += length (length is destroyed, use it now)
-				ADDL(length.As32(), s)
-
-				// length += 4
-				ADDL(U8(4), length.As32())
-				MOVQ(q(s), nextEmitL) // nextEmit = s
-				o.emitRepeat("match_nolit_repeat_"+name, length, nil, dst, LabelRef("match_nolit_emitcopy_end_"+name))
-			}
 		}
 		Label("match_nolit_emitcopy_end_" + name)
 
@@ -2220,14 +2209,12 @@ func (o options) emitLiteral(name string, litLen, retval, dstBase, litBase reg.G
 	SUBL(U8(29), n.As32())
 	CMPL(n.As32(), U32(1<<8))
 	JB(LabelRef("two_bytes_" + name))
+	// The 3-byte form covers literals up to 30+65535 bytes, so only size
+	// classes that allow longer literals need the 4-byte form.
 	if o.maxLen >= 30+1<<16 {
 		CMPL(n.As32(), U32(1<<16))
 		JB(LabelRef("three_bytes_" + name))
-	} else {
-		JB(LabelRef("three_bytes_" + name))
-	}
 
-	if o.maxLen >= 1<<16 {
 		Label("four_bytes_" + name)
 		if !o.skipOutput {
 			MOVL(n, n16)
@@ -2391,11 +2378,27 @@ func (o options) emitRepeat(name string, length reg.GPVirtual, retval reg.GPVirt
 	Label("emit_repeat_again_" + name)
 
 	// if length <= 28 - one byte
-	storeLen := GP64()
-	LEAL(Mem{Base: length.As32(), Disp: -1}, storeLen.As32())
 	CMPL(length.As32(), U8(29))
-	JBE(LabelRef("repeat_one_" + name)) // (subtract one)
+	JBE(LabelRef("repeat_one_" + name))
+	o.emitRepeatLong(name, length, retval, dstBase, end)
 
+	Label("repeat_one_" + name)
+	if !o.skipOutput {
+		storeLen := GP64()
+		XORL(storeLen.As32(), storeLen.As32())
+		LEAL(Mem{Base: storeLen, Index: length.As32(), Scale: 8, Disp: tagRepeat - (1 * 8)}, storeLen.As32())
+		MOVB(storeLen.As8(), Mem{Base: dstBase}) // dst[0] = (length-1)<<3 | tagRepeat
+	}
+	if retval != nil {
+		ADDQ(U8(1), retval) // i += 1
+	}
+	ADDQ(U8(1), dstBase) // dst += 1
+	JMP(end)
+}
+
+// emitRepeatLong is emitRepeat for length >= 30.
+func (o options) emitRepeatLong(name string, length reg.GPVirtual, retval reg.GPVirtual, dstBase reg.GPVirtual, end LabelRef) {
+	storeLen := GP64()
 	// length < 256 (-1-29)
 	LEAL(Mem{Base: length.As32(), Disp: -30}, storeLen.As32())
 	CMPL(length.As32(), U32(1+29+256))
@@ -2436,18 +2439,6 @@ func (o options) emitRepeat(name string, length reg.GPVirtual, retval reg.GPVirt
 		ADDQ(U8(2), retval) // i += 2
 	}
 	ADDQ(U8(2), dstBase) // dst += 2
-	JMP(end)
-
-	Label("repeat_one_" + name)
-	if !o.skipOutput {
-		XORL(storeLen.As32(), storeLen.As32())
-		LEAL(Mem{Base: storeLen, Index: length.As32(), Scale: 8, Disp: tagRepeat - (1 * 8)}, storeLen.As32())
-		MOVB(storeLen.As8(), Mem{Base: dstBase}) // dst[0] = (length-1)<<3 | tagRepeat
-	}
-	if retval != nil {
-		ADDQ(U8(1), retval) // i += 1
-	}
-	ADDQ(U8(1), dstBase) // dst += 1
 	JMP(end)
 }
 
@@ -2794,7 +2785,8 @@ func (o options) emitCopy(name string, length, offset, retval, dstBase reg.GPVir
 		}
 		ADDQ(U8(2), dstBase) // dst+=2
 		SUBL(U8(18), length.As32())
-		o.emitRepeat("emit_copy1_do_repeat_"+name, length, retval, dstBase, end)
+		// length >= 256 here, so skip the one-byte check.
+		o.emitRepeatLong("emit_copy1_do_repeat_"+name, length, retval, dstBase, end)
 	}
 
 	// Emit as 2 byte offset.
