@@ -111,6 +111,11 @@ func FuzzEncodingBlocks(f *testing.F) {
 				t.Errorf("roundtrip Go mismatch at byte %d, output written to %q", n, name)
 				return
 			}
+			if _, _, simd, _, _, err := isMinLZ(comp); simd && err == nil {
+				if ref, err := reference.DecodeSIMDBlockStrict(comp); err != nil || !bytes.Equal(ref, data) {
+					t.Errorf("level %d: reference: %v", l, err)
+				}
+			}
 			if mel := MaxEncodedLen(len(data)); len(comp) > mel {
 				t.Error(fmt.Errorf("MaxEncodedLen Exceed: input: %d, mel: %d, got %d", len(data), mel, len(comp)))
 				return

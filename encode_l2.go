@@ -437,10 +437,21 @@ func (e *simdEncoder) encodeBlockBetterGo(src []byte) {
 		if length == simdMaxLen+1 {
 			length--
 		}
-		if rep {
-			e.emitRepeatLits(src[nextEmit:base], length)
+		if !e.fast(src, nextEmit, base, base+length, offset) {
+			if rep {
+				e.emitRepeatLits(src[nextEmit:base], length)
+			} else {
+				e.emitCopyLits(src[nextEmit:base], offset, length)
+			}
+		} else if rep {
+			if e.putMatch(1|e.putLits(src[nextEmit:], base-nextEmit), offset, length) {
+				e.endChunk()
+			}
 		} else {
-			e.emitCopyLits(src[nextEmit:base], offset, length)
+			e.putBits(e.putOffset(offset))
+			if e.putMatch(e.putLits(src[nextEmit:], base-nextEmit), offset, length) {
+				e.endChunk()
+			}
 		}
 		repeat = offset
 		s = base + length
@@ -586,10 +597,21 @@ func (e *simdEncoder) encodeBlockBetterGo64K(src []byte) {
 		if length == simdMaxLen+1 {
 			length--
 		}
-		if rep {
-			e.emitRepeatLits(src[nextEmit:base], length)
+		if !e.fast(src, nextEmit, base, base+length, offset) {
+			if rep {
+				e.emitRepeatLits(src[nextEmit:base], length)
+			} else {
+				e.emitCopyLits(src[nextEmit:base], offset, length)
+			}
+		} else if rep {
+			if e.putMatch(1|e.putLits(src[nextEmit:], base-nextEmit), offset, length) {
+				e.endChunk()
+			}
 		} else {
-			e.emitCopyLits(src[nextEmit:base], offset, length)
+			e.putBits(e.putOffset(offset))
+			if e.putMatch(e.putLits(src[nextEmit:], base-nextEmit), offset, length) {
+				e.endChunk()
+			}
 		}
 		repeat = offset
 		s = base + length

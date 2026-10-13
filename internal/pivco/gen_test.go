@@ -270,10 +270,10 @@ func (r record) lenDigest(t testing.TB, key string) (int, uint64) {
 	return n, h
 }
 
-// lens returns the lens field: one hex nibble per symbol 0..255.
-func (r record) lens(t testing.TB) *[256]uint8 {
+// lens returns a lengths field: one hex nibble per symbol 0..255.
+func (r record) lens(t testing.TB, key string) *[256]uint8 {
 	t.Helper()
-	v := r.f["lens"]
+	v := r.f[key]
 	var l [256]uint8
 	if len(v) != len(l) {
 		t.Fatalf("line %d: %d length nibbles", r.line, len(v))

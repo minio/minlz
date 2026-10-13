@@ -195,6 +195,80 @@ func (e *simdEncoder) emitLiterals(lits []byte) {
 	e.pos += len(lits)
 }
 
+// The parsers add the common operations with fast, putOffset, putBits, putLits and putMatch,
+// which must stay inlinable to save the calls, and leave the others to the emitters.
+
+// fast reports whether the plain literals src[from:base], and a match at offset that ends at s, fit putLits and putMatch.
+// Delta literals are rare, so they are left to the emitters.
+func (e *simdEncoder) fast(src []byte, from, base, s, offset int) bool {
+	return e.deltaDiv == 0 && base-from <= simdMaxLong && len(src)-from >= simdMaxLen && oneOp(offset, s-base)
+}
+
+// oneOp reports whether putMatch can add a match of length bytes at offset.
+func oneOp(offset, length int) bool {
+	return length <= simdMaxLen || length <= simdMaxLong && offset >= simdMaxLen
+}
+
+// putOffset adds the symbol of a match offset, and returns its raw bits and their count for putBits.
+func (e *simdEncoder) putOffset(offset int) (uint64, int) {
+	// With the 8, offsets below 16 code as themselves without raw bits, and need no branch.
+	b := bits.Len(uint(offset)|8) - 4
+	e.offc[e.nOffc] = byte(8*b + offset>>b)
+	e.nOffc++
+	return uint64(offset & (1<<b - 1)), b
+}
+
+// putBits adds the n raw bits of v.
+func (e *simdEncoder) putBits(v uint64, n int) {
+	// Store and advance without a branch, since the stores come at an irregular pace.
+	// e.raw has room, as the offsets of a chunk have at most 20 raw bits each.
+	acc := e.acc | v<<(e.nacc&63)
+	n += e.nacc
+	binary.LittleEndian.PutUint32(e.raw[e.nRaw:], uint32(acc))
+	k := n >> 5
+	e.nRaw += k << 2
+	e.acc, e.nacc = acc>>(k<<5&63), n&31
+}
+
+// putLits adds the first ll plain literals of lits, where ll is at most simdMaxLong, and returns the literal bit of the operation.
+// lits is the rest of src and has at least simdMaxLen bytes, so e.lits, as long as src, has as much room after its literals.
+func (e *simdEncoder) putLits(lits []byte, ll int) byte {
+	// Operations with and without literals alternate unpredictably, so don't branch on it.
+	n := min(ll, 1)
+	e.ll[e.nLL] = byte(min(ll, simdMaxLen+1))
+	e.nLL += n
+	if ll > simdMaxLen {
+		e.esc[e.nEsc] = byte(ll - simdMaxLen - 1)
+		e.nEsc++
+		copy(e.lits[e.nLits:], lits[:ll])
+	} else {
+		// Through a local, the compiler moves the bytes without calling memmove.
+		v := [simdMaxLen]byte(lits)
+		*(*[simdMaxLen]byte)(e.lits[e.nLits:]) = v
+	}
+	e.nLits += ll
+	e.pos += ll
+	return byte(n) << 1
+}
+
+// putMatch adds an operation with the literal and repeat bits t, and a match at offset that satisfies oneOp.
+// The offset becomes the repeat offset. It returns whether the chunk is full.
+func (e *simdEncoder) putMatch(t byte, offset, length int) bool {
+	e.rep = offset
+	if length > simdMaxLen {
+		e.esc[e.nEsc] = byte(length - simdMaxLen - 1)
+		e.nEsc++
+		t |= (simdMaxLen + 1) << 2
+	} else {
+		t |= byte(length) << 2
+		e.overlap = e.overlap || offset < length
+	}
+	e.tok[e.nTok] = t
+	e.nTok++
+	e.pos += length
+	return e.nTok == simdChunkOps
+}
+
 // emitCopyLits adds lits, then a match of length bytes at offset.
 func (e *simdEncoder) emitCopyLits(lits []byte, offset, length int) {
 	for len(lits) > simdMaxLong {
@@ -203,20 +277,7 @@ func (e *simdEncoder) emitCopyLits(lits []byte, offset, length int) {
 	}
 	prev := e.rep
 	e.rep = offset
-	if offset < 16 {
-		e.offc[e.nOffc] = byte(offset)
-	} else {
-		b := bits.Len(uint(offset)) - 1
-		e.offc[e.nOffc] = byte(8*b - 16 + offset>>(b-3)&7)
-		e.acc |= uint64(offset&(1<<(b-3)-1)) << e.nacc
-		if e.nacc += b - 3; e.nacc >= 32 {
-			binary.LittleEndian.PutUint32(e.raw[e.nRaw:], uint32(e.acc))
-			e.nRaw += 4
-			e.acc >>= 32
-			e.nacc -= 32
-		}
-	}
-	e.nOffc++
+	e.putBits(e.putOffset(offset))
 	if len(lits) > simdMaxLen || length > simdMaxLen {
 		e.emitLong(lits, prev, 0, length)
 		return
@@ -279,31 +340,8 @@ func (e *simdEncoder) emitCopy(offset, length int) {
 		panic("first operation without literals")
 	}
 	e.rep = offset
-	if offset < 16 {
-		e.offc[e.nOffc] = byte(offset)
-	} else {
-		b := bits.Len(uint(offset)) - 1
-		e.offc[e.nOffc] = byte(8*b - 16 + offset>>(b-3)&7)
-		e.acc |= uint64(offset&(1<<(b-3)-1)) << e.nacc
-		if e.nacc += b - 3; e.nacc >= 32 {
-			binary.LittleEndian.PutUint32(e.raw[e.nRaw:], uint32(e.acc))
-			e.nRaw += 4
-			e.acc >>= 32
-			e.nacc -= 32
-		}
-	}
-	e.nOffc++
-	if length > simdMaxLen {
-		e.emitLong(nil, 0, 0, length)
-		return
-	}
-	e.overlap = e.overlap || offset < length
-	e.tok[e.nTok] = byte(length) << 2
-	e.nTok++
-	e.pos += length
-	if e.nTok == simdChunkOps {
-		e.endChunk()
-	}
+	e.putBits(e.putOffset(offset))
+	e.emitLong(nil, 0, 0, length)
 }
 
 // emitLong adds an operation with lits, at most simdMaxLong of them, and a match of length bytes at e.rep,

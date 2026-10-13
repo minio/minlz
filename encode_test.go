@@ -1322,6 +1322,39 @@ func TestSIMDEncodeChunkEdge(t *testing.T) {
 	}
 }
 
+// TestSIMDEncodeParse checks that the parsers' operations cover the input, which blocks without delta literals don't show,
+// with literal runs and matches around the lengths where the parsers leave operations to the emitters.
+func TestSIMDEncodeParse(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	lens := []int{0, 1, 4, 8, 31, 32, 33, 287, 288, 289, 290, 600}
+	offs := []int{1, 3, 8, 15, 16, 31, 32, 33, 1000, 100000}
+	src := []byte{0}
+	for len(src) < 1<<20 {
+		for range lens[rng.Intn(len(lens))] {
+			src = append(src, byte(rng.Intn(256)))
+		}
+		off := min(offs[rng.Intn(len(offs))], len(src))
+		for range max(4, lens[rng.Intn(len(lens))]) {
+			src = append(src, src[len(src)-off])
+		}
+	}
+	for _, in := range [][]byte{src[:64<<10], src[:1<<20], genEncText(rng, 1<<20)} {
+		for _, level := range simdLevels {
+			block := make([]byte, MaxEncodedLen(len(in)))
+			e := simdEncoder{out: block[1:1:len(block)]}
+			e.parse(in, level)
+			if e.pos != len(in) {
+				t.Fatalf("size %d level %d: operations cover %d bytes", len(in), level, e.pos)
+			}
+			n := e.finish()
+			got, err := reference.DecodeSIMDBlockStrict(block[:n+1])
+			if n == 0 || err != nil || !bytes.Equal(got, in) {
+				t.Fatalf("size %d level %d: block of %d bytes, roundtrip mismatch (err=%v)", len(in), level, n, err)
+			}
+		}
+	}
+}
+
 func TestSIMDEncodeDelta(t *testing.T) {
 	src := genEncText(rand.New(rand.NewSource(1)), 100000)
 	for _, level := range []int{LevelSmallestSIMD | LevelSIMDDelta, LevelBalanced | LevelSIMDDelta, LevelSIMDDelta} {

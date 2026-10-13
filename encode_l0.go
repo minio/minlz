@@ -325,7 +325,13 @@ func (e *simdEncoder) encodeFastBlockGo(src []byte) {
 					s += 8
 					candidate += 8
 				}
-				e.emitRepeatLits(src[nextEmit:base], s-base)
+				if e.fast(src, nextEmit, base, s, repeat) {
+					if e.putMatch(1|e.putLits(src[nextEmit:], base-nextEmit), repeat, s-base) {
+						e.endChunk()
+					}
+				} else {
+					e.emitRepeatLits(src[nextEmit:base], s-base)
+				}
 				nextEmit = s
 				if s >= sLimit {
 					goto emitRemainder
@@ -365,7 +371,14 @@ func (e *simdEncoder) encodeFastBlockGo(src []byte) {
 			s += 8
 			candidate += 8
 		}
-		e.emitCopyLits(src[nextEmit:base], repeat, s-base)
+		if e.fast(src, nextEmit, base, s, repeat) {
+			e.putBits(e.putOffset(repeat))
+			if e.putMatch(e.putLits(src[nextEmit:], base-nextEmit), repeat, s-base) {
+				e.endChunk()
+			}
+		} else {
+			e.emitCopyLits(src[nextEmit:base], repeat, s-base)
+		}
 
 		for {
 			nextEmit = s
@@ -396,7 +409,14 @@ func (e *simdEncoder) encodeFastBlockGo(src []byte) {
 				s += 8
 				candidate += 8
 			}
-			e.emitCopy(repeat, s-base)
+			if oneOp(repeat, s-base) {
+				e.putBits(e.putOffset(repeat))
+				if e.putMatch(0, repeat, s-base) {
+					e.endChunk()
+				}
+			} else {
+				e.emitCopy(repeat, s-base)
+			}
 		}
 	}
 
@@ -453,7 +473,13 @@ func (e *simdEncoder) encodeFastBlockGo64K(src []byte) {
 					s += 8
 					candidate += 8
 				}
-				e.emitRepeatLits(src[nextEmit:base], s-base)
+				if e.fast(src, nextEmit, base, s, repeat) {
+					if e.putMatch(1|e.putLits(src[nextEmit:], base-nextEmit), repeat, s-base) {
+						e.endChunk()
+					}
+				} else {
+					e.emitRepeatLits(src[nextEmit:base], s-base)
+				}
 				nextEmit = s
 				if s >= sLimit {
 					goto emitRemainder
@@ -493,7 +519,14 @@ func (e *simdEncoder) encodeFastBlockGo64K(src []byte) {
 			s += 8
 			candidate += 8
 		}
-		e.emitCopyLits(src[nextEmit:base], repeat, s-base)
+		if e.fast(src, nextEmit, base, s, repeat) {
+			e.putBits(e.putOffset(repeat))
+			if e.putMatch(e.putLits(src[nextEmit:], base-nextEmit), repeat, s-base) {
+				e.endChunk()
+			}
+		} else {
+			e.emitCopyLits(src[nextEmit:base], repeat, s-base)
+		}
 
 		for {
 			nextEmit = s
@@ -524,7 +557,14 @@ func (e *simdEncoder) encodeFastBlockGo64K(src []byte) {
 				s += 8
 				candidate += 8
 			}
-			e.emitCopy(repeat, s-base)
+			if oneOp(repeat, s-base) {
+				e.putBits(e.putOffset(repeat))
+				if e.putMatch(0, repeat, s-base) {
+					e.endChunk()
+				}
+			} else {
+				e.emitCopy(repeat, s-base)
+			}
 		}
 	}
 

@@ -27,6 +27,10 @@ import (
 // tables.txt.gz holds its code lengths and schedules, blocks.txt.gz its PH blocks with the
 // FlatVertical layout, converted to this package's form by removing the symbol count, the
 // marker prefix byte and the marker byte of each flat region. Digests are FNV-1a 64.
+// joint.txt.gz holds its effort 2 (PIVCO_EFFORT_FASTER_DECOMPRESS) code lengths, built with
+// PIVCO_JOINT_SCALAR, -ffp-contract=off, PIVCO_BLOCK_SIZE=65536 (one block per table) and
+// FSE off; ranged cases ran on the alphabet rotated by lo, kept as baseline if a ghost fell
+// outside [lo,hi).
 
 // goldenTables returns the tables of tables.txt.gz by name, checking each against C.
 func goldenTables(t *testing.T) map[string]record {
@@ -45,7 +49,7 @@ func goldenTables(t *testing.T) map[string]record {
 func TestTableGolden(t *testing.T) {
 	tabs := goldenTables(t)
 	for name, r := range tabs {
-		want := r.lens(t)
+		want := r.lens(t, "lens")
 		if r.f["gen"] != "" {
 			h := r.hist(t)
 			var raw []byte
@@ -88,7 +92,7 @@ func goldenInput(t *testing.T, tabs map[string]record, r record) ([]byte, *[256]
 	if !ok {
 		t.Fatalf("line %d: unknown table %q", r.line, r.f["table"])
 	}
-	lens := tr.lens(t)
+	lens := tr.lens(t, "lens")
 	n := int(r.uint(t, "n", 10))
 	k, v, _ := strings.Cut(r.f["gen"], ":")
 	var in []byte
@@ -153,5 +157,52 @@ func TestBlockGolden(t *testing.T) {
 			}
 		}
 		t.Logf("%v: %d blocks", c.tier, len(recs))
+	}
+}
+
+// TestJointGolden checks BuildLengths and Shape against the C library's effort 2 lengths,
+// over the byte alphabet and over the stream's symbol range.
+func TestJointGolden(t *testing.T) {
+	var s Shaper
+	recs := readManifest(t, "joint.txt.gz")
+	for _, r := range recs {
+		num := func(v string) uint64 {
+			n, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				t.Fatalf("line %d: %v", r.line, err)
+			}
+			return n
+		}
+		var h [256]uint64
+		for i, v := range strings.Split(r.f["h"], ",") {
+			if v != "" {
+				h[i] = num(v)
+			}
+		}
+		var lens [256]uint8
+		BuildLengths(&h, &lens)
+		if lens != *r.lens(t, "base") {
+			t.Fatalf("%s: BuildLengths\n got %x\nwant %x", r.f["name"], lens, *r.lens(t, "base"))
+		}
+		lo, hi, out := 0, 256, "out"
+		if v, ok := r.f["r"]; ok {
+			a, b, _ := strings.Cut(v, ":")
+			lo, hi, out = int(num(a)), int(num(b)), "rout"
+		}
+		for _, c := range []struct {
+			key    string
+			lo, hi int
+		}{{"out", 0, 256}, {out, lo, hi}} {
+			want, got := lens, lens
+			if r.f[c.key] != "-" {
+				want = *r.lens(t, c.key)
+			}
+			if s.Shape(&h, &got, c.lo, c.hi) != (want != lens) || got != want {
+				t.Fatalf("%s %s: Shape\n got %x\nwant %x", r.f["name"], c.key, got, want)
+			}
+		}
+	}
+	if len(recs) == 0 {
+		t.Fatal("no cases")
 	}
 }
