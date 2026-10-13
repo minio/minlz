@@ -682,6 +682,25 @@ func TestSIMDExec(t *testing.T) {
 		ops, lits := simdTestOps(rng, 1+rng.Intn(300), "abcab\x00", 288, 1<<rng.Intn(16))
 		cases = append(cases, tcase{ops, lits, false})
 	}
+	// Buffers end at an inaccessible page, right after what simdExecGo reads or writes.
+	var guards [7][]byte
+	for i := range guards {
+		g, free, err := mapGuarded(1 << 20)
+		if errors.Is(err, errors.ErrUnsupported) {
+			g, free, err = make([]byte, 1<<20), func() {}, nil
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer free()
+		guards[i] = g
+	}
+	// at returns the last n bytes of guard i, starting with b.
+	at := func(i int, b []byte, n int) []byte {
+		s := guards[i][len(guards[i])-n:]
+		clear(s[copy(s, b):])
+		return s
+	}
 	simdTiers(t, func(t *testing.T) {
 		for _, ex := range simdTestExecs {
 			for i, tc := range cases {
@@ -692,10 +711,18 @@ func TestSIMDExec(t *testing.T) {
 					}
 					e, want := b.build(tb)
 					v := e.chunks[0].vals
-					pad := func(b []byte) []byte { return append(bytes.Clone(b), make([]byte, simdPad)...) }
-					c := simdChunk{tok: v[simdTok], ll: pad(v[simdLL]), offc: pad(v[simdOffc]), esc: pad(v[simdEsc]), raw: pad(v[4]), delta: delta}
-					dst := make([]byte, len(want)+simdSlack+300)
-					lits := pad(e.stored)
+					l := 0
+					for _, o := range tc.ops {
+						l += o.ll
+					}
+					d := l + len(want) - len(e.stored)
+					bits, _ := simdOffStats(v[simdOffc])
+					// ll and offc are read one value ahead, raw 8 bytes at each bit position. simdExec takes &c.esc[0].
+					c := simdChunk{tok: at(0, v[simdTok], len(v[simdTok])), ll: at(1, v[simdLL], len(v[simdLL])+1),
+						offc: at(2, v[simdOffc], len(v[simdOffc])+1), esc: at(3, v[simdEsc], max(len(v[simdEsc]), 1)),
+						raw: at(4, v[4], bits>>3+8), delta: delta}
+					dst := at(5, nil, d+simdSlack)
+					lits := at(6, e.stored[:l], l+simdSlack)
 					st := [4]int{0, 0, 1, 0}
 					ex.fn(dst, lits, &c, len(c.tok), &st)
 					if tc.bad {
@@ -704,10 +731,8 @@ func TestSIMDExec(t *testing.T) {
 						}
 						continue
 					}
-					d, l := st[0], st[1]
-					copy(dst[d:], lits[l:len(e.stored)])
-					if st[3] != 0 || d+len(e.stored)-l != len(want) || !bytes.Equal(dst[:len(want)], want) {
-						t.Fatalf("%s case %d delta %v: state %v, output mismatch %v", ex.name, i, delta, st, !bytes.Equal(dst[:len(want)], want))
+					if st[3] != 0 || st[0] != d || st[1] != l || !bytes.Equal(dst[:d], want[:d]) {
+						t.Fatalf("%s case %d delta %v: state %v, output mismatch %v", ex.name, i, delta, st, !bytes.Equal(dst[:d], want[:d]))
 					}
 				}
 			}
@@ -1629,19 +1654,29 @@ func testSIMDStatsTail(t *testing.T) {
 			}
 			b[i] = 1
 		}
-		// 175 is the last offset symbol.
-		for i := range b {
-			b[i] = 175
-		}
-		if _, ok := simdOffStats(b); !ok {
-			t.Fatalf("length %d: offset symbol 175 not accepted", n)
-		}
-		for i := range b {
-			b[i] = 176
-			if _, ok := simdOffStats(b); ok {
-				t.Fatalf("length %d: offset symbol 176 at %d not found", n, i)
+		// The edges of each range.
+		tok := func(b []byte) bool { _, _, _, _, ok := simdTokStats(b); return ok }
+		ll := func(b []byte) bool { _, _, ok := simdLLStats(b); return ok }
+		off := func(b []byte) bool { _, ok := simdOffStats(b); return ok }
+		for _, e := range []struct {
+			name      string
+			good, bad byte
+			ok        func([]byte) bool
+		}{{"token", 135, 136, tok}, {"literal length", 33, 34, ll}, {"literal length", 1, 0, ll},
+			{"offset symbol", 175, 176, off}, {"offset symbol", 1, 0, off}} {
+			for i := range b {
+				b[i] = e.good
 			}
-			b[i] = 175
+			if !e.ok(b) {
+				t.Fatalf("length %d: %s %d not accepted", n, e.name, e.good)
+			}
+			for i := range b {
+				b[i] = e.bad
+				if e.ok(b) {
+					t.Fatalf("length %d: %s %d at %d not found", n, e.name, e.bad, i)
+				}
+				b[i] = e.good
+			}
 		}
 	}
 }

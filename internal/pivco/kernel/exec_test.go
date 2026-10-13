@@ -16,7 +16,9 @@ package kernel
 
 import (
 	"bytes"
+	"fmt"
 	"math/rand/v2"
+	"slices"
 	"testing"
 )
 
@@ -439,6 +441,145 @@ func TestExecFailClosed(t *testing.T) {
 		e.p.Ops = []Op{{Kind: OpNat, D: 4, K: 8}}
 		if ret := e.exec(t, tier, 0); ret != 0 {
 			t.Fatalf("%v nil R2S: Exec = %d", tier, ret)
+		}
+	}
+}
+
+// TestExecBounds runs an op of each kind after a valid op of every kind and before another
+// valid op: at the limit of each of its checks, where it must run, and one past it, where
+// Exec must return its index and the op after it must not run.
+func TestExecBounds(t *testing.T) {
+	const inLen, alim, dstLen = 1024, 4096, 1024
+	rng := newRNG()
+	in := randBytes(rng, make([]byte, inLen))
+	withKR := func(op Op) Op {
+		if (op.Kind == OpVV || op.Kind == OpCV) && int(op.Bm)+int(op.K+7)/8 <= inLen {
+			op.KR = uint32(decPopcnt(in[op.Bm:], int(op.K)))
+		}
+		return op
+	}
+	// The valid ops write the arena below 1416 and read children from [2048, 2477).
+	valid := []Op{
+		withKR(Op{Kind: OpVV, K: 100, L: 2048, R: 2200}),
+		withKR(Op{Kind: OpCV, P: 3, K: 77, Bm: 20, Out: 128, R: 2400}),
+		{Kind: OpCC, P: 1, Q: 2, K: 45, Bm: 40, Out: 256},
+		{Kind: OpV512, D: 3, P: 9, K: 512, Bm: 100, Out: 512},
+		{Kind: OpV128, D: 7, P: 192, K: 128, Bm: 300, Out: 1024},
+		{Kind: OpNat, D: 5, P: 200, K: 45, Bm: 500, Out: 1200},
+		{Kind: OpCopy, D: 8, K: 37, Bm: 600, Out: 1300},
+	}
+	last := Op{Kind: OpCC, P: 5, Q: 6, K: 16, Out: 1400}
+
+	type bcase struct {
+		name          string
+		op            Op
+		runs, written bool // written: fails after writing its output (KR)
+		nilR2S        bool
+	}
+	var cases []bcase
+	add := func(name string, op Op, runs bool) {
+		cases = append(cases, bcase{name: fmt.Sprintf("%d/%s", op.Kind, name), op: withKR(op), runs: runs})
+	}
+	// limit adds op with set(op, 0) at the limit and set(op, 1) past it.
+	limit := func(name string, op Op, set func(*Op, uint32)) {
+		for d := range uint32(2) {
+			o := op
+			set(&o, d)
+			add(fmt.Sprint(name, "+", d), o, d == 0)
+		}
+	}
+	need := func(op Op) uint32 {
+		switch k, d := op.K, uint32(op.D); op.Kind {
+		case OpVV, OpCV, OpCC:
+			return (k + 7) / 8
+		case OpV512, OpV128:
+			return k * d / 8
+		case OpNat:
+			return (k*d + 7) / 8
+		}
+		return op.K
+	}
+	// Outputs go to Dst unless the case is about the arena's; children are at [3072, 3377).
+	for _, op := range []Op{
+		{Kind: OpVV, Flags: FlagDst, K: 77, Bm: 700, L: 3072, R: 3300},
+		{Kind: OpCV, Flags: FlagDst, P: 4, K: 77, Bm: 700, R: 3300},
+		{Kind: OpCC, Flags: FlagDst, P: 4, Q: 8, K: 77, Bm: 700},
+		{Kind: OpV512, Flags: FlagDst, D: 2, P: 50, K: 512, Bm: 700},
+		{Kind: OpV512, Flags: FlagDst, D: 7, P: 50, K: 512, Bm: 500},
+		{Kind: OpV128, Flags: FlagDst, D: 4, P: 50, K: 128, Bm: 700},
+		{Kind: OpV128, Flags: FlagDst, D: 7, P: 50, K: 128, Bm: 700},
+		{Kind: OpNat, Flags: FlagDst, D: 3, P: 50, K: 45, Bm: 700},
+		{Kind: OpNat, Flags: FlagDst, D: 7, P: 50, K: 45, Bm: 700},
+		{Kind: OpNat, Flags: FlagDst, D: 8, P: 50, K: 45, Bm: 700},
+		{Kind: OpCopy, Flags: FlagDst, D: 8, K: 37, Bm: 700},
+	} {
+		limit("out", op, func(o *Op, d uint32) { o.Flags, o.Out = 0, alim-o.K+d })
+		limit("dst", op, func(o *Op, d uint32) { o.Out = dstLen - o.K + d })
+		limit("in", op, func(o *Op, d uint32) { o.Bm = inLen - need(*o) + d })
+		lut := op.Kind >= OpV512 && op.Kind <= OpNat
+		cases = append(cases, bcase{name: fmt.Sprintf("%d/nilR2S", op.Kind), op: withKR(op), runs: !lut, nilR2S: true})
+		if lut && op.D >= 7 {
+			limit(fmt.Sprint("r2s/d", op.D), op, func(o *Op, d uint32) { o.P = uint8(R2SLen - 1<<o.D + d) })
+		}
+		switch op.Kind {
+		case OpVV:
+			limit("l", op, func(o *Op, d uint32) { o.L = alim - o.K + d })
+			fallthrough
+		case OpCV:
+			limit("r", op, func(o *Op, d uint32) { o.R = alim - o.K + d })
+			for _, dk := range []uint32{1, ^uint32(0)} {
+				o := withKR(op)
+				o.KR += dk
+				cases = append(cases, bcase{name: fmt.Sprintf("%d/kr%+d", op.Kind, int32(dk)), op: o, written: true})
+			}
+		}
+		o := op
+		o.K = 0
+		add("k0", o, true)
+	}
+	// D=64: the assembly's shifts by D wrap mod 64, so 1<<D passes its R2S check and only
+	// the D range rejects it.
+	for _, d := range []uint8{0, 1, 2, 7, 8, 9, 64, 255} {
+		add(fmt.Sprint("d", d), Op{Kind: OpV512, D: d, K: 512}, d >= 2 && d <= 7)
+		add(fmt.Sprint("d", d), Op{Kind: OpV128, D: d, K: 128}, d >= 2 && d <= 7)
+		add(fmt.Sprint("d", d), Op{Kind: OpNat, D: d, K: 64}, d >= 2 && d <= 8)
+		add(fmt.Sprint("d", d), Op{Kind: OpCopy, D: d, K: 64}, d == 8)
+	}
+	add("k640", Op{Kind: OpV512, D: 2, K: 640}, false)
+	add("k192", Op{Kind: OpV128, D: 2, K: 192}, false)
+	for _, kind := range []uint8{7, 8, 255} {
+		add("kind", Op{Kind: kind, D: 8, K: 8}, false)
+	}
+
+	base := newEnv(rng, alim, dstLen, in)
+	for _, c := range cases {
+		ops := valid
+		if c.nilR2S {
+			ops = []Op{valid[0], valid[1], valid[2], valid[6]}
+		}
+		ops = append(slices.Clone(ops), c.op, last)
+		want, upto := -1, len(ops)
+		if !c.runs {
+			want, upto = len(ops)-2, len(ops)-2
+			if c.written {
+				upto++
+			}
+		}
+		prog := func() *env {
+			e := base.clone()
+			e.p.Ops = ops
+			if c.nilR2S {
+				e.p.R2S = nil
+			}
+			return e
+		}
+		for _, tier := range Tiers() {
+			if got := prog().exec(t, tier, upto); got != want {
+				t.Fatalf("%v %s: Exec = %d, want %d (%+v)", tier, c.name, got, want, c.op)
+			}
+			if tier != TierGeneric {
+				decDiffExec(t, tier, prog(), c.name)
+			}
 		}
 	}
 }

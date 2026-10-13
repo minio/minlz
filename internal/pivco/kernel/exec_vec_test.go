@@ -24,7 +24,8 @@ import (
 	"unsafe"
 )
 
-// Tests of the vector executors (_generate/pivco dec_avx512.go, dec_avx2.go) against execGeneric.
+// Tests of the vector executors (_generate/pivco dec_avx512.go, dec_avx2.go; neon_arm64.s)
+// against execGeneric.
 
 // vecTiers returns the usable tiers other than TierGeneric, or skips.
 func vecTiers(t testing.TB) []Tier {

@@ -152,7 +152,7 @@ see "Writer Compression Level" below.
 Older versions of this package cannot decode SIMD blocks, nor streams written with SIMD levels.
 
 Decompression uses AVX-512 on amd64 CPUs with AVX-512 (F, BW, VL, VBMI, VBMI2) and BMI2,
-and AVX2 on CPUs with AVX2 and BMI2; other platforms use Go.
+and AVX2 on CPUs with AVX2 and BMI2; arm64 uses NEON for the Huffman stage. Other platforms use Go.
 The SIMD encoders are Go only for now.
 
 Each row compares a SIMD level with the MinLZ level of the same name, for example `LevelFastestSIMD` with `LevelFastest`.

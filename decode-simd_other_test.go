@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !amd64 || appengine || !gc || noasm || purego
+//go:build (!amd64 && !arm64) || appengine || !gc || noasm || purego
 
 package minlz
 

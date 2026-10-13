@@ -99,11 +99,12 @@ const (
 // Tier selects a kernel implementation.
 type Tier uint8
 
-// Kernel tiers, lowest first.
+// Kernel tiers, lowest first per architecture.
 const (
 	TierGeneric Tier = iota
 	TierAVX2
 	TierAVX512
+	TierNEON
 )
 
 // String returns the tier name.
@@ -115,6 +116,8 @@ func (t Tier) String() string {
 		return "avx2"
 	case TierAVX512:
 		return "avx512"
+	case TierNEON:
+		return "neon"
 	}
 	return "unknown"
 }
@@ -127,6 +130,8 @@ func Best() Tier {
 		return TierAVX512
 	case hasAVX2():
 		return TierAVX2
+	case hasNEON():
+		return TierNEON
 	}
 	return TierGeneric
 }
@@ -140,6 +145,9 @@ func Tiers() []Tier {
 	if hasAVX2() {
 		ts = append(ts, TierAVX2)
 	}
+	if hasNEON() {
+		ts = append(ts, TierNEON)
+	}
 	return append(ts, TierGeneric)
 }
 
@@ -150,6 +158,8 @@ func (t Tier) Gather(ranks, src []byte, s2r *[256]byte) uint8 {
 		return gatherAVX512(ranks, src, s2r)
 	case TierAVX2:
 		return gatherAVX2(ranks, src, s2r)
+	case TierNEON:
+		return gatherNEON(ranks, src, s2r)
 	}
 	return gatherGeneric(ranks, src, s2r)
 }
@@ -163,6 +173,8 @@ func (t Tier) PartFull(ranks []byte, n int, right, bm []byte, thr uint8) int {
 		return partFullAVX512(ranks, n, right, bm, thr)
 	case TierAVX2:
 		return partFullAVX2(ranks, n, right, bm, thr)
+	case TierNEON:
+		return partFullNEON(ranks, n, right, bm, thr)
 	}
 	return partFullGeneric(ranks, n, right, bm, thr)
 }
@@ -174,6 +186,8 @@ func (t Tier) PartRight(ranks []byte, n int, right, bm []byte, thr uint8) int {
 		return partRightAVX512(ranks, n, right, bm, thr)
 	case TierAVX2:
 		return partRightAVX2(ranks, n, right, bm, thr)
+	case TierNEON:
+		return partRightNEON(ranks, n, right, bm, thr)
 	}
 	return partRightGeneric(ranks, n, right, bm, thr)
 }
@@ -185,6 +199,8 @@ func (t Tier) PartNone(ranks []byte, n int, bm []byte, thr uint8) int {
 		return partNoneAVX512(ranks, n, bm, thr)
 	case TierAVX2:
 		return partNoneAVX2(ranks, n, bm, thr)
+	case TierNEON:
+		return partNoneNEON(ranks, n, bm, thr)
 	}
 	return partNoneGeneric(ranks, n, bm, thr)
 }
@@ -197,6 +213,8 @@ func (t Tier) Pack(dst, ranks []byte, n int, d, base uint8) {
 		packAVX512(dst, ranks, n, d, base)
 	case TierAVX2:
 		packAVX2(dst, ranks, n, d, base)
+	case TierNEON:
+		packNEON(dst, ranks, n, d, base)
 	default:
 		packGeneric(dst, ranks, n, d, base)
 	}
@@ -211,6 +229,8 @@ func (t Tier) Exec(p *Program) int {
 		return execAVX512(p)
 	case TierAVX2:
 		return execAVX2(p)
+	case TierNEON:
+		return execNEON(p)
 	}
 	return execGeneric(p)
 }

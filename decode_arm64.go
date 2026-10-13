@@ -39,13 +39,72 @@ func minLZDecode(dst, src []byte) int {
 	return decodeBlockAsm(dst, src)
 }
 
+// Tests turn this off to check the Go code.
+var simdNEON = true
+
 // simdExec runs the first n operations of c. See simdExecGo.
 func simdExec(dst, lits []byte, c *simdChunk, n int, st *[4]int) {
-	simdExecGo(dst, lits, c, n, st)
+	switch {
+	case !simdNEON:
+		simdExecGo(dst, lits, c, n, st)
+	case c.delta:
+		simdExecDeltaNEON(&dst[0], &lits[0], &c.tok[0], &c.ll[0], &c.offc[0], &c.raw[0], &c.esc[0], n, st)
+	default:
+		simdExecNEON(&dst[0], &lits[0], &c.tok[0], &c.ll[0], &c.offc[0], &c.raw[0], &c.esc[0], n, st)
+	}
 }
 
-func simdTokStatsAsm(tok []byte) (out, nLit, nRep, nEsc, n int, ok bool) { return 0, 0, 0, 0, 0, true }
+// simdExecNEON runs the first n operations of a chunk. st holds the output position,
+// the literal position, the repeat offset and an error flag.
+//
+//go:noescape
+func simdExecNEON(dst, lits, tok, ll, offc, raw, esc *byte, n int, st *[4]int)
 
-func simdLLStatsAsm(ll []byte) (sum, nEsc, n int, ok bool) { return 0, 0, 0, true }
+// simdExecDeltaNEON is simdExecNEON for chunks with delta literals.
+//
+//go:noescape
+func simdExecDeltaNEON(dst, lits, tok, ll, offc, raw, esc *byte, n int, st *[4]int)
 
-func simdOffStatsAsm(offc []byte) (bits, n int, ok bool) { return 0, 0, true }
+// simdTokStatsAsm returns the statistics of a prefix of tok, and its length. See simdTokStats.
+func simdTokStatsAsm(tok []byte) (out, nLit, nRep, nEsc, n int, ok bool) {
+	if n = len(tok) &^ 15; !simdNEON || n == 0 {
+		return 0, 0, 0, 0, 0, true
+	}
+	out, nLit, nRep, nEsc, ok = simdTokStatsNEON(&tok[0], n)
+	return out, nLit, nRep, nEsc, n, ok
+}
+
+// simdLLStatsAsm returns the statistics of a prefix of ll, and its length. See simdLLStats.
+func simdLLStatsAsm(ll []byte) (sum, nEsc, n int, ok bool) {
+	if n = len(ll) &^ 15; !simdNEON || n == 0 {
+		return 0, 0, 0, true
+	}
+	sum, nEsc, ok = simdLLStatsNEON(&ll[0], n)
+	return sum, nEsc, n, ok
+}
+
+// simdOffStatsAsm returns the raw bits of a prefix of offc, and its length. See simdOffStats.
+func simdOffStatsAsm(offc []byte) (bits, n int, ok bool) {
+	if n = len(offc) &^ 15; !simdNEON || n == 0 {
+		return 0, 0, true
+	}
+	bits, ok = simdOffStatsNEON(&offc[0], n)
+	return bits, n, ok
+}
+
+// simdTokStatsNEON returns the token statistics of n bytes, a multiple of 16 above 0.
+//
+//go:noescape
+func simdTokStatsNEON(b *byte, n int) (out, lit, rep, esc int, ok bool)
+
+// simdLLStatsNEON returns the sum of n bytes, a multiple of 16 above 0, and how many are 33.
+// ok is false if a byte is outside 1-33.
+//
+//go:noescape
+func simdLLStatsNEON(b *byte, n int) (sum, esc int, ok bool)
+
+// simdOffStatsNEON returns the raw bits of the offset symbols of n bytes, a multiple of 16 above 0.
+// ok is false if a byte is outside 1-175.
+//
+//go:noescape
+func simdOffStatsNEON(b *byte, n int) (bits int, ok bool)
