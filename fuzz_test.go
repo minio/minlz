@@ -123,6 +123,12 @@ func FuzzEncodingBlocks(f *testing.F) {
 }
 
 func FuzzDecodeBlock(f *testing.F) {
+	for _, offset := range []int{1, 3, 16, 17, 63, 64, 65, 4096, 65536} {
+		for _, length := range []int{127, 128, 4096} {
+			encoded, _ := overlapTailBlock(offset, length, 0)
+			f.Add(encoded)
+		}
+	}
 	enc := NewWriter(nil, WriterBlockSize(8<<10))
 	addCompressed := func(b []byte) {
 		if b2, err := Encode(nil, b, LevelBalanced); err == nil {
