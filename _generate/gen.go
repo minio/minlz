@@ -4293,6 +4293,27 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 				{
 					tmp := GP64()
 					ADDQ(length, dstPos)
+					if !o.scalarMove {
+						// Growing the completed prefix turns a long overlap into
+						// non-overlapping copies. Each source span is already decoded.
+						CMPQ(length, U8(128))
+						JAE(LabelRef(name + "_copy_overlap_prefix"))
+						CMPQ(offset, U8(16))
+						JB(LabelRef(name + "_copy_overlap_simple"))
+						CMPQ(length, U8(16))
+						JB(LabelRef(name + "_copy_overlap_simple"))
+						Label(name + "_copy_overlap_exact16")
+						v := XMM()
+						MOVOU(Mem{Base: copySrc}, v)
+						MOVOU(v, Mem{Base: dst})
+						ADDQ(U8(16), copySrc)
+						ADDQ(U8(16), dst)
+						SUBQ(U8(16), length)
+						CMPQ(length, U8(16))
+						JAE(LabelRef(name + "_copy_overlap_exact16"))
+						TESTQ(length, length)
+						JZ(LabelRef(name + "_copy_overlap_finished"))
+					}
 					Label(name + "_copy_overlap_simple")
 					MOVB(Mem{Base: copySrc}, tmp.As8())
 					MOVB(tmp.As8(), Mem{Base: dst})
@@ -4300,7 +4321,36 @@ func (o options) genDecodeLoop(name string, dstEnd, srcEnd reg.Register, dst, sr
 					INCQ(dst)
 					DECQ(length)
 					JNZ(LabelRef(name + "_copy_overlap_simple"))
+					if !o.scalarMove {
+						Label(name + "_copy_overlap_finished")
+					}
 					loopFinished()
+					if !o.scalarMove {
+						Label(name + "_copy_overlap_prefix")
+						prefix, chunk := GP64(), GP64()
+						MOVQ(offset, prefix)
+						Label(name + "_copy_overlap_prefix_loop")
+						MOVQ(prefix, chunk)
+						CMPQ(chunk, length)
+						JBE(LabelRef(name + "_copy_overlap_prefix_size"))
+						MOVQ(length, chunk)
+						Label(name + "_copy_overlap_prefix_size")
+						CMPQ(chunk, U8(64))
+						JB(LabelRef(name + "_copy_overlap_prefix_short"))
+						bounded := o
+						bounded.inputMargin, bounded.outputMargin = 0, 0
+						bounded.genMemMoveLong64(name+"_overlap_prefix", dst, copySrc, chunk,
+							LabelRef(name+"_copy_overlap_prefix_done"))
+						Label(name + "_copy_overlap_prefix_short")
+						bounded.genMemMoveShort(name+"_overlap_prefix", dst, copySrc, chunk,
+							LabelRef(name+"_copy_overlap_prefix_done"), 1)
+						Label(name + "_copy_overlap_prefix_done")
+						ADDQ(chunk, dst)
+						SUBQ(chunk, length)
+						JZ(LabelRef(name + "_copy_overlap_finished"))
+						ADDQ(chunk, prefix)
+						JMP(LabelRef(name + "_copy_overlap_prefix_loop"))
+					}
 				}
 
 			} else {
