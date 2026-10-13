@@ -43,8 +43,8 @@ const (
 	// There is no speed target for this level.
 	LevelSmallest = 3
 
-	// The SIMD levels write SIMD blocks (SIMD_SPEC.md), which need a decoder for MinLZ v1.1 or later.
-	// For now they can only be used for blocks: Encode, TryEncode and AppendEncoded.
+	// The SIMD levels write SIMD blocks (SIMD_SPEC.md), which need a decoder for MinLZ format specification v1.1 or later.
+	// They can be used for blocks and for streams with WriterLevel.
 
 	// LevelSuperFastSIMD is the fastest compression level.
 	// This will take significant shortcuts and usually provide much worse compression.

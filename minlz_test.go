@@ -17,6 +17,7 @@ package minlz
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -31,6 +32,7 @@ import (
 
 	"github.com/klauspost/compress/zip"
 	"github.com/klauspost/compress/zstd"
+	"github.com/zeebo/xxh3"
 )
 
 var (
@@ -1122,7 +1124,7 @@ func TestReaderSnappyUncompressedDataOK(t *testing.T) {
 }
 
 func TestReaderMinLZUncompressedDataOK(t *testing.T) {
-	r := NewReader(strings.NewReader(string(makeHeader(4096))+
+	r := NewReader(strings.NewReader(string(makeHeader(4096, false))+
 		"\x01\x08\x00\x00"+ // Uncompressed chunk, 8 bytes long (including 4 byte checksum).
 		"\x68\x10\xe6\xb6"+ // Checksum.
 		"\x61\x62\x63\x64"+ // Uncompressed payload: "abcd".
@@ -1138,7 +1140,7 @@ func TestReaderMinLZUncompressedDataOK(t *testing.T) {
 }
 
 func TestReaderUncompressedDataNoPayload(t *testing.T) {
-	r := NewReader(strings.NewReader(string(makeHeader(4096)) +
+	r := NewReader(strings.NewReader(string(makeHeader(4096, false)) +
 		"\x01\x04\x00\x00" + // Uncompressed chunk, 4 bytes long.
 		"", // No payload; corrupt input.
 	))
@@ -1151,7 +1153,7 @@ func TestReaderUncompressedDataTooLong(t *testing.T) {
 	// The maximum legal chunk length... is 8MB + 4 bytes checksum.
 	n := maxBlockSize + checksumSize
 	n32 := uint32(n)
-	r := NewReader(strings.NewReader(string(makeHeader(maxBlockSize)) +
+	r := NewReader(strings.NewReader(string(makeHeader(maxBlockSize, false)) +
 		// Uncompressed chunk, n bytes long.
 		string([]byte{chunkTypeUncompressedData, uint8(n32), uint8(n32 >> 8), uint8(n32 >> 16)}) +
 		strings.Repeat("\x00", n),
@@ -1164,7 +1166,7 @@ func TestReaderUncompressedDataTooLong(t *testing.T) {
 	// test first invalid.
 	n++
 	n32 = uint32(n)
-	r = NewReader(strings.NewReader(string(makeHeader(maxBlockSize)) +
+	r = NewReader(strings.NewReader(string(makeHeader(maxBlockSize, false)) +
 		// Uncompressed chunk, n bytes long.
 		string([]byte{chunkTypeUncompressedData, uint8(n32), uint8(n32 >> 8), uint8(n32 >> 16)}) +
 		strings.Repeat("\x00", n),
@@ -1175,13 +1177,368 @@ func TestReaderUncompressedDataTooLong(t *testing.T) {
 
 	n = 1<<20 + 1 + checksumSize
 	n32 = uint32(n)
-	r = NewReader(strings.NewReader(string(makeHeader(1<<20)) +
+	r = NewReader(strings.NewReader(string(makeHeader(1<<20, false)) +
 		// Uncompressed chunk, n bytes long.
 		string([]byte{chunkTypeUncompressedData, uint8(n32), uint8(n32 >> 8), uint8(n32 >> 16)}) +
 		strings.Repeat("\x00", n),
 	))
 	if _, err := io.ReadAll(r); err != ErrTooLarge {
 		t.Fatalf("got %v, want %v", err, ErrTooLarge)
+	}
+}
+
+// TestReaderSIMDChunks checks that every chunk reader takes SIMD chunks only where the format allows them.
+func TestReaderSIMDChunks(t *testing.T) {
+	data := bytes.Repeat([]byte("Hello SIMD chunk, hello SIMD stream. "), 300)
+	simd, err := Encode(nil, data, LevelBalancedSIMD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok, _, _, _ := isMinLZ(simd); !ok {
+		t.Fatal("not a SIMD block")
+	}
+	minLZ, err := Encode(nil, data, LevelBalanced)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunk := func(typ byte, check, block []byte) string {
+		n := len(check) + len(block) - 1
+		return string([]byte{typ, byte(n), byte(n >> 8), byte(n >> 16)}) + string(check) + string(block[1:])
+	}
+	hash := binary.LittleEndian.AppendUint64(nil, xxh3.Hash(data))
+	badHash := binary.LittleEndian.AppendUint64(nil, xxh3.Hash(data)^1)
+	sum := binary.LittleEndian.AppendUint32(nil, crc(data))
+	eof := string(append([]byte{chunkTypeEOF, 2, 0, 0}, binary.AppendUvarint(nil, uint64(len(data)))...))
+	simdChunk := chunk(chunkTypeMinLZSIMD, hash, simd)
+	hdr := string(makeHeader(64<<10, true))
+	noFlag := string(makeHeader(64<<10, false))
+	bit7 := func(id string) string {
+		return id[:len(id)-1] + string([]byte{id[len(id)-1] | 1<<7})
+	}
+	_, h := binary.Uvarint(minLZ[1:])
+	tooLarge := append(binary.AppendUvarint([]byte{0}, maxBlockSize+1), minLZ[1+h:]...)
+
+	tests := []struct {
+		name, stream string
+		ok           bool
+		want         error // if set, the error every reader must return
+	}{
+		{"valid", hdr + simdChunk + eof, true, nil},
+		{"concatenated", noFlag + chunk(chunkTypeMinLZCompressedData, sum, minLZ) + eof + hdr + simdChunk + eof, true, nil},
+		{"no-flag", noFlag + simdChunk + eof, false, ErrCorrupt},
+		{"no-flag-concatenated", hdr + simdChunk + eof + noFlag + simdChunk + eof, false, ErrCorrupt},
+		// Readers that take S2 streams must not keep the flag of the MinLZ stream before.
+		{"s2-concatenated", hdr + simdChunk + eof + magicChunkS2 + simdChunk + eof, false, nil},
+		// Block types that don't match their chunk are in TestReaderBlockTypeMismatch.
+		{"bad-hash", hdr + chunk(chunkTypeMinLZSIMD, badHash, simd) + eof, false, ErrCRC},
+		{"truncated", hdr + simdChunk[:len(simdChunk)-10], false, nil},
+		{"short", hdr + "\x10\x04\x00\x00" + string(hash[:4]) + eof, false, nil},
+		{"too-large", string(makeHeader(4<<10, true)) + simdChunk + eof, false, ErrTooLarge},
+		{"too-large-minlz", string(makeHeader(maxBlockSize, false)) + chunk(chunkTypeMinLZCompressedData, sum, tooLarge) + eof, false, ErrTooLarge},
+		// One byte longer than the largest chunk of the block size; chunk drops the first byte.
+		{"long-chunk", string(makeHeader(4<<10, true)) + chunk(chunkTypeMinLZSIMD, nil, make([]byte, 1+MaxEncodedLen(4<<10)+checksumSize+1)) + eof, false, ErrCorrupt},
+		{"bit-7", bit7(noFlag) + chunk(chunkTypeMinLZCompressedData, sum, minLZ) + eof, false, ErrCorrupt},
+		{"bit-7-simd", bit7(hdr) + simdChunk + eof, false, ErrCorrupt},
+	}
+	type readerOnly struct{ io.Reader }
+	readers := []struct {
+		name string
+		hash bool // whether the hash is checked
+		fn   func(s string) error
+	}{
+		{"Read", true, func(s string) error {
+			got, err := io.ReadAll(readerOnly{NewReader(strings.NewReader(s), ReaderFallback(true))})
+			if err == nil && !bytes.Equal(got, bytes.Repeat(data, len(got)/len(data))) {
+				return errors.New("output mismatch")
+			}
+			return err
+		}},
+		{"DecodeConcurrent", true, func(s string) error {
+			_, err := NewReader(strings.NewReader(s), ReaderFallback(true)).DecodeConcurrent(io.Discard, 2)
+			return err
+		}},
+		{"Skip", true, func(s string) error {
+			dec := NewReader(strings.NewReader(s), ReaderFallback(true))
+			for {
+				// Skips decode the block they end in, so every chunk is checked.
+				if err := dec.Skip(1000); err != nil {
+					if err == io.ErrUnexpectedEOF {
+						return nil
+					}
+					return err
+				}
+			}
+		}},
+		{"IndexStream", false, func(s string) error {
+			_, err := IndexStream(strings.NewReader(s))
+			return err
+		}},
+		{"BlockSearcher", true, func(s string) error {
+			return NewBlockSearcher(strings.NewReader(s)).Search([]byte("SIMD"), func(SearchResult) error { return nil })
+		}},
+		{"BuildSidecar", true, func(s string) error {
+			return BuildSidecar(io.Discard, strings.NewReader(s), SidecarSearchTable(NewSearchTableConfig()))
+		}},
+		{"ExtractSidecar", false, func(s string) error {
+			return ExtractSidecar(io.Discard, io.Discard, strings.NewReader(s))
+		}},
+	}
+	for _, tt := range tests {
+		for _, r := range readers {
+			// IndexStream doesn't check the identifier's block size or reserved bit, for any chunk type.
+			if tt.name == "bad-hash" && !r.hash || r.name == "IndexStream" && (tt.name == "too-large" || strings.HasPrefix(tt.name, "bit-7")) {
+				continue
+			}
+			err := r.fn(tt.stream)
+			if tt.ok != (err == nil) {
+				t.Errorf("%s/%s: got error %v", tt.name, r.name, err)
+			}
+			if tt.want != nil && !errors.Is(err, tt.want) {
+				t.Errorf("%s/%s: got error %v, want %v", tt.name, r.name, err, tt.want)
+			}
+		}
+	}
+
+	// Ignoring checksums also ignores the hash.
+	if _, err := io.ReadAll(NewReader(strings.NewReader(hdr+chunk(chunkTypeMinLZSIMD, badHash, simd)+eof), ReaderIgnoreCRC())); err != nil {
+		t.Error("ReaderIgnoreCRC:", err)
+	}
+	// Without a stream identifier, the flag is unknown, so SIMD chunks are taken until one is read.
+	if got, err := io.ReadAll(NewReader(strings.NewReader(simdChunk+eof), ReaderIgnoreStreamIdentifier())); err != nil || !bytes.Equal(got, data) {
+		t.Error("ReaderIgnoreStreamIdentifier:", err)
+	}
+	if _, err := io.ReadAll(NewReader(strings.NewReader(simdChunk+eof+noFlag+simdChunk+eof), ReaderIgnoreStreamIdentifier())); err != ErrCorrupt {
+		t.Error("ReaderIgnoreStreamIdentifier, no flag: got", err)
+	}
+}
+
+// blockTypeMismatch holds bad, a data chunk whose block type does not match its chunk type,
+// and good, a valid chunk of the same data. Both are padded to the same length,
+// so a stream with good can provide the index or sidecar of the stream with bad.
+type blockTypeMismatch struct {
+	name      string
+	bad, good []byte
+}
+
+// blockTypeMismatches returns SIMD blocks in MinLZ chunks, a MinLZ block in a SIMD chunk
+// and reserved block types in both, all of data.
+func blockTypeMismatches(t testing.TB, data []byte) []blockTypeMismatch {
+	t.Helper()
+	simd, err := Encode(nil, data, LevelBalancedSIMD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok, _, _, _ := isMinLZ(simd); !ok {
+		t.Fatal("not a SIMD block")
+	}
+	minLZ, err := Encode(nil, data, LevelBalanced)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Streams store blocks without the indicator byte.
+	simd, minLZ = simd[1:], minLZ[1:]
+	chunk := func(typ byte, block []byte) []byte {
+		check := binary.LittleEndian.AppendUint32(nil, crc(data))
+		if typ == chunkTypeMinLZSIMD {
+			check = binary.LittleEndian.AppendUint64(nil, xxh3.Hash(data))
+		}
+		n := len(check) + len(block)
+		return append(append([]byte{typ, byte(n), byte(n >> 8), byte(n >> 16)}, check...), block...)
+	}
+	good := chunk(chunkTypeMinLZSIMD, simd)
+	m := []blockTypeMismatch{
+		{"simd-in-0x02", chunk(chunkTypeMinLZCompressedData, simd), good},
+		{"simd-in-0x03", chunk(chunkTypeMinLZCompressedDataCompCRC, simd), good},
+		{"minlz-in-0x10", chunk(chunkTypeMinLZSIMD, minLZ), chunk(chunkTypeMinLZCompressedData, minLZ)},
+	}
+	_, h := binary.Uvarint(simd)
+	for _, typ := range []uint64{2, 255} {
+		reserved := append(binary.AppendUvarint(nil, typ<<24|uint64(len(data))), simd[h:]...)
+		for _, ct := range []byte{chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC, chunkTypeMinLZSIMD} {
+			m = append(m, blockTypeMismatch{fmt.Sprintf("type-%d-in-0x%02x", typ, ct), chunk(ct, reserved), good})
+		}
+	}
+	pad := func(b []byte, n int) []byte {
+		n -= len(b) + 4
+		return append(append(bytes.Clone(b), ChunkTypePadding, byte(n), byte(n>>8), byte(n>>16)), make([]byte, n)...)
+	}
+	for i := range m {
+		// A padding chunk has at least its 4 byte header.
+		n := max(len(m[i].bad), len(m[i].good)) + 4
+		m[i].bad, m[i].good = pad(m[i].bad, n), pad(m[i].good, n)
+	}
+	return m
+}
+
+// TestReaderBlockTypeMismatch checks that every reader rejects a block whose type doesn't match its chunk type as corrupt.
+func TestReaderBlockTypeMismatch(t *testing.T) {
+	data := bytes.Repeat([]byte("Hello SIMD chunk, hello SIMD stream. "), 300)
+	size := binary.AppendUvarint(nil, uint64(2*len(data)))
+	eof := append([]byte{chunkTypeEOF, byte(len(size)), 0, 0}, size...)
+	// Inside the second block, so ReadAt seeks to it.
+	off := int64(len(data)) + 10
+	type readerOnly struct{ io.Reader }
+	for _, m := range blockTypeMismatches(t, data) {
+		// The first block is valid, so the readers get past it.
+		first := append(makeHeader(64<<10, true), m.good...)
+		good := append(append(bytes.Clone(first), m.good...), eof...)
+		bad := append(append(bytes.Clone(first), m.bad...), eof...)
+		index, err := IndexStream(bytes.NewReader(good))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var side bytes.Buffer
+		if err := BuildSidecar(&side, bytes.NewReader(good), SidecarSearchTable(NewSearchTableConfig())); err != nil {
+			t.Fatal(err)
+		}
+		readers := []struct {
+			name string
+			fn   func(r *bytes.Reader) error
+		}{
+			{"Read", func(r *bytes.Reader) error {
+				_, err := io.ReadAll(readerOnly{NewReader(r)})
+				return err
+			}},
+			{"DecodeConcurrent", func(r *bytes.Reader) error {
+				_, err := NewReader(r).DecodeConcurrent(io.Discard, 2)
+				return err
+			}},
+			{"Skip", func(r *bytes.Reader) error {
+				return NewReader(r).Skip(off)
+			}},
+			{"ReadAt", func(r *bytes.Reader) error {
+				rs, err := NewReader(r).ReadSeeker(index)
+				if err != nil {
+					return err
+				}
+				_, err = rs.ReadAt(make([]byte, 10), off)
+				return err
+			}},
+			{"IndexStream", func(r *bytes.Reader) error {
+				_, err := IndexStream(r)
+				return err
+			}},
+			{"BlockSearcher", func(r *bytes.Reader) error {
+				return NewBlockSearcher(r).Search([]byte("SIMD"), func(SearchResult) error { return nil })
+			}},
+			{"BuildSidecar", func(r *bytes.Reader) error {
+				return BuildSidecar(io.Discard, r, SidecarSearchTable(NewSearchTableConfig()))
+			}},
+			{"ExtractSidecar", func(r *bytes.Reader) error {
+				return ExtractSidecar(io.Discard, io.Discard, r)
+			}},
+			{"SidecarSearcher", func(r *bytes.Reader) error {
+				return NewSidecarSearcher(r, bytes.NewReader(side.Bytes())).Search([]byte("SIMD"), func(SearchResult) error { return nil })
+			}},
+		}
+		for _, r := range readers {
+			if err := r.fn(bytes.NewReader(good)); err != nil {
+				t.Errorf("%s/%s: valid stream: %v", m.name, r.name, err)
+			}
+			if err := r.fn(bytes.NewReader(bad)); !errors.Is(err, ErrCorrupt) {
+				t.Errorf("%s/%s: got error %v, want %v", m.name, r.name, err, ErrCorrupt)
+			}
+		}
+	}
+}
+
+// TestReaderEmptyStream checks that an EOF chunk directly after an EOF chunk is an empty stream,
+// which must have size 0. The Writer writes only an EOF chunk for empty input.
+func TestReaderEmptyStream(t *testing.T) {
+	data := bytes.Repeat([]byte("Hello empty stream. "), 10000)
+	var a, empty bytes.Buffer
+	w := NewWriter(&a, WriterBlockSize(64<<10))
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewWriter(&empty).Close(); err != nil {
+		t.Fatal(err)
+	}
+	cat := func(b ...[]byte) []byte { return bytes.Join(b, nil) }
+	tests := []struct {
+		name         string
+		stream, want []byte // want is nil if the stream is corrupt
+	}{
+		{"a+empty", cat(a.Bytes(), empty.Bytes()), data},
+		{"empty+a", cat(empty.Bytes(), a.Bytes()), data},
+		{"empty+empty", cat(empty.Bytes(), empty.Bytes()), []byte{}},
+		{"a+empty+a", cat(a.Bytes(), empty.Bytes(), a.Bytes()), cat(data, data)},
+		{"a+nonzero-size", cat(a.Bytes(), []byte{chunkTypeEOF, 1, 0, 0, 1}), nil},
+	}
+	type readerOnly struct{ io.Reader }
+	output := func(got, want []byte, err error) error {
+		if err == nil && !bytes.Equal(got, want) {
+			return errors.New("output mismatch")
+		}
+		return err
+	}
+	readers := []struct {
+		name  string
+		sizes bool // whether the reader checks EOF sizes
+		id    bool // whether the reader needs a stream identifier first
+		fn    func(stream, want []byte) error
+	}{
+		{"Read", true, false, func(stream, want []byte) error {
+			got, err := io.ReadAll(readerOnly{NewReader(bytes.NewReader(stream))})
+			return output(got, want, err)
+		}},
+		{"WriteTo", true, false, func(stream, want []byte) error {
+			var got bytes.Buffer
+			_, err := NewReader(bytes.NewReader(stream)).WriteTo(&got)
+			return output(got.Bytes(), want, err)
+		}},
+		{"DecodeConcurrent", true, false, func(stream, want []byte) error {
+			var got bytes.Buffer
+			_, err := NewReader(bytes.NewReader(stream)).DecodeConcurrent(&got, 2)
+			return output(got.Bytes(), want, err)
+		}},
+		// Skipping past the end reads every EOF chunk.
+		{"Skip", true, false, func(stream, want []byte) error {
+			if err := NewReader(bytes.NewReader(stream)).Skip(math.MaxInt64); err != io.ErrUnexpectedEOF {
+				return err
+			}
+			return nil
+		}},
+		{"IndexStream", false, false, func(stream, want []byte) error {
+			_, err := IndexStream(bytes.NewReader(stream))
+			return err
+		}},
+		{"BlockSearcher", false, false, func(stream, want []byte) error {
+			return NewBlockSearcher(bytes.NewReader(stream)).Search([]byte("empty"), func(SearchResult) error { return nil })
+		}},
+		{"SidecarSearcher", false, true, func(stream, want []byte) error {
+			var side bytes.Buffer
+			if err := BuildSidecar(&side, bytes.NewReader(stream), SidecarSearchTable(NewSearchTableConfig())); err != nil {
+				return err
+			}
+			return NewSidecarSearcher(bytes.NewReader(stream), &side).Search([]byte("empty"), func(SearchResult) error { return nil })
+		}},
+		// ExtractSidecar writes its own EOF sizes, which Read checks.
+		{"ExtractSidecar", false, true, func(stream, want []byte) error {
+			var out bytes.Buffer
+			if err := ExtractSidecar(io.Discard, &out, bytes.NewReader(stream)); err != nil {
+				return err
+			}
+			got, err := io.ReadAll(NewReader(&out))
+			return output(got, want, err)
+		}},
+	}
+	for _, tt := range tests {
+		for _, r := range readers {
+			if r.id && bytes.HasPrefix(tt.stream, empty.Bytes()) {
+				continue
+			}
+			err := r.fn(tt.stream, tt.want)
+			if tt.want != nil && err != nil {
+				t.Errorf("%s/%s: %v", tt.name, r.name, err)
+			}
+			if tt.want == nil && r.sizes && !errors.Is(err, ErrCorrupt) {
+				t.Errorf("%s/%s: got error %v, want %v", tt.name, r.name, err, ErrCorrupt)
+			}
+		}
 	}
 }
 

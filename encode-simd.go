@@ -21,7 +21,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/klauspost/pivco"
+	"github.com/minio/minlz/internal/pivco"
 )
 
 const (
@@ -54,7 +54,7 @@ type simdTable struct {
 // simdEncoder builds SIMD blocks. Parsers emit operations, which are coded a chunk at a time,
 // then finish codes the literals and writes the block.
 type simdEncoder struct {
-	pv  *pivco.Encoder
+	pv  pivco.Encoder
 	src []byte
 
 	// The streams of the current chunk. An offset has at most 20 raw bits.
@@ -100,11 +100,7 @@ var simdEncoders sync.Pool
 func encodeBlockSIMD(dst, src []byte, level int) int {
 	e, _ := simdEncoders.Get().(*simdEncoder)
 	if e == nil {
-		pv, err := pivco.NewEncoder(pivco.WithBlockSize(pivco.MaxBlockSize), pivco.WithFlatLayout(pivco.FlatVertical))
-		if err != nil {
-			panic(err)
-		}
-		e = &simdEncoder{pv: pv}
+		e = new(simdEncoder)
 	}
 	e.out = dst[:0:len(dst)]
 	e.parse(src, level)
@@ -612,16 +608,23 @@ func (e *simdEncoder) put(recs []byte, k int, v []byte) []byte {
 		if best != &e.cur[k] {
 			mode, n = best.mode, best.n
 			// Tables are only built when used.
-			if best.t.SetLengths(&best.lens, pivco.FlatVertical) != nil {
+			if best.t.SetLengths(&best.lens) != nil {
 				panic("invalid table")
 			}
 		}
-		// With the exact size, pivco writes in place, and the output doesn't depend on spare room.
-		if size := best.t.BlockSize(&e.hist); size <= room && size+n < len(v) {
-			out, err := e.pv.AppendEncodeBlockBound(e.out, v, &best.t, size)
-			if err == nil {
-				recs = binary.AppendUvarint(recs, uint64(len(out)-len(e.out))<<3|uint64(mode))
-				e.out = out
+		// Only tokens and literal blocks store their number of values (SIMD_SPEC.md 2.2).
+		hdr := 0
+		if k == simdTok || k == simdLits {
+			hdr = 2
+		}
+		if size := hdr + best.t.BlockSize(&e.hist); size <= room && size+n < len(v) {
+			out := e.out[len(e.out):][:size]
+			if hdr > 0 {
+				binary.LittleEndian.PutUint16(out, uint16(len(v)))
+			}
+			if e.pv.Encode(out[hdr:], v, &best.t) == nil {
+				recs = binary.AppendUvarint(recs, uint64(size)<<3|uint64(mode))
+				e.out = e.out[:len(e.out)+size]
 				if mode != simdCurrent {
 					recs = append(recs, best.b[:n]...)
 					e.cur[k], e.have[k] = *best, true
@@ -651,8 +654,8 @@ func (t *simdTable) cost(h *[256]uint64) (int, bool) {
 
 // setCode sets t to the Huffman code of h, as code lengths of stream k. h must not be empty.
 func (t *simdTable) setCode(k int, h *[256]uint64) {
-	if err := pivco.BuildLengths(h, &t.lens); err != nil {
-		panic(err)
+	if !pivco.BuildLengths(h, &t.lens) {
+		panic("empty histogram")
 	}
 	t.mode = simdCodeLens
 	t.setNibbles(t.lens[:2*simdCodeBytes[k]])

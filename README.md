@@ -147,10 +147,12 @@ Literals are then stored as the difference to the bytes at the last match offset
 This mainly helps binary data, like tables of numbers, but makes text larger and costs decompression speed.
 Level 7 decides this itself.
 
-SIMD blocks can currently be used with `Encode`, `TryEncode`, `AppendEncoded` and the decoding functions.
-Stream support will follow. Older versions of this package cannot decode SIMD blocks.
+SIMD blocks can be used with `Encode`, `TryEncode`, `AppendEncoded`, the decoding functions and streams,
+see "Writer Compression Level" below.
+Older versions of this package cannot decode SIMD blocks, nor streams written with SIMD levels.
 
-Decompression uses AVX2 on amd64 CPUs with AVX2 and BMI2; other platforms use Go.
+Decompression uses AVX-512 on amd64 CPUs with AVX-512 (F, BW, VL, VBMI, VBMI2) and BMI2,
+and AVX2 on CPUs with AVX2 and BMI2; other platforms use Go.
 The SIMD encoders are Go only for now.
 
 Each row compares a SIMD level with the MinLZ level of the same name, for example `LevelFastestSIMD` with `LevelFastest`.
@@ -261,6 +263,18 @@ The default level is `LevelBalanced`.
 
 Typical speeds are `LevelFastest` is 2x the speed of `LevelBalanced` 
 and `LevelSmallest` is at least an order of magnitude slower.
+
+The SIMD levels `LevelSuperFastSIMD`, `LevelFastestSIMD`, `LevelBalancedSIMD` and `LevelSmallestSIMD`,
+the first three optionally with `LevelSIMDDelta`, write SIMD blocks. See "SIMD Blocks" above.
+Blocks that don't compress are stored uncompressed, as with the other levels.
+
+SIMD blocks are stored as chunk type 0x10. Instead of a CRC32C they are checked with
+a 64 bit XXH3 hash of the uncompressed data. `ReaderIgnoreCRC` also skips this check.
+
+The stream identifier of a stream written with a SIMD level has a flag (bit 6) set.
+Decoders without SIMD support reject the stream at once, instead of failing at the first SIMD block.
+Sidecars of these streams have the flag too.
+Decoders reject SIMD blocks in streams without the flag.
 
 ### LevelSuperFast
 
@@ -847,6 +861,10 @@ Options:
         Delete source file(s) after success
   -safe
         Do not overwrite output files
+  -simd
+        Write SIMD blocks, which need a decoder for MinLZ format specification v1.1. -xfast, -1, -2 and -3 select the SIMD level
+  -simd.delta
+        Requires -simd: store literals as deltas, mainly for binary data. Not with -3, which decides itself
   -verify
         Verify files, but do not write output
   -xfast

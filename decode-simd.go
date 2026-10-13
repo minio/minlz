@@ -20,7 +20,7 @@ import (
 	"math/bits"
 	"sync"
 
-	"github.com/klauspost/pivco"
+	"github.com/minio/minlz/internal/pivco"
 	"github.com/minio/minlz/internal/race"
 )
 
@@ -399,14 +399,18 @@ func (s *simdDecoder) stream(r *simdReader, k, lo, hi int, buf []byte) (v []byte
 	default:
 		return nil, 0, false, false
 	}
-	if size < 2 {
-		return nil, 0, false, false
+	// Only tokens and literal blocks store their number of values; lo == hi for the others.
+	n, data = lo, data[:size]
+	if k == simdTok || k == simdLits {
+		if size < 2 {
+			return nil, 0, false, false
+		}
+		n, data = int(binary.LittleEndian.Uint16(data)), data[2:]
+		if n < lo || n > hi {
+			return nil, 0, false, false
+		}
 	}
-	n = int(binary.LittleEndian.Uint16(data))
-	if n < lo || n > hi {
-		return nil, 0, false, false
-	}
-	if _, err := s.pv.AppendDecodeBlock(buf[:0], data[:size], &s.tab[k]); err != nil {
+	if s.pv.Decode(buf[:n], data, &s.tab[k]) != nil {
 		return nil, 0, false, false
 	}
 	return buf, n, false, true
@@ -476,7 +480,7 @@ func (s *simdDecoder) setTable(k, mode int, b []byte) (int, bool) {
 		}
 	}
 	// pivco accepts any length for a lone value.
-	if used == 1 && last != 1 || s.tab[k].SetLengths(&lens, pivco.FlatVertical) != nil {
+	if used == 1 && last != 1 || s.tab[k].SetLengths(&lens) != nil {
 		return 0, false
 	}
 	s.have[k] = true

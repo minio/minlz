@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	"github.com/klauspost/compress/s2"
+	"github.com/zeebo/xxh3"
 )
 
 // ErrCantSeek is returned if the stream cannot be seeked.
@@ -54,6 +55,7 @@ func NewReader(r io.Reader, opts ...ReaderOption) *Reader {
 	nr.maxBufSize = MaxEncodedLen(nr.maxBlock) + checksumSize
 	nr.maxBlockOrg = nr.maxBlock
 	nr.readHeader = nr.ignoreStreamID
+	nr.simd = nr.ignoreStreamID
 	nr.paramsOK = true
 	return &nr
 }
@@ -83,6 +85,7 @@ func ReaderMaxBlockSize(blockSize int) ReaderOption {
 // stream identifier at the beginning of the stream.
 // This can be used when serving a stream that has been forwarded to a specific point.
 // Validation of EOF length is also disabled.
+// SIMD chunks are accepted until a stream identifier is read.
 func ReaderIgnoreStreamIdentifier() ReaderOption {
 	return func(r *Reader) error {
 		r.ignoreStreamID = true
@@ -108,7 +111,7 @@ func ReaderUserChunkCB(id uint8, fn func(r io.Reader) error) ReaderOption {
 	}
 }
 
-// ReaderIgnoreCRC will make the reader skip CRC calculation and checks.
+// ReaderIgnoreCRC will make the reader skip CRC and hash calculation and checks.
 func ReaderIgnoreCRC() ReaderOption {
 	return func(r *Reader) error {
 		r.ignoreCRC = true
@@ -145,6 +148,7 @@ type Reader struct {
 	readHeader     bool
 	paramsOK       bool
 	snappyFrame    bool
+	simd           bool // the stream identifier allows SIMD chunks
 	ignoreStreamID bool
 	ignoreCRC      bool
 	allowFallback  bool
@@ -187,6 +191,7 @@ func (r *Reader) Reset(reader io.Reader) {
 	r.j = 0
 	r.blockStart = 0
 	r.readHeader = r.ignoreStreamID
+	r.simd = r.ignoreStreamID
 	r.wantEOF = false
 	r.snappyFrame = false
 	r.maxBlock = r.maxBlockOrg
@@ -201,6 +206,15 @@ func (r *Reader) readFull(p []byte, allowEOF bool) (ok bool) {
 		return false
 	}
 	return true
+}
+
+// streamSize returns the decoded size of the current stream, which an EOF chunk must match.
+// An EOF chunk with no stream identifier since the last one is an empty stream.
+func (r *Reader) streamSize() uint64 {
+	if !r.readHeader {
+		return 0
+	}
+	return uint64(r.blockStart + int64(r.j))
 }
 
 // skippable will skip n bytes.
@@ -307,7 +321,7 @@ func (r *Reader) Read(p []byte) (int, error) {
 			checksum := uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16 | uint32(buf[3])<<24
 			buf = buf[checksumSize:]
 
-			n, hdrLen, err := decodedLen(buf)
+			n, hdrLen, err := minLZChunkLen(buf)
 			if err != nil {
 				if debug {
 					fmt.Println("ERR: decodedLen:", err)
@@ -347,6 +361,40 @@ func (r *Reader) Read(p []byte) (int, error) {
 					fmt.Println("ERR: CRC mismatch")
 				}
 				r.err = ErrCRC
+				return 0, r.err
+			}
+			r.i, r.j = 0, n
+			continue
+
+		case chunkTypeMinLZSIMD:
+			r.blockStart += int64(r.j)
+			if !r.simd {
+				if debug {
+					fmt.Println("ERR: SIMD chunk without stream identifier flag")
+				}
+				r.err = ErrCorrupt
+				return 0, r.err
+			}
+			if !r.ensureBufferSize(chunkLen) {
+				if r.err == nil {
+					r.err = ErrTooLarge
+				}
+				return 0, r.err
+			}
+			buf := r.buf[:chunkLen]
+			if !r.readFull(buf, false) {
+				return 0, r.err
+			}
+			n, block, err := simdChunkHeader(buf, r.maxBlock)
+			if err != nil {
+				r.err = err
+				return 0, r.err
+			}
+			if n > len(r.decoded) {
+				r.decoded = make([]byte, n)
+			}
+			if err := decodeSIMDChunk(r.decoded[:n], buf, block, r.ignoreCRC); err != nil {
+				r.err = err
 				return 0, r.err
 			}
 			r.i, r.j = 0, n
@@ -482,15 +530,15 @@ func (r *Reader) Read(p []byte) (int, error) {
 						r.err = ErrCorrupt
 						return 0, r.err
 					}
-					if wantSize != uint64(r.blockStart+int64(r.j)) {
+					if wantSize != r.streamSize() {
 						if debug {
-							fmt.Println("ERR: EOF data length mismatch", wantSize, r.blockStart+int64(r.j))
+							fmt.Println("ERR: EOF data length mismatch", wantSize, r.streamSize())
 						}
 						r.err = ErrCorrupt
 						return 0, r.err
 					}
 					if debug {
-						fmt.Println("EOF length verified", wantSize, "==", r.blockStart+int64(r.j), r.blockStart, r.j)
+						fmt.Println("EOF length verified", wantSize, "==", r.streamSize(), r.blockStart, r.j)
 					}
 				}
 			}
@@ -520,6 +568,7 @@ func (r *Reader) Read(p []byte) (int, error) {
 				return 0, r.err
 			}
 			r.maxBlock = r.maxBlockOrg
+			r.simd = false
 			if string(r.tmp[:magicBodyLen]) != magicBodyS2 && string(r.tmp[:magicBodyLen]) != magicBodySnappy {
 				r.err = ErrUnsupported
 				return 0, r.err
@@ -802,7 +851,7 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 			checksum := uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16 | uint32(buf[3])<<24
 			buf = buf[checksumSize:]
 
-			n, hdrSize, err := decodedLen(buf)
+			n, hdrSize, err := minLZChunkLen(buf)
 			if err != nil {
 				r.err = err
 				return 0, r.err
@@ -852,6 +901,49 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 					}
 					writtenBlocks <- decoded
 					setErr(ErrCRC)
+					writeBuf(nil, entry)
+					return
+				}
+				writeBuf(decoded, entry)
+			}()
+			continue
+		case chunkTypeMinLZSIMD:
+			r.blockStart += int64(r.j)
+			r.j = 0
+			if !r.simd || chunkLen > r.maxBufSize {
+				r.err = ErrCorrupt
+				return 0, r.err
+			}
+			orgBuf := <-toRead
+			if cap(orgBuf) < chunkLen {
+				orgBuf = make([]byte, r.maxBufSize)
+			}
+			buf := orgBuf[:chunkLen]
+			if !r.readFull(buf, false) {
+				return 0, r.err
+			}
+			n, block, err := simdChunkHeader(buf, r.maxBlock)
+			if err != nil {
+				r.err = err
+				return 0, r.err
+			}
+			r.blockStart += int64(n)
+
+			wg.Add(1)
+			decoded := <-writtenBlocks
+			if cap(decoded) < n {
+				decoded = make([]byte, r.maxBlock)
+			}
+			entry := <-reUse
+			queue <- entry
+			go func() {
+				defer wg.Done()
+				decoded = decoded[:n]
+				err := decodeSIMDChunk(decoded, buf, block, r.ignoreCRC)
+				toRead <- orgBuf
+				if err != nil {
+					writtenBlocks <- decoded
+					setErr(err)
 					writeBuf(nil, entry)
 					return
 				}
@@ -927,9 +1019,9 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 						r.err = ErrCorrupt
 						return 0, r.err
 					}
-					if wantSize != uint64(r.blockStart+int64(r.j)) {
+					if wantSize != r.streamSize() {
 						if debug {
-							fmt.Println("ERR: EOF data length mismatch", wantSize, r.blockStart+int64(r.j))
+							fmt.Println("ERR: EOF data length mismatch", wantSize, r.streamSize())
 						}
 						r.err = ErrCorrupt
 						return 0, r.err
@@ -964,6 +1056,7 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 				return 0, r.err
 			}
 			r.maxBlock = r.maxBlockOrg
+			r.simd = false
 
 			if string(r.tmp[:magicBodyLen]) != magicBodyS2 && string(r.tmp[:magicBodyLen]) != magicBodySnappy {
 				r.err = ErrUnsupported
@@ -996,11 +1089,12 @@ func (r *Reader) minLzHeader(hdr []byte) (ok bool) {
 		r.err = ErrCorrupt
 		return false
 	}
-	// Upper 2 bits most be 0
-	if hdr[magicBodyLen-1]&(3<<6) != 0 {
+	// Upper bit must be 0
+	if hdr[magicBodyLen-1]&(1<<7) != 0 {
 		r.err = ErrCorrupt
 		return false
 	}
+	r.simd = hdr[magicBodyLen-1]&streamFlagSIMD != 0
 	n := hdr[magicBodyLen-1]&15 + 10
 	if n > maxBlockLog {
 		r.err = ErrCorrupt
@@ -1024,6 +1118,44 @@ func (r *Reader) minLzHeader(hdr []byte) (ok bool) {
 	r.snappyFrame = false
 	r.wantEOF = true
 	return true
+}
+
+// minLZChunkLen returns the decoded size and the header length of the block of a MinLZ chunk (0x02, 0x03).
+// The chunk type fixes the block type, so other types are corrupt, not unsupported as for the block API.
+func minLZChunkLen(block []byte) (blockLen, headerLen int, err error) {
+	v, n := binary.Uvarint(block)
+	if n <= 0 || v>>24 != 0 {
+		return 0, 0, ErrCorrupt
+	}
+	return int(v), n, nil
+}
+
+// simdChunkHeader returns the decoded size and the SIMD block of the payload of a SIMD chunk.
+func simdChunkHeader(payload []byte, maxBlock int) (int, []byte, error) {
+	if len(payload) < simdHashSize {
+		return 0, nil, ErrCorrupt
+	}
+	// As for minLZChunkLen, other block types are corrupt.
+	if v, _ := binary.Uvarint(payload[simdHashSize:]); v>>24 != simdBlockType {
+		return 0, nil, ErrCorrupt
+	}
+	n, block, err := simdHeader(payload[simdHashSize:])
+	if err == nil && n > maxBlock {
+		err = ErrTooLarge
+	}
+	return n, block, err
+}
+
+// decodeSIMDChunk decodes block, the SIMD block of payload, to dst, which must have the decoded size.
+// Unless ignoreHash is set, the decoded data must match the hash of payload.
+func decodeSIMDChunk(dst, payload, block []byte, ignoreHash bool) error {
+	if err := decodeSIMD(dst, block); err != nil {
+		return err
+	}
+	if !ignoreHash && xxh3.Hash(dst) != binary.LittleEndian.Uint64(payload) {
+		return ErrCRC
+	}
+	return nil
 }
 
 // Skip will skip n bytes forward in the decompressed output.
@@ -1098,7 +1230,7 @@ func (r *Reader) Skip(n int64) error {
 			checksum := uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16 | uint32(buf[3])<<24
 			buf = buf[checksumSize:]
 
-			dLen, hdrSize, err := decodedLen(buf)
+			dLen, hdrSize, err := minLZChunkLen(buf)
 			if err != nil {
 				r.err = err
 				return r.err
@@ -1127,6 +1259,44 @@ func (r *Reader) Skip(n int64) error {
 				}
 				if !r.ignoreCRC && crc(toCRC) != checksum {
 					r.err = ErrCRC
+					return r.err
+				}
+			} else {
+				// Skip block completely
+				n -= int64(dLen)
+				r.blockStart += int64(dLen)
+				dLen = 0
+			}
+			r.i, r.j = 0, dLen
+			continue
+		case chunkTypeMinLZSIMD:
+			r.blockStart += int64(r.j)
+			if !r.simd {
+				r.err = ErrCorrupt
+				return r.err
+			}
+			if !r.ensureBufferSize(chunkLen) {
+				if r.err == nil {
+					r.err = ErrTooLarge
+				}
+				return r.err
+			}
+			buf := r.buf[:chunkLen]
+			if !r.readFull(buf, false) {
+				return r.err
+			}
+			dLen, block, err := simdChunkHeader(buf, r.maxBlock)
+			if err != nil {
+				r.err = err
+				return r.err
+			}
+			// Check if destination is within this block
+			if int64(dLen) > n {
+				if len(r.decoded) < dLen {
+					r.decoded = make([]byte, dLen)
+				}
+				if err := decodeSIMDChunk(r.decoded[:dLen], buf, block, r.ignoreCRC); err != nil {
+					r.err = err
 					return r.err
 				}
 			} else {
@@ -1247,7 +1417,7 @@ func (r *Reader) Skip(n int64) error {
 						r.err = ErrCorrupt
 						return r.err
 					}
-					if wantSize != uint64(r.blockStart+int64(r.j)) {
+					if wantSize != r.streamSize() {
 						r.err = ErrCorrupt
 						return r.err
 					}
@@ -1278,6 +1448,7 @@ func (r *Reader) Skip(n int64) error {
 				return r.err
 			}
 			r.maxBlock = r.maxBlockOrg
+			r.simd = false
 			if string(r.tmp[:magicBodyLen]) != magicBodyS2 && string(r.tmp[:magicBodyLen]) != magicBodySnappy {
 				r.err = ErrUnsupported
 				return r.err
@@ -1314,6 +1485,7 @@ type ReadSeeker struct {
 // The original input must support the io.Seeker interface.
 // A custom index can be specified which will be used if supplied.
 // When using a custom index, it will not be read from the input stream.
+// After a seek through the index, SIMD chunks are accepted until a stream identifier is read.
 // The ReadAt position will affect regular reads and the current position of Seek.
 // So using Read after ReadAt will continue from where the ReadAt stopped.
 // No functions should be used concurrently.
@@ -1431,6 +1603,8 @@ func (r *ReadSeeker) Seek(offset int64, whence int) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	// The jump skips the identifier of the target stream; the hash still verifies SIMD chunks.
+	r.simd = true
 
 	r.i = r.j                     // Remove rest of current block.
 	r.blockStart = u - int64(r.j) // Adjust current block start for accounting.

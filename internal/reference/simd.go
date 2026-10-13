@@ -19,8 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"math/bits"
-
-	"github.com/klauspost/pivco"
 )
 
 // Streams of a chunk, in order, then the literals.
@@ -197,7 +195,7 @@ func complete(l []int) bool {
 }
 
 // readTable reads a table of stream k from tab, and returns it and its size.
-func readTable(k, mode int, tab []byte) (*pivco.Table, int, error) {
+func readTable(k, mode int, tab []byte) (*pivcoTable, int, error) {
 	s := &simdStreams[k]
 	var lens [256]int
 	var l []int
@@ -256,8 +254,8 @@ func readTable(k, mode int, tab []byte) (*pivco.Table, int, error) {
 	if kraft != 1<<maxCodeLen && (used != 1 || kraft != 1<<(maxCodeLen-1)) {
 		return nil, 0, fmt.Errorf("%s: table is not a complete code", s.name)
 	}
-	t := new(pivco.Table)
-	if err := t.SetLengths(&lens8, pivco.FlatVertical); err != nil {
+	t, err := newPivcoTable(&lens8)
+	if err != nil {
 		return nil, 0, fmt.Errorf("%s: %w", s.name, err)
 	}
 	return t, n, nil
@@ -270,8 +268,7 @@ type entryReader struct {
 
 type simdDecoder struct {
 	size   int
-	tables [streamLiterals + 1]*pivco.Table
-	pv     pivco.Decoder
+	tables [streamLiterals + 1]*pivcoTable
 	lits   []byte
 	l      int // literals used
 	out    []byte
@@ -355,7 +352,7 @@ func (d *simdDecoder) literals(sec []byte) error {
 	}
 	r := entryReader{data: sec[:len(sec)-int(t)], recs: sec[len(sec)-int(t):]}
 	for len(r.recs) > 0 {
-		v, err := d.stream(&r, streamLiterals)
+		v, err := d.stream(&r, streamLiterals, -1)
 		if err != nil {
 			return err
 		}
@@ -395,10 +392,27 @@ func (d *simdDecoder) chunks(sec []byte, limit int) error {
 		if i == maxChunks {
 			return fmt.Errorf("more than %d chunks", maxChunks)
 		}
+		// The tokens give the number of values of the next streams, and the literal lengths
+		// add escapes (SIMD_SPEC.md 4.1). -1 is a number stored with the values.
 		var c [streamOffsetBits + 1][]byte
+		counts := [streamOffsetBits + 1]int{streamTokens: -1, streamOffsetBits: -1}
 		for k := range c {
-			if c[k], err = d.stream(&r, k); err != nil {
+			if c[k], err = d.stream(&r, k, counts[k]); err != nil {
 				return err
+			}
+			for _, v := range c[k] {
+				switch k {
+				case streamTokens:
+					counts[streamLitLens] += int(v>>1) & 1
+					counts[streamOffsets] += int(v&1) ^ 1
+					if v>>2 == 33 {
+						counts[streamEscapes]++
+					}
+				case streamLitLens:
+					if v == 33 {
+						counts[streamEscapes]++
+					}
+				}
 			}
 		}
 		if err := d.chunk(c, flags, limit); err != nil {
@@ -412,7 +426,8 @@ func (d *simdDecoder) chunks(sec []byte, limit int) error {
 }
 
 // stream reads the next entry of r for stream k, and returns the stream's values.
-func (d *simdDecoder) stream(r *entryReader, k int) ([]byte, error) {
+// A pivco block holds count values, or stores their number if count is -1.
+func (d *simdDecoder) stream(r *entryReader, k, count int) ([]byte, error) {
 	s := &simdStreams[k]
 	e, n := binary.Uvarint(r.recs)
 	if n <= 0 {
@@ -446,8 +461,14 @@ func (d *simdDecoder) stream(r *entryReader, k int) ([]byte, error) {
 		d.tables[k] = t
 	}
 	if mode != modeStored {
+		if count < 0 {
+			if len(vals) < 2 {
+				return nil, fmt.Errorf("%s: number of values past the data", s.name)
+			}
+			count, vals = int(binary.LittleEndian.Uint16(vals)), vals[2:]
+		}
 		var err error
-		if vals, err = d.pv.AppendDecodeBlock(nil, vals, d.tables[k]); err != nil {
+		if vals, err = d.tables[k].decode(vals, count); err != nil {
 			return nil, fmt.Errorf("%s: %w", s.name, err)
 		}
 	}

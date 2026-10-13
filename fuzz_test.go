@@ -125,6 +125,7 @@ func FuzzEncodingBlocks(f *testing.F) {
 
 func FuzzDecodeBlock(f *testing.F) {
 	enc := NewWriter(nil, WriterBlockSize(8<<10))
+	encSIMD := NewWriter(nil, WriterBlockSize(8<<10), WriterLevel(LevelFastestSIMD))
 	addCompressed := func(b []byte) {
 		for _, l := range []int{LevelBalanced, LevelBalancedSIMD, LevelSmallestSIMD} {
 			if b2, err := Encode(nil, b, l); err == nil {
@@ -132,11 +133,13 @@ func FuzzDecodeBlock(f *testing.F) {
 			}
 		}
 		f.Add(s2.EncodeBetter(nil, b))
-		var buf bytes.Buffer
-		enc.Reset(&buf)
-		enc.Write(b)
-		enc.Close()
-		f.Add(buf.Bytes())
+		for _, e := range []*Writer{enc, encSIMD} {
+			var buf bytes.Buffer
+			e.Reset(&buf)
+			e.Write(b)
+			e.Close()
+			f.Add(buf.Bytes())
+		}
 	}
 	fuzz.ReturnFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, addCompressed)
 	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, addCompressed)
@@ -276,22 +279,24 @@ func FuzzDecodeSIMD(f *testing.F) {
 		}
 		src := append(binary.AppendUvarint([]byte{0}, simdBlockType<<24|uint64(n)), body...)
 		want, wantErr := reference.DecodeSIMDBlock(src)
-		// Output must not depend on what dst held before.
-		for _, fill := range []byte{0, 0xfe} {
-			dst := bytes.Repeat([]byte{fill}, n+64)
-			got, err := Decode(dst[:0:n], src)
-			if (err == nil) != (wantErr == nil) {
-				t.Fatalf("err: %v, reference: %v", err, wantErr)
-			}
-			if err == nil && !bytes.Equal(got, want) {
-				t.Fatal("reference mismatch")
-			}
-			for _, v := range dst[n:] {
-				if v != fill {
-					t.Fatal("dst overwritten beyond cap")
+		simdTiers(t, func(t *testing.T) {
+			// Output must not depend on what dst held before.
+			for _, fill := range []byte{0, 0xfe} {
+				dst := bytes.Repeat([]byte{fill}, n+64)
+				got, err := Decode(dst[:0:n], src)
+				if (err == nil) != (wantErr == nil) {
+					t.Fatalf("err: %v, reference: %v", err, wantErr)
+				}
+				if err == nil && !bytes.Equal(got, want) {
+					t.Fatal("reference mismatch")
+				}
+				for _, v := range dst[n:] {
+					if v != fill {
+						t.Fatal("dst overwritten beyond cap")
+					}
 				}
 			}
-		}
+		})
 	})
 }
 
@@ -316,6 +321,9 @@ func FuzzStreamEncode(f *testing.F) {
 			encoders = append(encoders, NewWriter(nil, WriterLevel(l), WriterConcurrency(2), WriterBlockSize(128<<10), WriterPadding(1<<10), WriterAddIndex(true)))
 		}
 		break
+	}
+	for i, l := range simdLevels {
+		encoders = append(encoders, NewWriter(nil, WriterLevel(l), WriterConcurrency(1+i&1), WriterBlockSize(64<<10)))
 	}
 	dec := NewReader(nil, ReaderFallback(false))
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -376,6 +384,7 @@ func FuzzStreamEncode(f *testing.F) {
 func FuzzStreamDecode(f *testing.F) {
 	enc := NewWriter(nil, WriterBlockSize(8<<10))
 	encu := NewWriter(nil, WriterBlockSize(8<<10), WriterUncompressed(), WriterAddIndex(true))
+	encSIMD := NewWriter(nil, WriterBlockSize(8<<10), WriterLevel(LevelBalancedSIMD), WriterAddIndex(true))
 	addCompressed := func(b []byte) {
 		var buf bytes.Buffer
 		enc.Reset(&buf)
@@ -383,9 +392,14 @@ func FuzzStreamDecode(f *testing.F) {
 		enc.Close()
 		f.Add(buf.Bytes())
 		buf = bytes.Buffer{}
+		encSIMD.Reset(&buf)
+		encSIMD.EncodeBuffer(b)
+		encSIMD.Close()
+		f.Add(buf.Bytes())
+		buf = bytes.Buffer{}
 		encu.Reset(&buf)
-		enc.EncodeBuffer(b)
-		enc.Close()
+		encu.EncodeBuffer(b)
+		encu.Close()
 		f.Add(buf.Bytes())
 	}
 	type readerOnly struct {

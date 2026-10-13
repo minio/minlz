@@ -679,6 +679,17 @@ func decodedLen(src []byte) (blockLen, headerLen int, err error) {
 // The dst and src must not overlap. It is valid to pass a nil dst.
 func DecodeDebug(dst, src []byte) (ok bool) {
 	fmt.Println("")
+	if len(src) > 1 && src[0] == 0 {
+		if v, n := binary.Uvarint(src[1:]); n > 0 && v>>24 != 0 {
+			if v>>24 != 1 {
+				fmt.Printf("Block type %d (reserved)\n", v>>24)
+				return false
+			}
+			fmt.Printf("Block type %d (SIMD): %d -> %d bytes. Operations are not printed.\n", v>>24, len(src), v&(1<<24-1))
+			_, err := minlz.Decode(dst, src)
+			return err == nil
+		}
+	}
 	isMLZ, lits, block, dLen, err := isMinLZ(src)
 	if err != nil {
 		return false

@@ -28021,3 +28021,1151 @@ simdOffStatsAVX2_loop:
 	MOVQ         AX, zeros+24(FP)
 	VZEROUPPER
 	RET
+
+DATA simdPermTab<>+0(SB)/8, $0x0000000000000000
+DATA simdPermTab<>+8(SB)/8, $0x0000000000000000
+DATA simdPermTab<>+16(SB)/8, $0x0000000000000000
+DATA simdPermTab<>+24(SB)/8, $0x0000000000000000
+DATA simdPermTab<>+32(SB)/8, $0x0000000000000000
+DATA simdPermTab<>+40(SB)/8, $0x0000000000000000
+DATA simdPermTab<>+48(SB)/8, $0x0000000000000000
+DATA simdPermTab<>+56(SB)/8, $0x0000000000000000
+DATA simdPermTab<>+64(SB)/8, $0x0100010001000100
+DATA simdPermTab<>+72(SB)/8, $0x0100010001000100
+DATA simdPermTab<>+80(SB)/8, $0x0100010001000100
+DATA simdPermTab<>+88(SB)/8, $0x0100010001000100
+DATA simdPermTab<>+96(SB)/8, $0x0100020100020100
+DATA simdPermTab<>+104(SB)/8, $0x0002010002010002
+DATA simdPermTab<>+112(SB)/8, $0x0201000201000201
+DATA simdPermTab<>+120(SB)/8, $0x0100020100020100
+DATA simdPermTab<>+128(SB)/8, $0x0302010003020100
+DATA simdPermTab<>+136(SB)/8, $0x0302010003020100
+DATA simdPermTab<>+144(SB)/8, $0x0302010003020100
+DATA simdPermTab<>+152(SB)/8, $0x0302010003020100
+DATA simdPermTab<>+160(SB)/8, $0x0201000403020100
+DATA simdPermTab<>+168(SB)/8, $0x0004030201000403
+DATA simdPermTab<>+176(SB)/8, $0x0302010004030201
+DATA simdPermTab<>+184(SB)/8, $0x0100040302010004
+DATA simdPermTab<>+192(SB)/8, $0x0100050403020100
+DATA simdPermTab<>+200(SB)/8, $0x0302010005040302
+DATA simdPermTab<>+208(SB)/8, $0x0504030201000504
+DATA simdPermTab<>+216(SB)/8, $0x0100050403020100
+DATA simdPermTab<>+224(SB)/8, $0x0006050403020100
+DATA simdPermTab<>+232(SB)/8, $0x0100060504030201
+DATA simdPermTab<>+240(SB)/8, $0x0201000605040302
+DATA simdPermTab<>+248(SB)/8, $0x0302010006050403
+DATA simdPermTab<>+256(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+264(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+272(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+280(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+288(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+296(SB)/8, $0x0605040302010008
+DATA simdPermTab<>+304(SB)/8, $0x0504030201000807
+DATA simdPermTab<>+312(SB)/8, $0x0403020100080706
+DATA simdPermTab<>+320(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+328(SB)/8, $0x0504030201000908
+DATA simdPermTab<>+336(SB)/8, $0x0302010009080706
+DATA simdPermTab<>+344(SB)/8, $0x0100090807060504
+DATA simdPermTab<>+352(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+360(SB)/8, $0x04030201000a0908
+DATA simdPermTab<>+368(SB)/8, $0x01000a0908070605
+DATA simdPermTab<>+376(SB)/8, $0x0908070605040302
+DATA simdPermTab<>+384(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+392(SB)/8, $0x030201000b0a0908
+DATA simdPermTab<>+400(SB)/8, $0x0b0a090807060504
+DATA simdPermTab<>+408(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+416(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+424(SB)/8, $0x0201000c0b0a0908
+DATA simdPermTab<>+432(SB)/8, $0x0a09080706050403
+DATA simdPermTab<>+440(SB)/8, $0x0504030201000c0b
+DATA simdPermTab<>+448(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+456(SB)/8, $0x01000d0c0b0a0908
+DATA simdPermTab<>+464(SB)/8, $0x0908070605040302
+DATA simdPermTab<>+472(SB)/8, $0x030201000d0c0b0a
+DATA simdPermTab<>+480(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+488(SB)/8, $0x000e0d0c0b0a0908
+DATA simdPermTab<>+496(SB)/8, $0x0807060504030201
+DATA simdPermTab<>+504(SB)/8, $0x01000e0d0c0b0a09
+DATA simdPermTab<>+512(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+520(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+528(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+536(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+544(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+552(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+560(SB)/8, $0x0605040302010010
+DATA simdPermTab<>+568(SB)/8, $0x0e0d0c0b0a090807
+DATA simdPermTab<>+576(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+584(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+592(SB)/8, $0x0504030201001110
+DATA simdPermTab<>+600(SB)/8, $0x0d0c0b0a09080706
+DATA simdPermTab<>+608(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+616(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+624(SB)/8, $0x0403020100121110
+DATA simdPermTab<>+632(SB)/8, $0x0c0b0a0908070605
+DATA simdPermTab<>+640(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+648(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+656(SB)/8, $0x0302010013121110
+DATA simdPermTab<>+664(SB)/8, $0x0b0a090807060504
+DATA simdPermTab<>+672(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+680(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+688(SB)/8, $0x0201001413121110
+DATA simdPermTab<>+696(SB)/8, $0x0a09080706050403
+DATA simdPermTab<>+704(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+712(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+720(SB)/8, $0x0100151413121110
+DATA simdPermTab<>+728(SB)/8, $0x0908070605040302
+DATA simdPermTab<>+736(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+744(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+752(SB)/8, $0x0016151413121110
+DATA simdPermTab<>+760(SB)/8, $0x0807060504030201
+DATA simdPermTab<>+768(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+776(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+784(SB)/8, $0x1716151413121110
+DATA simdPermTab<>+792(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+800(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+808(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+816(SB)/8, $0x1716151413121110
+DATA simdPermTab<>+824(SB)/8, $0x0605040302010018
+DATA simdPermTab<>+832(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+840(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+848(SB)/8, $0x1716151413121110
+DATA simdPermTab<>+856(SB)/8, $0x0504030201001918
+DATA simdPermTab<>+864(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+872(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+880(SB)/8, $0x1716151413121110
+DATA simdPermTab<>+888(SB)/8, $0x04030201001a1918
+DATA simdPermTab<>+896(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+904(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+912(SB)/8, $0x1716151413121110
+DATA simdPermTab<>+920(SB)/8, $0x030201001b1a1918
+DATA simdPermTab<>+928(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+936(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+944(SB)/8, $0x1716151413121110
+DATA simdPermTab<>+952(SB)/8, $0x0201001c1b1a1918
+DATA simdPermTab<>+960(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+968(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+976(SB)/8, $0x1716151413121110
+DATA simdPermTab<>+984(SB)/8, $0x01001d1c1b1a1918
+DATA simdPermTab<>+992(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+1000(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+1008(SB)/8, $0x1716151413121110
+DATA simdPermTab<>+1016(SB)/8, $0x001e1d1c1b1a1918
+DATA simdPermTab<>+1024(SB)/8, $0x0706050403020100
+DATA simdPermTab<>+1032(SB)/8, $0x0f0e0d0c0b0a0908
+DATA simdPermTab<>+1040(SB)/8, $0x1716151413121110
+DATA simdPermTab<>+1048(SB)/8, $0x1f1e1d1c1b1a1918
+GLOBL simdPermTab<>(SB), RODATA|NOPTR, $1056
+
+DATA simdLowByteTab<>+0(SB)/8, $0x0404040400000000
+DATA simdLowByteTab<>+8(SB)/8, $0x0c0c0c0c08080808
+GLOBL simdLowByteTab<>(SB), RODATA|NOPTR, $16
+
+DATA simdIotaTab<>+0(SB)/8, $0x0000000100000000
+DATA simdIotaTab<>+8(SB)/8, $0x0000000300000002
+DATA simdIotaTab<>+16(SB)/8, $0x0000000500000004
+DATA simdIotaTab<>+24(SB)/8, $0x0000000700000006
+DATA simdIotaTab<>+32(SB)/8, $0x0000000900000008
+DATA simdIotaTab<>+40(SB)/8, $0x0000000b0000000a
+DATA simdIotaTab<>+48(SB)/8, $0x0000000d0000000c
+DATA simdIotaTab<>+56(SB)/8, $0x0000000f0000000e
+GLOBL simdIotaTab<>(SB), RODATA|NOPTR, $64
+
+// func simdExecAVX512(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, nraw int, esc *byte, n int, st *[4]int)
+// Requires: AVX, AVX512BW, AVX512F, AVX512VBMI, AVX512VBMI2, AVX512VL, BMI2, CMOV, POPCNT
+TEXT ·simdExecAVX512(SB), NOSPLIT, $336-80
+	MOVQ            n+64(FP), AX
+	TESTQ           AX, AX
+	JZ              simdExecAVX512_ret
+	MOVQ            dst+0(FP), CX
+	MOVQ            lits+8(FP), DX
+	MOVQ            tok+16(FP), BX
+	MOVQ            st+72(FP), SI
+	MOVQ            (SI), DI
+	ADDQ            8(SI), DX
+	VPBROADCASTD    16(SI), Z0
+	ADDQ            BX, AX
+	MOVQ            AX, 320(SP)
+	XORQ            AX, AX
+	MOVQ            AX, 328(SP)
+	VPXORD          Z1, Z1, Z1
+	VPTERNLOGD      $0xff, Z2, Z2, Z2
+	MOVL            $0x01010101, AX
+	VPBROADCASTD    AX, Z3
+	MOVL            $0x02020202, AX
+	VPBROADCASTD    AX, Z4
+	MOVL            $0x1f1f1f1f, AX
+	VPBROADCASTD    AX, Z5
+	MOVL            $0x00000007, AX
+	VPBROADCASTD    AX, Z6
+	MOVL            $0x00000008, AX
+	VPBROADCASTD    AX, Z7
+	MOVL            $0x0000000f, AX
+	VPBROADCASTD    AX, Z8
+	VMOVDQU32       simdIotaTab<>+0(SB), Z9
+	MOVL            $0x0000ff00, AX
+	KMOVW           AX, K1
+	VMOVDQA32.Z     Z4, K1, Z10
+	MOVL            $0x03020100, AX
+	VPBROADCASTD    AX, Z11
+	VBROADCASTI32X4 simdLowByteTab<>+0(SB), Z12
+
+simdExecAVX512_batch:
+	MOVQ          320(SP), AX
+	SUBQ          BX, AX
+	MOVL          $0x00000040, SI
+	CMPQ          AX, SI
+	CMOVQGT       SI, AX
+	MOVQ          $-1, SI
+	BZHIQ         AX, SI, SI
+	KMOVQ         SI, K2
+	VMOVDQU8.Z    (BX), K2, Z13
+	VPTESTMB      Z4, Z13, K1
+	VPTESTNMB     Z3, Z13, K2, K2
+	KMOVQ         K1, SI
+	POPCNTQ       SI, SI
+	MOVQ          ll+24(FP), R8
+	VPEXPANDB.Z   (R8), K1, Z13
+	ADDQ          SI, R8
+	MOVQ          R8, ll+24(FP)
+	VMOVDQU64     Z13, (SP)
+	KMOVQ         K2, SI
+	POPCNTQ       SI, SI
+	MOVQ          offc+32(FP), R8
+	VPEXPANDB.Z   (R8), K2, Z13
+	ADDQ          SI, R8
+	MOVQ          R8, offc+32(FP)
+	VPSRLW        $0x03, Z13, Z15
+	VPANDD        Z5, Z15, Z15
+	VPSUBUSB      Z3, Z15, Z14
+	VMOVDQA64     Z14, Z15
+	VPSLLQ        $0x08, Z15, Z17
+	VPADDB        Z17, Z15, Z15
+	VPSLLQ        $0x10, Z15, Z17
+	VPADDB        Z17, Z15, Z15
+	VPSLLQ        $0x20, Z15, Z17
+	VPADDB        Z17, Z15, Z15
+	VPSUBB        Z14, Z15, Z15
+	VPSADBW       Z1, Z14, Z16
+	VMOVDQA64     Z16, Z18
+	VALIGNQ       $0x07, Z1, Z18, Z17
+	VPADDQ        Z17, Z18, Z18
+	VALIGNQ       $0x06, Z1, Z18, Z17
+	VPADDQ        Z17, Z18, Z18
+	VALIGNQ       $0x04, Z1, Z18, Z17
+	VPADDQ        Z17, Z18, Z18
+	VPSUBQ        Z16, Z18, Z16
+	VPBROADCASTQ  328(SP), Z17
+	VPADDQ        Z17, Z16, Z16
+	VALIGNQ       $0x07, Z18, Z18, Z17
+	VMOVQ         X17, SI
+	ADDQ          SI, 328(SP)
+	VMOVDQA64     Z2, Z17
+	VMOVDQA32     Z9, K2, Z17
+	VALIGND       $0x0f, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0e, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0c, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x08, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VPMOVZXBD     X13, Z18
+	VPMOVZXBD     X14, Z19
+	VPMOVZXBD     X15, Z20
+	VPERMD        Z16, Z10, Z21
+	VPADDD        Z21, Z20, Z20
+	VMOVQ         X16, R8
+	SHRQ          $0x03, R8
+	MOVQ          nraw+48(FP), SI
+	SUBQ          R8, SI
+	MOVL          $0x00000040, R9
+	CMPQ          SI, R9
+	CMOVQGT       R9, SI
+	MOVQ          $-1, R9
+	BZHIQ         SI, R9, R9
+	KMOVQ         R9, K1
+	MOVQ          raw+40(FP), R9
+	VMOVDQU8.Z    (R9)(R8*1), K1, Z21
+	SHLQ          $0x03, R8
+	VPBROADCASTD  R8, Z22
+	VPSUBD        Z22, Z20, Z22
+	VPSRLD        $0x03, Z22, Z22
+	VPSHUFB       Z12, Z22, Z22
+	VPADDB        Z11, Z22, Z22
+	VPERMB        Z21, Z22, Z21
+	VPANDD        Z6, Z20, Z20
+	VPSRLVD       Z20, Z21, Z21
+	VPSLLVD       Z19, Z2, Z20
+	VPANDND       Z21, Z20, Z21
+	VPMINUD       Z7, Z18, Z20
+	VPTERNLOGD    $0xd8, Z6, Z18, Z20
+	VPSLLVD       Z19, Z20, Z20
+	VPADDD        Z21, Z20, Z21
+	VPERMI2D      Z0, Z21, Z17
+	VMOVDQU32     Z17, 64(SP)
+	VPERMD        Z17, Z8, Z0
+	CMPQ          AX, $0x10
+	JBE           simdExecAVX512_exec
+	KSHIFTRQ      $0x10, K2, K1
+	VMOVDQA64     Z2, Z17
+	VMOVDQA32     Z9, K1, Z17
+	VALIGND       $0x0f, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0e, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0c, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x08, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VEXTRACTI32X4 $0x01, Z13, X18
+	VPMOVZXBD     X18, Z18
+	VEXTRACTI32X4 $0x01, Z14, X19
+	VPMOVZXBD     X19, Z19
+	VEXTRACTI32X4 $0x01, Z15, X20
+	VPMOVZXBD     X20, Z20
+	VALIGNQ       $0x02, Z16, Z16, Z21
+	VPERMD        Z21, Z10, Z22
+	VPADDD        Z22, Z20, Z20
+	VMOVQ         X21, R8
+	SHRQ          $0x03, R8
+	MOVQ          nraw+48(FP), SI
+	SUBQ          R8, SI
+	MOVL          $0x00000040, R9
+	CMPQ          SI, R9
+	CMOVQGT       R9, SI
+	MOVQ          $-1, R9
+	BZHIQ         SI, R9, R9
+	KMOVQ         R9, K1
+	MOVQ          raw+40(FP), R9
+	VMOVDQU8.Z    (R9)(R8*1), K1, Z21
+	SHLQ          $0x03, R8
+	VPBROADCASTD  R8, Z22
+	VPSUBD        Z22, Z20, Z22
+	VPSRLD        $0x03, Z22, Z22
+	VPSHUFB       Z12, Z22, Z22
+	VPADDB        Z11, Z22, Z22
+	VPERMB        Z21, Z22, Z21
+	VPANDD        Z6, Z20, Z20
+	VPSRLVD       Z20, Z21, Z21
+	VPSLLVD       Z19, Z2, Z20
+	VPANDND       Z21, Z20, Z21
+	VPMINUD       Z7, Z18, Z20
+	VPTERNLOGD    $0xd8, Z6, Z18, Z20
+	VPSLLVD       Z19, Z20, Z20
+	VPADDD        Z21, Z20, Z21
+	VPERMI2D      Z0, Z21, Z17
+	VMOVDQU32     Z17, 128(SP)
+	VPERMD        Z17, Z8, Z0
+	CMPQ          AX, $0x20
+	JBE           simdExecAVX512_exec
+	KSHIFTRQ      $0x20, K2, K1
+	VMOVDQA64     Z2, Z17
+	VMOVDQA32     Z9, K1, Z17
+	VALIGND       $0x0f, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0e, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0c, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x08, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VEXTRACTI32X4 $0x02, Z13, X18
+	VPMOVZXBD     X18, Z18
+	VEXTRACTI32X4 $0x02, Z14, X19
+	VPMOVZXBD     X19, Z19
+	VEXTRACTI32X4 $0x02, Z15, X20
+	VPMOVZXBD     X20, Z20
+	VALIGNQ       $0x04, Z16, Z16, Z21
+	VPERMD        Z21, Z10, Z22
+	VPADDD        Z22, Z20, Z20
+	VMOVQ         X21, R8
+	SHRQ          $0x03, R8
+	MOVQ          nraw+48(FP), SI
+	SUBQ          R8, SI
+	MOVL          $0x00000040, R9
+	CMPQ          SI, R9
+	CMOVQGT       R9, SI
+	MOVQ          $-1, R9
+	BZHIQ         SI, R9, R9
+	KMOVQ         R9, K1
+	MOVQ          raw+40(FP), R9
+	VMOVDQU8.Z    (R9)(R8*1), K1, Z21
+	SHLQ          $0x03, R8
+	VPBROADCASTD  R8, Z22
+	VPSUBD        Z22, Z20, Z22
+	VPSRLD        $0x03, Z22, Z22
+	VPSHUFB       Z12, Z22, Z22
+	VPADDB        Z11, Z22, Z22
+	VPERMB        Z21, Z22, Z21
+	VPANDD        Z6, Z20, Z20
+	VPSRLVD       Z20, Z21, Z21
+	VPSLLVD       Z19, Z2, Z20
+	VPANDND       Z21, Z20, Z21
+	VPMINUD       Z7, Z18, Z20
+	VPTERNLOGD    $0xd8, Z6, Z18, Z20
+	VPSLLVD       Z19, Z20, Z20
+	VPADDD        Z21, Z20, Z21
+	VPERMI2D      Z0, Z21, Z17
+	VMOVDQU32     Z17, 192(SP)
+	VPERMD        Z17, Z8, Z0
+	CMPQ          AX, $0x30
+	JBE           simdExecAVX512_exec
+	KSHIFTRQ      $0x30, K2, K1
+	VMOVDQA64     Z2, Z17
+	VMOVDQA32     Z9, K1, Z17
+	VALIGND       $0x0f, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0e, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0c, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x08, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VEXTRACTI32X4 $0x03, Z13, X13
+	VPMOVZXBD     X13, Z13
+	VEXTRACTI32X4 $0x03, Z14, X14
+	VPMOVZXBD     X14, Z14
+	VEXTRACTI32X4 $0x03, Z15, X15
+	VPMOVZXBD     X15, Z15
+	VALIGNQ       $0x06, Z16, Z16, Z16
+	VPERMD        Z16, Z10, Z18
+	VPADDD        Z18, Z15, Z15
+	VMOVQ         X16, R8
+	SHRQ          $0x03, R8
+	MOVQ          nraw+48(FP), SI
+	SUBQ          R8, SI
+	MOVL          $0x00000040, R9
+	CMPQ          SI, R9
+	CMOVQGT       R9, SI
+	MOVQ          $-1, R9
+	BZHIQ         SI, R9, R9
+	KMOVQ         R9, K1
+	MOVQ          raw+40(FP), R9
+	VMOVDQU8.Z    (R9)(R8*1), K1, Z16
+	SHLQ          $0x03, R8
+	VPBROADCASTD  R8, Z18
+	VPSUBD        Z18, Z15, Z18
+	VPSRLD        $0x03, Z18, Z18
+	VPSHUFB       Z12, Z18, Z18
+	VPADDB        Z11, Z18, Z18
+	VPERMB        Z16, Z18, Z16
+	VPANDD        Z6, Z15, Z15
+	VPSRLVD       Z15, Z16, Z16
+	VPSLLVD       Z14, Z2, Z15
+	VPANDND       Z16, Z15, Z16
+	VPMINUD       Z7, Z13, Z15
+	VPTERNLOGD    $0xd8, Z6, Z13, Z15
+	VPSLLVD       Z14, Z15, Z15
+	VPADDD        Z16, Z15, Z16
+	VPERMI2D      Z0, Z16, Z17
+	VMOVDQU32     Z17, 256(SP)
+	VPERMD        Z17, Z8, Z0
+
+simdExecAVX512_exec:
+	XORQ    SI, SI
+	PCALIGN $0x20
+
+simdExecAVX512_loop:
+	MOVBQZX   (BX)(SI*1), R8
+	VMOVDQU64 (DX), Y13
+	VMOVDQU64 Y13, (CX)(DI*1)
+	MOVBQZX   (SP)(SI*1), R9
+	MOVL      64(SP)(SI*4), R10
+	CMPQ      R9, $0x21
+	JE        simdExecAVX512_litlong
+
+simdExecAVX512_litback:
+	ADDQ      R9, DI
+	ADDQ      R9, DX
+	CMPQ      R10, DI
+	CMOVQHI   DI, R10
+	MOVQ      DI, R9
+	SUBQ      R10, R9
+	SHRQ      $0x02, R8
+	CMPQ      R10, R8
+	JB        simdExecAVX512_pattern
+	VMOVDQU64 (CX)(R9*1), Y13
+	VMOVDQU64 Y13, (CX)(DI*1)
+
+simdExecAVX512_check:
+	CMPQ R8, $0x21
+	JE   simdExecAVX512_long
+
+simdExecAVX512_next:
+	ADDQ  R8, DI
+	INCQ  SI
+	CMPQ  SI, AX
+	JB    simdExecAVX512_loop
+	ADDQ  AX, BX
+	CMPQ  BX, 320(SP)
+	JB    simdExecAVX512_batch
+	MOVQ  st+72(FP), AX
+	MOVQ  DI, (AX)
+	MOVQ  lits+8(FP), CX
+	SUBQ  CX, DX
+	MOVQ  DX, 8(AX)
+	VMOVD X0, CX
+	MOVQ  CX, 16(AX)
+	VZEROUPPER
+
+simdExecAVX512_ret:
+	RET
+
+simdExecAVX512_pattern:
+	LEAQ      simdPermTab<>+0(SB), R11
+	SHLQ      $0x05, R10
+	VMOVDQU64 (R11)(R10*1), Y13
+	VPERMB    (CX)(R9*1), Y13, Y13
+	VMOVDQU64 Y13, (CX)(DI*1)
+	JMP       simdExecAVX512_check
+
+simdExecAVX512_litlong:
+	MOVQ    esc+56(FP), R9
+	MOVBQZX (R9), R11
+	INCQ    R9
+	MOVQ    R9, esc+56(FP)
+	LEAQ    33(R11), R9
+	ADDQ    $0x20, R11
+	SHRQ    $0x05, R11
+	LEAQ    32(DX), R12
+	LEAQ    32(DI), R13
+
+simdExecAVX512_litloop:
+	VMOVDQU64 (R12), Y13
+	VMOVDQU64 Y13, (CX)(R13*1)
+	ADDQ      $0x20, R12
+	ADDQ      $0x20, R13
+	DECQ      R11
+	JNZ       simdExecAVX512_litloop
+	JMP       simdExecAVX512_litback
+
+simdExecAVX512_long:
+	MOVQ DI, R8
+	SUBQ R9, R8
+	CMPQ R8, $0x20
+	JAE  simdExecAVX512_longok
+	MOVQ st+72(FP), R8
+	MOVQ $0x00000001, 24(R8)
+
+simdExecAVX512_longok:
+	MOVQ    esc+56(FP), R8
+	MOVBQZX (R8), R10
+	INCQ    R8
+	MOVQ    R8, esc+56(FP)
+	LEAQ    33(R10), R8
+	ADDQ    $0x20, R10
+	SHRQ    $0x05, R10
+	LEAQ    32(R9), R9
+	LEAQ    32(DI), R11
+
+simdExecAVX512_longloop:
+	VMOVDQU64 (CX)(R9*1), Y13
+	VMOVDQU64 Y13, (CX)(R11*1)
+	ADDQ      $0x20, R9
+	ADDQ      $0x20, R11
+	DECQ      R10
+	JNZ       simdExecAVX512_longloop
+	JMP       simdExecAVX512_next
+
+// func simdExecDeltaAVX512(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, nraw int, esc *byte, n int, st *[4]int)
+// Requires: AVX, AVX2, AVX512BW, AVX512F, AVX512VBMI, AVX512VBMI2, AVX512VL, BMI2, CMOV, POPCNT
+TEXT ·simdExecDeltaAVX512(SB), NOSPLIT, $336-80
+	MOVQ            n+64(FP), AX
+	TESTQ           AX, AX
+	JZ              simdExecDeltaAVX512_ret
+	MOVQ            dst+0(FP), CX
+	MOVQ            lits+8(FP), DX
+	MOVQ            tok+16(FP), BX
+	MOVQ            st+72(FP), SI
+	MOVQ            (SI), DI
+	ADDQ            8(SI), DX
+	VPBROADCASTD    16(SI), Z0
+	MOVQ            16(SI), SI
+	ADDQ            BX, AX
+	MOVQ            AX, 320(SP)
+	XORQ            AX, AX
+	MOVQ            AX, 328(SP)
+	VPXORD          Z1, Z1, Z1
+	VPTERNLOGD      $0xff, Z2, Z2, Z2
+	MOVL            $0x01010101, AX
+	VPBROADCASTD    AX, Z3
+	MOVL            $0x02020202, AX
+	VPBROADCASTD    AX, Z4
+	MOVL            $0x1f1f1f1f, AX
+	VPBROADCASTD    AX, Z5
+	MOVL            $0x00000007, AX
+	VPBROADCASTD    AX, Z6
+	MOVL            $0x00000008, AX
+	VPBROADCASTD    AX, Z7
+	MOVL            $0x0000000f, AX
+	VPBROADCASTD    AX, Z8
+	VMOVDQU32       simdIotaTab<>+0(SB), Z9
+	MOVL            $0x0000ff00, AX
+	KMOVW           AX, K1
+	VMOVDQA32.Z     Z4, K1, Z10
+	MOVL            $0x03020100, AX
+	VPBROADCASTD    AX, Z11
+	VBROADCASTI32X4 simdLowByteTab<>+0(SB), Z12
+
+simdExecDeltaAVX512_batch:
+	MOVQ          320(SP), AX
+	SUBQ          BX, AX
+	MOVL          $0x00000040, R8
+	CMPQ          AX, R8
+	CMOVQGT       R8, AX
+	MOVQ          $-1, R8
+	BZHIQ         AX, R8, R8
+	KMOVQ         R8, K2
+	VMOVDQU8.Z    (BX), K2, Z13
+	VPTESTMB      Z4, Z13, K1
+	VPTESTNMB     Z3, Z13, K2, K2
+	KMOVQ         K1, R8
+	POPCNTQ       R8, R8
+	MOVQ          ll+24(FP), R9
+	VPEXPANDB.Z   (R9), K1, Z13
+	ADDQ          R8, R9
+	MOVQ          R9, ll+24(FP)
+	VMOVDQU64     Z13, (SP)
+	KMOVQ         K2, R8
+	POPCNTQ       R8, R8
+	MOVQ          offc+32(FP), R9
+	VPEXPANDB.Z   (R9), K2, Z13
+	ADDQ          R8, R9
+	MOVQ          R9, offc+32(FP)
+	VPSRLW        $0x03, Z13, Z15
+	VPANDD        Z5, Z15, Z15
+	VPSUBUSB      Z3, Z15, Z14
+	VMOVDQA64     Z14, Z15
+	VPSLLQ        $0x08, Z15, Z17
+	VPADDB        Z17, Z15, Z15
+	VPSLLQ        $0x10, Z15, Z17
+	VPADDB        Z17, Z15, Z15
+	VPSLLQ        $0x20, Z15, Z17
+	VPADDB        Z17, Z15, Z15
+	VPSUBB        Z14, Z15, Z15
+	VPSADBW       Z1, Z14, Z16
+	VMOVDQA64     Z16, Z18
+	VALIGNQ       $0x07, Z1, Z18, Z17
+	VPADDQ        Z17, Z18, Z18
+	VALIGNQ       $0x06, Z1, Z18, Z17
+	VPADDQ        Z17, Z18, Z18
+	VALIGNQ       $0x04, Z1, Z18, Z17
+	VPADDQ        Z17, Z18, Z18
+	VPSUBQ        Z16, Z18, Z16
+	VPBROADCASTQ  328(SP), Z17
+	VPADDQ        Z17, Z16, Z16
+	VALIGNQ       $0x07, Z18, Z18, Z17
+	VMOVQ         X17, R8
+	ADDQ          R8, 328(SP)
+	VMOVDQA64     Z2, Z17
+	VMOVDQA32     Z9, K2, Z17
+	VALIGND       $0x0f, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0e, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0c, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x08, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VPMOVZXBD     X13, Z18
+	VPMOVZXBD     X14, Z19
+	VPMOVZXBD     X15, Z20
+	VPERMD        Z16, Z10, Z21
+	VPADDD        Z21, Z20, Z20
+	VMOVQ         X16, R9
+	SHRQ          $0x03, R9
+	MOVQ          nraw+48(FP), R8
+	SUBQ          R9, R8
+	MOVL          $0x00000040, R10
+	CMPQ          R8, R10
+	CMOVQGT       R10, R8
+	MOVQ          $-1, R10
+	BZHIQ         R8, R10, R10
+	KMOVQ         R10, K1
+	MOVQ          raw+40(FP), R10
+	VMOVDQU8.Z    (R10)(R9*1), K1, Z21
+	SHLQ          $0x03, R9
+	VPBROADCASTD  R9, Z22
+	VPSUBD        Z22, Z20, Z22
+	VPSRLD        $0x03, Z22, Z22
+	VPSHUFB       Z12, Z22, Z22
+	VPADDB        Z11, Z22, Z22
+	VPERMB        Z21, Z22, Z21
+	VPANDD        Z6, Z20, Z20
+	VPSRLVD       Z20, Z21, Z21
+	VPSLLVD       Z19, Z2, Z20
+	VPANDND       Z21, Z20, Z21
+	VPMINUD       Z7, Z18, Z20
+	VPTERNLOGD    $0xd8, Z6, Z18, Z20
+	VPSLLVD       Z19, Z20, Z20
+	VPADDD        Z21, Z20, Z21
+	VPERMI2D      Z0, Z21, Z17
+	VMOVDQU32     Z17, 64(SP)
+	VPERMD        Z17, Z8, Z0
+	CMPQ          AX, $0x10
+	JBE           simdExecDeltaAVX512_exec
+	KSHIFTRQ      $0x10, K2, K1
+	VMOVDQA64     Z2, Z17
+	VMOVDQA32     Z9, K1, Z17
+	VALIGND       $0x0f, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0e, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0c, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x08, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VEXTRACTI32X4 $0x01, Z13, X18
+	VPMOVZXBD     X18, Z18
+	VEXTRACTI32X4 $0x01, Z14, X19
+	VPMOVZXBD     X19, Z19
+	VEXTRACTI32X4 $0x01, Z15, X20
+	VPMOVZXBD     X20, Z20
+	VALIGNQ       $0x02, Z16, Z16, Z21
+	VPERMD        Z21, Z10, Z22
+	VPADDD        Z22, Z20, Z20
+	VMOVQ         X21, R9
+	SHRQ          $0x03, R9
+	MOVQ          nraw+48(FP), R8
+	SUBQ          R9, R8
+	MOVL          $0x00000040, R10
+	CMPQ          R8, R10
+	CMOVQGT       R10, R8
+	MOVQ          $-1, R10
+	BZHIQ         R8, R10, R10
+	KMOVQ         R10, K1
+	MOVQ          raw+40(FP), R10
+	VMOVDQU8.Z    (R10)(R9*1), K1, Z21
+	SHLQ          $0x03, R9
+	VPBROADCASTD  R9, Z22
+	VPSUBD        Z22, Z20, Z22
+	VPSRLD        $0x03, Z22, Z22
+	VPSHUFB       Z12, Z22, Z22
+	VPADDB        Z11, Z22, Z22
+	VPERMB        Z21, Z22, Z21
+	VPANDD        Z6, Z20, Z20
+	VPSRLVD       Z20, Z21, Z21
+	VPSLLVD       Z19, Z2, Z20
+	VPANDND       Z21, Z20, Z21
+	VPMINUD       Z7, Z18, Z20
+	VPTERNLOGD    $0xd8, Z6, Z18, Z20
+	VPSLLVD       Z19, Z20, Z20
+	VPADDD        Z21, Z20, Z21
+	VPERMI2D      Z0, Z21, Z17
+	VMOVDQU32     Z17, 128(SP)
+	VPERMD        Z17, Z8, Z0
+	CMPQ          AX, $0x20
+	JBE           simdExecDeltaAVX512_exec
+	KSHIFTRQ      $0x20, K2, K1
+	VMOVDQA64     Z2, Z17
+	VMOVDQA32     Z9, K1, Z17
+	VALIGND       $0x0f, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0e, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0c, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x08, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VEXTRACTI32X4 $0x02, Z13, X18
+	VPMOVZXBD     X18, Z18
+	VEXTRACTI32X4 $0x02, Z14, X19
+	VPMOVZXBD     X19, Z19
+	VEXTRACTI32X4 $0x02, Z15, X20
+	VPMOVZXBD     X20, Z20
+	VALIGNQ       $0x04, Z16, Z16, Z21
+	VPERMD        Z21, Z10, Z22
+	VPADDD        Z22, Z20, Z20
+	VMOVQ         X21, R9
+	SHRQ          $0x03, R9
+	MOVQ          nraw+48(FP), R8
+	SUBQ          R9, R8
+	MOVL          $0x00000040, R10
+	CMPQ          R8, R10
+	CMOVQGT       R10, R8
+	MOVQ          $-1, R10
+	BZHIQ         R8, R10, R10
+	KMOVQ         R10, K1
+	MOVQ          raw+40(FP), R10
+	VMOVDQU8.Z    (R10)(R9*1), K1, Z21
+	SHLQ          $0x03, R9
+	VPBROADCASTD  R9, Z22
+	VPSUBD        Z22, Z20, Z22
+	VPSRLD        $0x03, Z22, Z22
+	VPSHUFB       Z12, Z22, Z22
+	VPADDB        Z11, Z22, Z22
+	VPERMB        Z21, Z22, Z21
+	VPANDD        Z6, Z20, Z20
+	VPSRLVD       Z20, Z21, Z21
+	VPSLLVD       Z19, Z2, Z20
+	VPANDND       Z21, Z20, Z21
+	VPMINUD       Z7, Z18, Z20
+	VPTERNLOGD    $0xd8, Z6, Z18, Z20
+	VPSLLVD       Z19, Z20, Z20
+	VPADDD        Z21, Z20, Z21
+	VPERMI2D      Z0, Z21, Z17
+	VMOVDQU32     Z17, 192(SP)
+	VPERMD        Z17, Z8, Z0
+	CMPQ          AX, $0x30
+	JBE           simdExecDeltaAVX512_exec
+	KSHIFTRQ      $0x30, K2, K1
+	VMOVDQA64     Z2, Z17
+	VMOVDQA32     Z9, K1, Z17
+	VALIGND       $0x0f, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0e, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x0c, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VALIGND       $0x08, Z2, Z17, Z18
+	VPMAXSD       Z18, Z17, Z17
+	VEXTRACTI32X4 $0x03, Z13, X13
+	VPMOVZXBD     X13, Z13
+	VEXTRACTI32X4 $0x03, Z14, X14
+	VPMOVZXBD     X14, Z14
+	VEXTRACTI32X4 $0x03, Z15, X15
+	VPMOVZXBD     X15, Z15
+	VALIGNQ       $0x06, Z16, Z16, Z16
+	VPERMD        Z16, Z10, Z18
+	VPADDD        Z18, Z15, Z15
+	VMOVQ         X16, R9
+	SHRQ          $0x03, R9
+	MOVQ          nraw+48(FP), R8
+	SUBQ          R9, R8
+	MOVL          $0x00000040, R10
+	CMPQ          R8, R10
+	CMOVQGT       R10, R8
+	MOVQ          $-1, R10
+	BZHIQ         R8, R10, R10
+	KMOVQ         R10, K1
+	MOVQ          raw+40(FP), R10
+	VMOVDQU8.Z    (R10)(R9*1), K1, Z16
+	SHLQ          $0x03, R9
+	VPBROADCASTD  R9, Z18
+	VPSUBD        Z18, Z15, Z18
+	VPSRLD        $0x03, Z18, Z18
+	VPSHUFB       Z12, Z18, Z18
+	VPADDB        Z11, Z18, Z18
+	VPERMB        Z16, Z18, Z16
+	VPANDD        Z6, Z15, Z15
+	VPSRLVD       Z15, Z16, Z16
+	VPSLLVD       Z14, Z2, Z15
+	VPANDND       Z16, Z15, Z16
+	VPMINUD       Z7, Z13, Z15
+	VPTERNLOGD    $0xd8, Z6, Z13, Z15
+	VPSLLVD       Z14, Z15, Z15
+	VPADDD        Z16, Z15, Z16
+	VPERMI2D      Z0, Z16, Z17
+	VMOVDQU32     Z17, 256(SP)
+	VPERMD        Z17, Z8, Z0
+
+simdExecDeltaAVX512_exec:
+	XORQ    R8, R8
+	PCALIGN $0x20
+
+simdExecDeltaAVX512_loop:
+	MOVBQZX   (BX)(R8*1), R9
+	VMOVDQU64 (DX), Y13
+	CMPQ      SI, DI
+	CMOVQHI   DI, SI
+	MOVQ      DI, R10
+	SUBQ      SI, R10
+	CMPQ      SI, $0x20
+	JB        simdExecDeltaAVX512_dpattern
+	VMOVDQU64 (CX)(R10*1), Y14
+
+simdExecDeltaAVX512_dadd:
+	VPADDB    Y14, Y13, Y13
+	VMOVDQU64 Y13, (CX)(DI*1)
+	MOVBQZX   (SP)(R8*1), SI
+	MOVL      64(SP)(R8*4), R10
+	CMPQ      SI, $0x21
+	JE        simdExecDeltaAVX512_litlong
+
+simdExecDeltaAVX512_litback:
+	ADDQ      SI, DI
+	ADDQ      SI, DX
+	MOVQ      R10, SI
+	CMPQ      R10, DI
+	CMOVQHI   DI, R10
+	MOVQ      DI, R11
+	SUBQ      R10, R11
+	SHRQ      $0x02, R9
+	CMPQ      R10, R9
+	JB        simdExecDeltaAVX512_pattern
+	VMOVDQU64 (CX)(R11*1), Y13
+	VMOVDQU64 Y13, (CX)(DI*1)
+
+simdExecDeltaAVX512_check:
+	CMPQ R9, $0x21
+	JE   simdExecDeltaAVX512_long
+
+simdExecDeltaAVX512_next:
+	ADDQ R9, DI
+	INCQ R8
+	CMPQ R8, AX
+	JB   simdExecDeltaAVX512_loop
+	ADDQ AX, BX
+	CMPQ BX, 320(SP)
+	JB   simdExecDeltaAVX512_batch
+	MOVQ st+72(FP), AX
+	MOVQ DI, (AX)
+	MOVQ lits+8(FP), CX
+	SUBQ CX, DX
+	MOVQ DX, 8(AX)
+	MOVQ SI, 16(AX)
+	VZEROUPPER
+
+simdExecDeltaAVX512_ret:
+	RET
+
+simdExecDeltaAVX512_pattern:
+	LEAQ      simdPermTab<>+0(SB), R12
+	SHLQ      $0x05, R10
+	VMOVDQU64 (R12)(R10*1), Y13
+	VPERMB    (CX)(R11*1), Y13, Y13
+	VMOVDQU64 Y13, (CX)(DI*1)
+	JMP       simdExecDeltaAVX512_check
+
+simdExecDeltaAVX512_dpattern:
+	LEAQ      simdPermTab<>+0(SB), R11
+	SHLQ      $0x05, SI
+	VMOVDQU64 (R11)(SI*1), Y14
+	VPERMB    (CX)(R10*1), Y14, Y14
+	JMP       simdExecDeltaAVX512_dadd
+
+simdExecDeltaAVX512_litlong:
+	MOVQ    esc+56(FP), SI
+	MOVBQZX (SI), R11
+	INCQ    SI
+	MOVQ    SI, esc+56(FP)
+	LEAQ    33(R11), SI
+	ADDQ    $0x20, R11
+	SHRQ    $0x05, R11
+	LEAQ    32(DX), R12
+	LEAQ    32(DI), R13
+
+simdExecDeltaAVX512_litloop:
+	VMOVDQU64 (R12), Y13
+	VMOVDQU64 Y13, (CX)(R13*1)
+	ADDQ      $0x20, R12
+	ADDQ      $0x20, R13
+	DECQ      R11
+	JNZ       simdExecDeltaAVX512_litloop
+	JMP       simdExecDeltaAVX512_litback
+
+simdExecDeltaAVX512_long:
+	MOVQ DI, R9
+	SUBQ R11, R9
+	CMPQ R9, $0x20
+	JAE  simdExecDeltaAVX512_longok
+	MOVQ st+72(FP), R9
+	MOVQ $0x00000001, 24(R9)
+
+simdExecDeltaAVX512_longok:
+	MOVQ    esc+56(FP), R9
+	MOVBQZX (R9), R10
+	INCQ    R9
+	MOVQ    R9, esc+56(FP)
+	LEAQ    33(R10), R9
+	ADDQ    $0x20, R10
+	SHRQ    $0x05, R10
+	LEAQ    32(R11), R11
+	LEAQ    32(DI), R12
+
+simdExecDeltaAVX512_longloop:
+	VMOVDQU64 (CX)(R11*1), Y13
+	VMOVDQU64 Y13, (CX)(R12*1)
+	ADDQ      $0x20, R11
+	ADDQ      $0x20, R12
+	DECQ      R10
+	JNZ       simdExecDeltaAVX512_longloop
+	JMP       simdExecDeltaAVX512_next
+
+// func simdTokStatsAVX512(b *byte, n int) (out int, lit int, rep int, esc int, ok bool)
+// Requires: AVX, AVX2, AVX512BW, AVX512F, AVX512VL, BMI2, CMOV
+TEXT ·simdTokStatsAVX512(SB), NOSPLIT, $0-49
+	MOVQ         b+0(FP), AX
+	MOVQ         n+8(FP), CX
+	VPXORD       Z0, Z0, Z0
+	KXORQ        K1, K1, K1
+	VPXORD       Z1, Z1, Z1
+	VPXORD       Z2, Z2, Z2
+	VPXORD       Z3, Z3, Z3
+	VPXORD       Z4, Z4, Z4
+	MOVL         $0x3f3f3f3f, DX
+	VPBROADCASTD DX, Z5
+	MOVL         $0x04040404, DX
+	VPBROADCASTD DX, Z6
+	MOVL         $0x02020202, DX
+	VPBROADCASTD DX, Z7
+	MOVL         $0x01010101, DX
+	VPBROADCASTD DX, Z8
+	MOVL         $0x87878787, DX
+	VPBROADCASTD DX, Z9
+
+simdTokStatsAVX512_loop:
+	MOVL          $0x00000040, DX
+	CMPQ          CX, DX
+	CMOVQLT       CX, DX
+	MOVQ          $-1, BX
+	BZHIQ         DX, BX, BX
+	KMOVQ         BX, K2
+	VMOVDQU8.Z    (AX), K2, Z10
+	VPCMPUB       $0x06, Z9, Z10, K2
+	KORQ          K2, K1, K1
+	VPSRLW        $0x02, Z10, Z11
+	VPANDD        Z5, Z11, Z11
+	VPSADBW       Z0, Z11, Z11
+	VPADDQ        Z11, Z1, Z1
+	VPANDD        Z7, Z10, Z11
+	VPSADBW       Z0, Z11, Z11
+	VPADDQ        Z11, Z2, Z2
+	VPANDD        Z8, Z10, Z11
+	VPSADBW       Z0, Z11, Z11
+	VPADDQ        Z11, Z3, Z3
+	VPSRLW        $0x05, Z10, Z11
+	VPANDD        Z10, Z11, Z11
+	VPANDD        Z6, Z11, Z11
+	VPSADBW       Z0, Z11, Z11
+	VPADDQ        Z11, Z4, Z4
+	ADDQ          $0x40, AX
+	SUBQ          $0x40, CX
+	JG            simdTokStatsAVX512_loop
+	KORTESTQ      K1, K1
+	SETEQ         AL
+	MOVB          AL, ok+48(FP)
+	VEXTRACTI64X4 $0x01, Z1, Y0
+	VPADDQ        Y0, Y1, Y0
+	VEXTRACTI32X4 $0x01, Y0, X1
+	VPADDQ        X1, X0, X1
+	VPSHUFD       $0x4e, X1, X0
+	VPADDQ        X0, X1, X1
+	VMOVQ         X1, AX
+	MOVQ          AX, out+16(FP)
+	VEXTRACTI64X4 $0x01, Z2, Y0
+	VPADDQ        Y0, Y2, Y0
+	VEXTRACTI32X4 $0x01, Y0, X1
+	VPADDQ        X1, X0, X1
+	VPSHUFD       $0x4e, X1, X0
+	VPADDQ        X0, X1, X1
+	VMOVQ         X1, AX
+	MOVQ          AX, lit+24(FP)
+	VEXTRACTI64X4 $0x01, Z3, Y0
+	VPADDQ        Y0, Y3, Y0
+	VEXTRACTI32X4 $0x01, Y0, X1
+	VPADDQ        X1, X0, X1
+	VPSHUFD       $0x4e, X1, X0
+	VPADDQ        X0, X1, X1
+	VMOVQ         X1, AX
+	MOVQ          AX, rep+32(FP)
+	VEXTRACTI64X4 $0x01, Z4, Y0
+	VPADDQ        Y0, Y4, Y0
+	VEXTRACTI32X4 $0x01, Y0, X1
+	VPADDQ        X1, X0, X1
+	VPSHUFD       $0x4e, X1, X0
+	VPADDQ        X0, X1, X1
+	VMOVQ         X1, AX
+	MOVQ          AX, esc+40(FP)
+	VZEROUPPER
+	RET
+
+// func simdLLStatsAVX512(b *byte, n int) (sum int, esc int, ok bool)
+// Requires: AVX, AVX2, AVX512BW, AVX512F, AVX512VL, BMI2, CMOV, POPCNT
+TEXT ·simdLLStatsAVX512(SB), NOSPLIT, $0-33
+	MOVQ         b+0(FP), AX
+	MOVQ         n+8(FP), CX
+	VPXORD       Z0, Z0, Z0
+	KXORQ        K1, K1, K1
+	VPXORD       Z1, Z1, Z1
+	XORQ         DX, DX
+	MOVL         $0x21212121, BX
+	VPBROADCASTD BX, Z2
+
+simdLLStatsAVX512_loop:
+	MOVL          $0x00000040, BX
+	CMPQ          CX, BX
+	CMOVQLT       CX, BX
+	MOVQ          $-1, SI
+	BZHIQ         BX, SI, SI
+	KMOVQ         SI, K2
+	VMOVDQU8.Z    (AX), K2, Z3
+	VPCMPUB       $0x06, Z2, Z3, K2, K3
+	VPTESTNMB     Z3, Z3, K2, K2
+	KORQ          K3, K1, K1
+	KORQ          K2, K1, K1
+	VPCMPEQB      Z2, Z3, K3
+	KMOVQ         K3, BX
+	POPCNTQ       BX, BX
+	ADDQ          BX, DX
+	VPSADBW       Z0, Z3, Z3
+	VPADDQ        Z3, Z1, Z1
+	ADDQ          $0x40, AX
+	SUBQ          $0x40, CX
+	JG            simdLLStatsAVX512_loop
+	KORTESTQ      K1, K1
+	SETEQ         AL
+	MOVB          AL, ok+32(FP)
+	VEXTRACTI64X4 $0x01, Z1, Y0
+	VPADDQ        Y0, Y1, Y0
+	VEXTRACTI32X4 $0x01, Y0, X1
+	VPADDQ        X1, X0, X1
+	VPSHUFD       $0x4e, X1, X0
+	VPADDQ        X0, X1, X1
+	VMOVQ         X1, AX
+	MOVQ          AX, sum+16(FP)
+	MOVQ          DX, esc+24(FP)
+	VZEROUPPER
+	RET
+
+// func simdOffStatsAVX512(b *byte, n int) (sum int, zeros int, ok bool)
+// Requires: AVX, AVX2, AVX512BW, AVX512F, AVX512VL, BMI2, CMOV, POPCNT
+TEXT ·simdOffStatsAVX512(SB), NOSPLIT, $0-33
+	MOVQ         b+0(FP), AX
+	MOVQ         n+8(FP), CX
+	VPXORD       Z0, Z0, Z0
+	KXORQ        K1, K1, K1
+	VPXORD       Z1, Z1, Z1
+	XORQ         DX, DX
+	MOVL         $0xafafafaf, BX
+	VPBROADCASTD BX, Z2
+	MOVL         $0x1f1f1f1f, BX
+	VPBROADCASTD BX, Z3
+
+simdOffStatsAVX512_loop:
+	MOVL          $0x00000040, BX
+	CMPQ          CX, BX
+	CMOVQLT       CX, BX
+	MOVQ          $-1, SI
+	BZHIQ         BX, SI, SI
+	KMOVQ         SI, K2
+	VMOVDQU8.Z    (AX), K2, Z4
+	VPCMPUB       $0x06, Z2, Z4, K2, K3
+	VPTESTNMB     Z4, Z4, K2, K4
+	KORQ          K3, K1, K1
+	KORQ          K4, K1, K1
+	VPSRLW        $0x03, Z4, Z4
+	VPANDD        Z3, Z4, Z4
+	VPTESTNMB     Z4, Z4, K2, K3
+	KMOVQ         K3, BX
+	POPCNTQ       BX, BX
+	ADDQ          BX, DX
+	VPSADBW       Z0, Z4, Z4
+	VPADDQ        Z4, Z1, Z1
+	ADDQ          $0x40, AX
+	SUBQ          $0x40, CX
+	JG            simdOffStatsAVX512_loop
+	KORTESTQ      K1, K1
+	SETEQ         AL
+	MOVB          AL, ok+32(FP)
+	VEXTRACTI64X4 $0x01, Z1, Y0
+	VPADDQ        Y0, Y1, Y0
+	VEXTRACTI32X4 $0x01, Y0, X1
+	VPADDQ        X1, X0, X1
+	VPSHUFD       $0x4e, X1, X0
+	VPADDQ        X0, X1, X1
+	VMOVQ         X1, AX
+	MOVQ          AX, sum+16(FP)
+	MOVQ          DX, zeros+24(FP)
+	VZEROUPPER
+	RET

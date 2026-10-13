@@ -244,3 +244,33 @@ func simdLLStatsAVX2(b *byte, n int) (sum int, esc int, ok bool)
 //
 //go:noescape
 func simdOffStatsAVX2(b *byte, n int) (sum int, zeros int, ok bool)
+
+// simdExecAVX512 runs the first n operations of a chunk. st holds the output position,
+// the literal position, the repeat offset and an error flag. nraw is the readable size of raw.
+//
+//go:noescape
+func simdExecAVX512(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, nraw int, esc *byte, n int, st *[4]int)
+
+// simdExecDeltaAVX512 runs the first n operations of a chunk. st holds the output position,
+// the literal position, the repeat offset and an error flag. nraw is the readable size of raw.
+//
+//go:noescape
+func simdExecDeltaAVX512(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, nraw int, esc *byte, n int, st *[4]int)
+
+// simdTokStatsAVX512 returns the token statistics of n bytes, n > 0.
+// lit and esc are counted 2 and 4 times.
+//
+//go:noescape
+func simdTokStatsAVX512(b *byte, n int) (out int, lit int, rep int, esc int, ok bool)
+
+// simdLLStatsAVX512 returns the sum of n bytes, n > 0, and how many are 33.
+// ok is false if a byte is outside 1-33.
+//
+//go:noescape
+func simdLLStatsAVX512(b *byte, n int) (sum int, esc int, ok bool)
+
+// simdOffStatsAVX512 returns the sum of b>>3 over n bytes, n > 0, and how often it is 0.
+// ok is false if a byte is outside 1-175.
+//
+//go:noescape
+func simdOffStatsAVX512(b *byte, n int) (sum int, zeros int, ok bool)

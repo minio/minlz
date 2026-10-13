@@ -67,7 +67,7 @@ jobs:
 
     - name: Generate
       working-directory: ./_generate
-      run: go generate -v -x
+      run: go generate -v -x ./...
 
     - name: Git Status
       run: |

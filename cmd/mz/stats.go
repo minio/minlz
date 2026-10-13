@@ -30,6 +30,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/minio/minlz"
 	"github.com/minio/minlz/cmd/internal/filepathx"
 )
 
@@ -39,6 +40,7 @@ const (
 	chunkUncompressed  = 0x01
 	chunkMinLZ         = 0x02
 	chunkMinLZCompCRC  = 0x03
+	chunkMinLZSIMD     = 0x10
 	chunkEOF           = 0x20
 	chunkIndex         = 0x40
 	chunkSearchInfo    = 0x44
@@ -197,6 +199,7 @@ type streamStats struct {
 	LegacyBlocks   uint64                 `json:"legacyBlocks"`
 	UncompBlocks   uint64                 `json:"uncompBlocks"`
 	MinlzBlocks    uint64                 `json:"minlzBlocks"`
+	SimdBlocks     uint64                 `json:"simdBlocks"`
 }
 
 // fileReport is the per-file result.
@@ -385,10 +388,18 @@ func analyzeRawBlock(data []byte, rep *fileReport, opts statsOpts) error {
 	if n <= 0 {
 		return errors.New("corrupt varint length in block")
 	}
+	if uncomp>>24 > 1 {
+		return fmt.Errorf("reserved block type %d: %w", uncomp>>24, minlz.ErrUnsupported)
+	}
 	hdr := 1 + n
 	body := data[hdr:]
 	bs := blockStats{Index: 0, ChunkType: 0, CompSize: len(data), UncompSize: int(uncomp)}
-	if uncomp == 0 {
+	if uncomp>>24 == 1 {
+		// Operations of SIMD blocks are entropy coded; only sizes are reported.
+		rep.Format = "simd block"
+		bs.ChunkType = chunkMinLZSIMD
+		bs.UncompSize = int(uncomp & (1<<24 - 1))
+	} else if uncomp == 0 {
 		// All literals.
 		bs.Ops[opLiteral].Count = 1
 		bs.Ops[opLiteral].OutBytes = uint64(len(body))
@@ -412,6 +423,7 @@ func analyzeRawBlock(data []byte, rep *fileReport, opts statsOpts) error {
 func analyzeStream(br *bufio.Reader, rep *fileReport, opts statsOpts) error {
 	var hdr [4]byte
 	streamSawID := false
+	streamSIMD := false
 	wantEOF := false
 	var uncompEmitted uint64
 	for {
@@ -444,9 +456,10 @@ func analyzeStream(br *bufio.Reader, rep *fileReport, opts statsOpts) error {
 				return fmt.Errorf("unsupported stream magic %q (only MinLz supported by stats)", magic)
 			}
 			szByte := body[5]
-			if szByte&0xc0 != 0 {
+			if szByte&0x80 != 0 {
 				return errors.New("invalid stream identifier flags")
 			}
+			streamSIMD = szByte&0x40 != 0
 			n := int(szByte&15) + 10
 			if n > maxBlockLog {
 				return fmt.Errorf("invalid declared block size byte 0x%02x", szByte)
@@ -473,6 +486,9 @@ func analyzeStream(br *bufio.Reader, rep *fileReport, opts statsOpts) error {
 			uncomp, n := binary.Uvarint(payload)
 			if n <= 0 {
 				return errors.New("corrupt varint in compressed chunk")
+			}
+			if uncomp>>24 != 0 {
+				return fmt.Errorf("block type %d in MinLZ chunk: %w", uncomp>>24, minlz.ErrCorrupt)
 			}
 			body := payload[n:]
 			bs := blockStats{
@@ -507,6 +523,30 @@ func analyzeStream(br *bufio.Reader, rep *fileReport, opts statsOpts) error {
 			rep.Stream.UncompSizeHist[bucket(uint32(uncomp))]++
 			rep.Stream.RatioBuckets[ratioBucket(int(uncomp), clen)]++
 			mergeBlockIntoReport(rep, &bs, opts)
+			uncompEmitted += uncomp
+
+		case chunkMinLZSIMD:
+			if !streamSawID || !streamSIMD {
+				return errors.New("SIMD chunk without stream identifier SIMD flag")
+			}
+			if clen < 8 {
+				return fmt.Errorf("SIMD chunk too short %d", clen)
+			}
+			buf := make([]byte, clen)
+			if _, err := io.ReadFull(br, buf); err != nil {
+				return err
+			}
+			// Skip 8-byte hash. Operations are entropy coded; only sizes are reported.
+			v, n := binary.Uvarint(buf[8:])
+			if n <= 0 || v>>24 != 1 {
+				return fmt.Errorf("corrupt SIMD block header: %w", minlz.ErrCorrupt)
+			}
+			uncomp := v & (1<<24 - 1)
+			rep.Stream.SimdBlocks++
+			rep.Stream.BlockSizeHist[bucket(uint32(clen))]++
+			rep.Stream.UncompSizeHist[bucket(uint32(uncomp))]++
+			rep.Stream.RatioBuckets[ratioBucket(int(uncomp), clen)]++
+			mergeBlockIntoReport(rep, &blockStats{Index: len(rep.Blocks), ChunkType: ct, CompSize: clen, UncompSize: int(uncomp)}, opts)
 			uncompEmitted += uncomp
 
 		case chunkUncompressed:
@@ -549,6 +589,8 @@ func analyzeStream(br *bufio.Reader, rep *fileReport, opts statsOpts) error {
 			}
 			wantEOF = false
 			streamSawID = false
+			// An EOF chunk that follows is an empty stream.
+			uncompEmitted = 0
 
 		case chunkPadding, chunkIndex, chunkSearchInfo, chunkSearchTable:
 			if _, err := io.CopyN(io.Discard, br, int64(clen)); err != nil {
@@ -1021,6 +1063,7 @@ type jsonStreamBlocks struct {
 	Minlz           uint64 `json:"minlz"`
 	CrcUncompressed uint64 `json:"crcUncompressed"`
 	CrcCompressed   uint64 `json:"crcCompressed"`
+	Simd            uint64 `json:"simd"`
 	Uncompressed    uint64 `json:"uncompressed"`
 	LegacyS2        uint64 `json:"legacyS2"`
 }
@@ -1193,6 +1236,7 @@ func buildJSONFile(rep *fileReport, opts statsOpts) jsonFile {
 				Minlz:           rep.Stream.MinlzBlocks,
 				CrcUncompressed: rep.Stream.CrcMode02,
 				CrcCompressed:   rep.Stream.CrcMode03,
+				Simd:            rep.Stream.SimdBlocks,
 				Uncompressed:    rep.Stream.UncompBlocks,
 				LegacyS2:        rep.Stream.LegacyBlocks,
 			},
@@ -1476,6 +1520,9 @@ func renderStreamSummary(bw *bufio.Writer, ss *streamStats) {
 	fmt.Fprintf(bw, "Stream identifiers seen: %d\n", ss.StreamIDCount)
 	fmt.Fprintf(bw, "MinLZ blocks:            %d  (0x02 CRC-uncomp: %d, 0x03 CRC-comp: %d)\n",
 		ss.MinlzBlocks, ss.CrcMode02, ss.CrcMode03)
+	if ss.SimdBlocks > 0 {
+		fmt.Fprintf(bw, "SIMD blocks:             %d  (operations not analyzed)\n", ss.SimdBlocks)
+	}
 	fmt.Fprintf(bw, "Uncompressed blocks:     %d\n", ss.UncompBlocks)
 	if ss.LegacyBlocks > 0 {
 		fmt.Fprintf(bw, "Legacy S2 blocks:        %d\n", ss.LegacyBlocks)
@@ -1562,6 +1609,8 @@ func chunkTypeName(b byte) string {
 		return "minlz(crc-unc)"
 	case chunkMinLZCompCRC:
 		return "minlz(crc-cmp)"
+	case chunkMinLZSIMD:
+		return "simd(xxh3)"
 	case chunkEOF:
 		return "eof"
 	case chunkIndex:

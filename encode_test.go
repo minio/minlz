@@ -32,7 +32,6 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/s2"
-	"github.com/klauspost/pivco"
 	"github.com/minio/minlz/internal/race"
 	"github.com/minio/minlz/internal/reference"
 )
@@ -1190,7 +1189,7 @@ func TestSIMDEncode(t *testing.T) {
 	t.Logf("modes %v, chunk flags %v", modes, flags)
 }
 
-// TestSIMDEncodeRoom checks that blocks don't depend on spare room in dst.
+// TestSIMDEncodeRoom checks that blocks don't depend on spare room in dst, and save the level's minimum.
 // Skewed random bytes code close to the size limits of the levels.
 func TestSIMDEncodeRoom(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
@@ -1207,6 +1206,16 @@ func TestSIMDEncodeRoom(t *testing.T) {
 				if m := encodeBlockSIMD(big, src, level); m != n || !bytes.Equal(big[:m], tight[:n]) {
 					t.Errorf("size %d p %.3f level %d: %d bytes with spare room, %d without", size, p, level, m, n)
 				}
+				save := simdMinSaving
+				switch level &^ LevelSIMDDelta {
+				case LevelSuperFastSIMD:
+					save = max(save, size/8)
+				case LevelFastestSIMD, LevelBalancedSIMD:
+					save = max(save, size/32)
+				}
+				if n > 0 && size-n < save {
+					t.Errorf("size %d p %.3f level %d: block of %d bytes saves less than %d", size, p, level, n, save)
+				}
 			}
 		}
 	}
@@ -1216,13 +1225,9 @@ func TestSIMDEncodeRoom(t *testing.T) {
 // The parsers can't reach that, so this ends chunks early.
 func TestSIMDEncodeMaxChunks(t *testing.T) {
 	src := make([]byte, 8<<10)
-	pv, err := pivco.NewEncoder(pivco.WithBlockSize(pivco.MaxBlockSize), pivco.WithFlatLayout(pivco.FlatVertical))
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, n := range []int{simdMaxChunks, simdMaxChunks + 1} {
 		dst := make([]byte, MaxEncodedLen(len(src)))
-		e := &simdEncoder{pv: pv, out: dst[1:1:len(dst)]}
+		e := &simdEncoder{out: dst[1:1:len(dst)]}
 		e.reset(src, 0, 0)
 		e.emitCopyLits(src[:1], 1, simdMaxLen)
 		e.endChunk()
@@ -1286,12 +1291,8 @@ func TestSIMDEncodeChunkEdge(t *testing.T) {
 					src = append(src, src[len(src)-min(o.off, len(src))])
 				}
 			}
-			pv, err := pivco.NewEncoder(pivco.WithBlockSize(pivco.MaxBlockSize), pivco.WithFlatLayout(pivco.FlatVertical))
-			if err != nil {
-				t.Fatal(err)
-			}
 			block := make([]byte, MaxEncodedLen(len(src)))
-			e := simdEncoder{pv: pv, out: block[1:1:len(block)]}
+			e := simdEncoder{out: block[1:1:len(block)]}
 			e.reset(src, delta, 0)
 			p := 0
 			for _, o := range ops {
@@ -1368,12 +1369,8 @@ func TestSIMDEncodeDelta(t *testing.T) {
 			}
 		}
 	}
-	pv, err := pivco.NewEncoder(pivco.WithBlockSize(pivco.MaxBlockSize), pivco.WithFlatLayout(pivco.FlatVertical))
-	if err != nil {
-		t.Fatal(err)
-	}
 	block := make([]byte, MaxEncodedLen(len(src2)))
-	e := simdEncoder{pv: pv, out: block[1:1:len(block)]}
+	e := simdEncoder{out: block[1:1:len(block)]}
 	e.reset(src2, 256, 0)
 	for p := 0; p < len(src2); p += 10 {
 		if e.rep == 8 {

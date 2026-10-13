@@ -112,6 +112,12 @@ const (
 	maxS2BlockSize = 4 << 20
 
 	obufHeaderLen = checksumSize + chunkHeaderSize
+
+	// simdHashSize is the size of the XXH3 hash that starts a SIMD chunk.
+	simdHashSize = 8
+
+	// streamFlagSIMD is the stream identifier flag of streams with SIMD chunks.
+	streamFlagSIMD = 1 << 6
 )
 
 // Internal chunk ids
@@ -120,6 +126,7 @@ const (
 	chunkTypeUncompressedData           = 0x01
 	chunkTypeMinLZCompressedData        = 0x02
 	chunkTypeMinLZCompressedDataCompCRC = 0x03
+	chunkTypeMinLZSIMD                  = 0x10
 	chunkTypeEOF                        = 0x20
 	maxNonSkippableChunk                = 0x3f
 	chunkTypeIndex                      = 0x40 // chunk id of MinLZ index

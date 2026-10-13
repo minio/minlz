@@ -3,7 +3,7 @@
 This document adds SIMD blocks to the [MinLZ specification](SPEC.md): entropy-coded blocks that decode with SIMD.
 Anything not described here is as defined there.
 
-Entropy coding uses [pivco-huffman](https://github.com/MarcinZukowski/pivco-huffman) Go port: [pivco](https://github.com/klauspost/pivco).
+Entropy coding uses pivco blocks, defined in [PIVCO_SPEC.md](PIVCO_SPEC.md): a subset of [pivco-huffman](https://github.com/MarcinZukowski/pivco-huffman).
 
 # BLOCK FORMAT
 
@@ -107,14 +107,17 @@ Each stream type has its own current table, and so do the literals. Mode 1 needs
 A block starts without current tables; they never carry over from another block.
 Mode 4 is only used for literals, in any literal block.
 
-A pivco block is a single pivco block, without a container: its number of values as 2 bytes little endian, then the coded values.
-It fills the stored size of its entry, and holds exactly the stream's values.
-So a stream without values, or with more than 65535, uses mode 0.
+With modes 1-4, the stored data holds a pivco block (PIVCO_SPEC.md 3) that codes exactly the stream's values.
+A pivco block does not store how many values it holds.
+Tokens and literal blocks store their number of values as 2 bytes little endian, followed by the pivco block.
+The other streams store only the pivco block: their number of values follows from the chunk's tokens and literal lengths (4.1).
+Either way, the data fills the stored size of the entry.
+A pivco block holds 1 to 65535 values (PIVCO_SPEC.md 1.1), so a stream without values, or with more than 65535, uses mode 0.
 
 ### 2.3 Huffman Tables
 
 A Huffman table gives each value a code length of 0 to 11 bits; 0 means the value has no code.
-Tables are used with pivco's `FlatVertical` layout.
+Pivco blocks are coded with these code lengths (PIVCO_SPEC.md 1.2).
 They must form a complete code, or give a single value length 1,
 and must not have codes for values outside the stream's range.
 
@@ -122,7 +125,7 @@ Both table forms store 4 bits per length: byte `i` holds length `2i` in the low 
 An odd number of lengths ends with a 0 nibble.
 
 *Code lengths* store the length of every value, from 0 up to the stream's highest value.
-This is the start of pivco's `Table.AppendLengths` form; higher values have length 0.
+Higher values have length 0.
 
 *Class lengths* store one length per class of the stream's class layout, in class order.
 A value's code length is its class length plus its in-class length; class length 0 means the class has no codes.
@@ -222,7 +225,7 @@ The first chunk starts at the start of the LZ section, and each chunk starts whe
 So a stream's data starts after the stored sizes of all entries before it, in its own and earlier chunk records.
 
 An entry does not store the number of values of its stream.
-The tokens give the number of operations: the stored size with mode 0, otherwise the count of the pivco block.
+The tokens give the number of operations: the stored size with mode 0, otherwise the number stored before the pivco block (2.2).
 The other streams hold exactly the values that the operations read (4.2):
 
 | Stream          | Number of values                                                       |
@@ -234,6 +237,8 @@ The other streams hold exactly the values that the operations read (4.2):
 | Offset bits     | The raw bits of the offset symbols (4.4), rounded up to whole bytes    |
 
 So a decoder can check every stream of a chunk before it runs its operations.
+It also knows how many values the pivco block of a stream holds before it decodes it (2.2):
+the tokens give the number of literal lengths and offset symbols, and the tokens and literal lengths the number of escapes.
 
 Chunks only divide the operations. The output position, the repeat offset, the next literal
 and the current tables all continue from one chunk to the next.
@@ -261,8 +266,8 @@ Operation 3 copies 8 bytes from offset 3, so the no-overlap flag is not set. The
 `00` is the flags, `18` is 3 bytes in mode 0 (`3 * 8 + 0`), each `10` is 2 bytes, the next `00` is an empty stream,
 and `08` is the 1 byte of offset bits.
 
-In a larger chunk, tokens coded as a 40-byte pivco block with a new table in class lengths have the entry
-`C3 02` (`40 * 8 + 3` = 323), followed by the 11 bytes of the table.
+In a larger chunk, tokens coded with a new table in class lengths, stored as their 2-byte number and a 38-byte pivco block,
+have the entry `C3 02` (`40 * 8 + 3` = 323), followed by the 11 bytes of the table.
 A later chunk can code its tokens with that table, as mode 1 with no table after the varint.
 
 ### 4.2 LZ Streams
@@ -630,7 +635,9 @@ The no-overlap flag (4.1) need not be checked (4.3).
   or with codes for values outside the stream's range.
 * Class lengths whose padding nibble (2.3) is not 0.
 * Token class lengths whose group lengths or flag codes are not complete codes (A.4).
-* A pivco block that does not decode, or that does not hold the expected number of values.
+* A number of values of tokens or of a literal block (2.2) that runs past the stored size.
+* A pivco block that does not decode to exactly the expected number of values using exactly the rest of the stored size (PIVCO_SPEC.md 6),
+  including one for a stream without values or with more than 65535.
 * Uncompressed values outside the stream's range.
 
 ## B.4 Chunks

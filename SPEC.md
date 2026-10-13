@@ -399,6 +399,7 @@ Instead, use type 0x02, which indicates a MinLZ compressed block.
 ### 4.4. MinLZ Compressed data (chunk type 0x02)
 
 A MinLZ block *without* the MinLZ identifier (initial 0 byte).
+The block type (see 1.1) must be 0. SIMD blocks are stored as chunk type 0x10.
 
 A CRC32C (see section 3) checksum of the *uncompressed* 
 data is stored at the beginning of the block.
@@ -409,6 +410,7 @@ as well as blocks with decompressed size less than compressed size.
 ### 4.5. MinLZ Compressed data - Compressed CRC (chunk type 0x03).
 
 A MinLZ block *without* the MinLZ identifier (initial 0 byte).
+The block type (see 1.1) must be 0.
 
 A CRC32C (see section 3) checksum of the *compressed* 
 data is stored at the beginning of the block.
@@ -421,12 +423,16 @@ If possible prefer type `0x02` over this.
 ### 4.5B. MinLZ SIMD Block (chunk type 0x10).
 
 A [SIMD block](SIMD_SPEC.md) *without* the MinLZ indicator (initial 0 byte).
+The block type (see 1.1) must be 1.
 
 An [xxhash3](https://github.com/Cyan4973/xxHash#xxhash---extremely-fast-hash-algorithm)
 (XXH3 64-bit, seed 0) of the *uncompressed* data is stored as little endian value at the start of the block.
 
 The stream identifier *must* indicate that SIMD blocks are present (bit 6 set).
 Otherwise, the decoder should reject the stream.
+The bit applies until the next stream identifier.
+A decoder that starts at an index entry (see 4.12) has not read the stream identifier, and may accept SIMD blocks until it reads one.
+Encoders may set it in streams that end up without SIMD blocks.
 
 See [SIMD_SPEC.md](SIMD_SPEC.md) for details on SIMD blocks.
 
@@ -512,7 +518,7 @@ with un-encoded value length of 64 bits, unless other limits are specified.
 | UncompressedSize, Varint             | Total Uncompressed size.                                                                                                      |
 | CompressedSize, Varint               | Total Compressed size if known. Should be -1 if unknown.                                                                      |
 | EstBlockSize, Varint                 | Block Size, used for guessing uncompressed offsets. Must be >= 0.                                                             |
-| Entries, Varint                      | Number of Entries in index, must be < 65536 and >=0.                                                                          |
+| Entries, Varint                      | Number of Entries in index, must be <= 65536 and >=0.                                                                         |
 | HasUncompressedOffsets `byte`        | 0 if no uncompressed offsets are present, 1 if present. Other values are invalid.                                             |
 | UncompressedOffsets, [Entries]VarInt | Uncompressed offsets. See below how to decode.                                                                                |
 | CompressedOffsets, [Entries]VarInt   | Compressed offsets. See below how to decode.                                                                                  |
@@ -530,7 +536,7 @@ but it is then not allowed to also have an entry for the next block since
 that would give an uncompressed offset duplicate.
 
 There is no requirement for all blocks to be represented in the index.
-In fact there is a maximum of 65535 block entries in an index.
+In fact there is a maximum of 65536 block entries in an index.
 
 The writer can use any method to reduce the number of entries.
 An implicit block start at 0,0 can be assumed.
