@@ -133,7 +133,7 @@ func Encode(dst, src []byte, level int) ([]byte, error) {
 	case LevelBalanced:
 		n = encodeBlockBetter(dst[d:], src)
 	case LevelSmallest:
-		n = encodeBlockBest(dst[d:], src, nil)
+		n = encodeBlockBest(dst[d:], src)
 	case LevelSuperFastSIMD, LevelFastestSIMD, LevelBalancedSIMD, LevelSmallestSIMD,
 		LevelSuperFastSIMD | LevelSIMDDelta, LevelFastestSIMD | LevelSIMDDelta, LevelBalancedSIMD | LevelSIMDDelta:
 		d = 1
@@ -236,7 +236,7 @@ func TryEncode(dst, src []byte, level int) []byte {
 	case LevelBalanced:
 		n = encodeBlockBetter(dst[d:], src)
 	case LevelSmallest:
-		n = encodeBlockBest(dst[d:], src, nil)
+		n = encodeBlockBest(dst[d:], src)
 	case LevelSuperFastSIMD, LevelFastestSIMD, LevelBalancedSIMD, LevelSmallestSIMD,
 		LevelSuperFastSIMD | LevelSIMDDelta, LevelFastestSIMD | LevelSIMDDelta, LevelBalancedSIMD | LevelSIMDDelta:
 		d = 1

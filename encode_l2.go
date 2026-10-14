@@ -388,11 +388,11 @@ func (e *simdEncoder) encodeBlockBetterGo(src []byte) {
 			const repeatMask = ((1 << (wantRepeatBytes * 8)) - 1) << (8 * checkRep)
 			if cv&repeatMask == load64(src, s-repeat)&repeatMask {
 				base = s + checkRep
-				for i := base - repeat; base > nextEmit && i > 0 && src[i-1] == src[base-1]; {
+				for i := base - repeat; base > nextEmit && i > 0 && load8(src, i-1) == load8(src, base-1); {
 					i--
 					base--
 				}
-				offset, length, rep = repeat, matchLen(src[base:], src[base-repeat:]), true
+				offset, length, rep = repeat, matchAt(src, base, base-repeat), true
 				break
 			}
 
@@ -415,13 +415,13 @@ func (e *simdEncoder) encodeBlockBetterGo(src []byte) {
 		}
 
 		if !rep {
-			for candidateL > 0 && s > nextEmit && src[candidateL-1] == src[s-1] {
+			for candidateL > 0 && s > nextEmit && load8(src, candidateL-1) == load8(src, s-1) {
 				candidateL--
 				s--
 			}
 			base = s
 			offset = base - candidateL
-			length = matchLen(src[base:], src[candidateL:])
+			length = matchAt(src, base, candidateL)
 			// Bail if the match is equal or worse to the encoding.
 			if offset > 65535 && length <= 4 && repeat != offset {
 				s = nextS + 1
@@ -444,12 +444,14 @@ func (e *simdEncoder) encodeBlockBetterGo(src []byte) {
 				e.emitCopyLits(src[nextEmit:base], offset, length)
 			}
 		} else if rep {
-			if e.putMatch(1|e.putLits(src[nextEmit:], base-nextEmit), offset, length) {
+			e.putLits(src, nextEmit, base-nextEmit)
+			if e.putMatch(1|e.putLL(base-nextEmit), offset, length) {
 				e.endChunk()
 			}
 		} else {
 			e.putBits(e.putOffset(offset))
-			if e.putMatch(e.putLits(src[nextEmit:], base-nextEmit), offset, length) {
+			e.putLits(src, nextEmit, base-nextEmit)
+			if e.putMatch(e.putLL(base-nextEmit), offset, length) {
 				e.endChunk()
 			}
 		}
@@ -557,11 +559,11 @@ func (e *simdEncoder) encodeBlockBetterGo64K(src []byte) {
 			const repeatMask = ((1 << (wantRepeatBytes * 8)) - 1) << (8 * checkRep)
 			if cv&repeatMask == load64(src, s-repeat)&repeatMask {
 				base = s + checkRep
-				for i := base - repeat; base > nextEmit && i > 0 && src[i-1] == src[base-1]; {
+				for i := base - repeat; base > nextEmit && i > 0 && load8(src, i-1) == load8(src, base-1); {
 					i--
 					base--
 				}
-				offset, length, rep = repeat, matchLen(src[base:], src[base-repeat:]), true
+				offset, length, rep = repeat, matchAt(src, base, base-repeat), true
 				break
 			}
 
@@ -584,13 +586,13 @@ func (e *simdEncoder) encodeBlockBetterGo64K(src []byte) {
 		}
 
 		if !rep {
-			for candidateL > 0 && s > nextEmit && src[candidateL-1] == src[s-1] {
+			for candidateL > 0 && s > nextEmit && load8(src, candidateL-1) == load8(src, s-1) {
 				candidateL--
 				s--
 			}
 			base = s
 			offset = base - candidateL
-			length = matchLen(src[base:], src[candidateL:])
+			length = matchAt(src, base, candidateL)
 		}
 
 		// A match of simdMaxLen+1 bytes needs an escape, so leave its last byte as a literal.
@@ -604,12 +606,14 @@ func (e *simdEncoder) encodeBlockBetterGo64K(src []byte) {
 				e.emitCopyLits(src[nextEmit:base], offset, length)
 			}
 		} else if rep {
-			if e.putMatch(1|e.putLits(src[nextEmit:], base-nextEmit), offset, length) {
+			e.putLits(src, nextEmit, base-nextEmit)
+			if e.putMatch(1|e.putLL(base-nextEmit), offset, length) {
 				e.endChunk()
 			}
 		} else {
 			e.putBits(e.putOffset(offset))
-			if e.putMatch(e.putLits(src[nextEmit:], base-nextEmit), offset, length) {
+			e.putLits(src, nextEmit, base-nextEmit)
+			if e.putMatch(e.putLL(base-nextEmit), offset, length) {
 				e.endChunk()
 			}
 		}
@@ -744,7 +748,7 @@ func encodeBlockBetterGo64K(dst, src []byte) (d int) {
 			if repeat > 0 && cv&repeatMask == load64(src, s-repeat)&repeatMask {
 				base := s + checkRep
 				// Extend back
-				for i := base - repeat; base > nextEmit && i > 0 && src[i-1] == src[base-1]; {
+				for i := base - repeat; base > nextEmit && i > 0 && load8(src, i-1) == load8(src, base-1); {
 					i--
 					base--
 				}
@@ -825,7 +829,7 @@ func encodeBlockBetterGo64K(dst, src []byte) (d int) {
 		}
 
 		// Extend backwards
-		for candidateL > 0 && s > nextEmit && src[candidateL-1] == src[s-1] {
+		for candidateL > 0 && s > nextEmit && load8(src, candidateL-1) == load8(src, s-1) {
 			candidateL--
 			s--
 		}
@@ -1228,7 +1232,7 @@ searchDict:
 	emitMatch:
 
 		// Extend backwards
-		for candidateL > 0 && s > nextEmit && src[candidateL-1] == src[s-1] {
+		for candidateL > 0 && s > nextEmit && load8(src, candidateL-1) == load8(src, s-1) {
 			candidateL--
 			s--
 		}
@@ -1374,7 +1378,7 @@ searchDict:
 			if cv&repeatMask == load64(src, s-repeat)&repeatMask {
 				base := s + checkRep
 				// Extend back
-				for i := base - repeat; base > nextEmit && i > 0 && src[i-1] == src[base-1]; {
+				for i := base - repeat; base > nextEmit && i > 0 && load8(src, i-1) == load8(src, base-1); {
 					i--
 					base--
 				}
@@ -1455,7 +1459,7 @@ searchDict:
 		}
 
 		// Extend backwards
-		for candidateL > 0 && s > nextEmit && src[candidateL-1] == src[s-1] {
+		for candidateL > 0 && s > nextEmit && load8(src, candidateL-1) == load8(src, s-1) {
 			candidateL--
 			s--
 		}

@@ -58,9 +58,10 @@ type simdEncoder struct {
 	src []byte
 
 	// The streams of the current chunk. An offset has at most 20 raw bits.
+	// The fast paths mask their indexes, so the compiler drops the bounds checks.
 	tok, ll, offc                [simdChunkOps]byte
 	esc                          [2 * simdChunkOps]byte
-	raw                          [simdChunkOps * 20 / 8]byte
+	raw                          [1<<16 + 3]byte // room for a 4 byte store at any uint16 index
 	nTok, nLL, nOffc, nEsc, nRaw int
 	chunks                       int
 	acc                          uint64
@@ -209,11 +210,25 @@ func oneOp(offset, length int) bool {
 	return length <= simdMaxLen || length <= simdMaxLong && offset >= simdMaxLen
 }
 
+// matchAt returns how many bytes match at src[a:] and src[b:], with b < a, like matchLen.
+// It inlines, where matchLen is an assembly call on amd64.
+func matchAt(src []byte, a, b int) (n int) {
+	for ; a+n <= len(src)-8; n += 8 {
+		if diff := load64(src, a+n) ^ load64(src, b+n); diff != 0 {
+			return n + bits.TrailingZeros64(diff)>>3
+		}
+	}
+	for a+n < len(src) && src[a+n] == src[b+n] {
+		n++
+	}
+	return n
+}
+
 // putOffset adds the symbol of a match offset, and returns its raw bits and their count for putBits.
 func (e *simdEncoder) putOffset(offset int) (uint64, int) {
 	// With the 8, offsets below 16 code as themselves without raw bits, and need no branch.
 	b := bits.Len(uint(offset)|8) - 4
-	e.offc[e.nOffc] = byte(8*b + offset>>b)
+	e.offc[e.nOffc&(simdChunkOps-1)] = byte(8*b + offset>>b)
 	e.nOffc++
 	return uint64(offset & (1<<b - 1)), b
 }
@@ -224,31 +239,35 @@ func (e *simdEncoder) putBits(v uint64, n int) {
 	// e.raw has room, as the offsets of a chunk have at most 20 raw bits each.
 	acc := e.acc | v<<(e.nacc&63)
 	n += e.nacc
-	binary.LittleEndian.PutUint32(e.raw[e.nRaw:], uint32(acc))
+	binary.LittleEndian.PutUint32(e.raw[uint16(e.nRaw):], uint32(acc))
 	k := n >> 5
 	e.nRaw += k << 2
 	e.acc, e.nacc = acc>>(k<<5&63), n&31
 }
 
-// putLits adds the first ll plain literals of lits, where ll is at most simdMaxLong, and returns the literal bit of the operation.
-// lits is the rest of src and has at least simdMaxLen bytes, so e.lits, as long as src, has as much room after its literals.
-func (e *simdEncoder) putLits(lits []byte, ll int) byte {
+// putLL adds the literal length ll, at most simdMaxLong, and returns the literal bit of the operation.
+func (e *simdEncoder) putLL(ll int) byte {
 	// Operations with and without literals alternate unpredictably, so don't branch on it.
 	n := min(ll, 1)
-	e.ll[e.nLL] = byte(min(ll, simdMaxLen+1))
+	e.ll[e.nLL&(simdChunkOps-1)] = byte(min(ll, simdMaxLen+1))
 	e.nLL += n
 	if ll > simdMaxLen {
-		e.esc[e.nEsc] = byte(ll - simdMaxLen - 1)
+		e.esc[e.nEsc&(2*simdChunkOps-1)] = byte(ll - simdMaxLen - 1)
 		e.nEsc++
-		copy(e.lits[e.nLits:], lits[:ll])
+	}
+	return byte(n) << 1
+}
+
+// putLits adds the ll plain literals at src[from:], where ll is at most simdMaxLong.
+// src has at least simdMaxLen bytes from from, so e.lits, as long as src, has as much room after its literals.
+func (e *simdEncoder) putLits(src []byte, from, ll int) {
+	if ll > simdMaxLen {
+		copy(e.lits[e.nLits:], src[from:from+ll])
 	} else {
-		// Through a local, the compiler moves the bytes without calling memmove.
-		v := [simdMaxLen]byte(lits)
-		*(*[simdMaxLen]byte)(e.lits[e.nLits:]) = v
+		store256(e.lits, e.nLits, load256(src, from))
 	}
 	e.nLits += ll
 	e.pos += ll
-	return byte(n) << 1
 }
 
 // putMatch adds an operation with the literal and repeat bits t, and a match at offset that satisfies oneOp.
@@ -256,14 +275,14 @@ func (e *simdEncoder) putLits(lits []byte, ll int) byte {
 func (e *simdEncoder) putMatch(t byte, offset, length int) bool {
 	e.rep = offset
 	if length > simdMaxLen {
-		e.esc[e.nEsc] = byte(length - simdMaxLen - 1)
+		e.esc[e.nEsc&(2*simdChunkOps-1)] = byte(length - simdMaxLen - 1)
 		e.nEsc++
 		t |= (simdMaxLen + 1) << 2
 	} else {
 		t |= byte(length) << 2
 		e.overlap = e.overlap || offset < length
 	}
-	e.tok[e.nTok] = t
+	e.tok[e.nTok&(simdChunkOps-1)] = t
 	e.nTok++
 	e.pos += length
 	return e.nTok == simdChunkOps

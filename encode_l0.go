@@ -311,7 +311,7 @@ func (e *simdEncoder) encodeFastBlockGo(src []byte) {
 			const checkRep = 1
 			if uint32(cv1) == load32(src, s-repeat+checkRep) {
 				base := s + checkRep
-				for i := base - repeat; base > nextEmit && i > 0 && src[i-1] == src[base-1]; {
+				for i := base - repeat; base > nextEmit && i > 0 && load8(src, i-1) == load8(src, base-1); {
 					i--
 					base--
 				}
@@ -326,7 +326,8 @@ func (e *simdEncoder) encodeFastBlockGo(src []byte) {
 					candidate += 8
 				}
 				if e.fast(src, nextEmit, base, s, repeat) {
-					if e.putMatch(1|e.putLits(src[nextEmit:], base-nextEmit), repeat, s-base) {
+					e.putLits(src, nextEmit, base-nextEmit)
+					if e.putMatch(1|e.putLL(base-nextEmit), repeat, s-base) {
 						e.endChunk()
 					}
 				} else {
@@ -373,7 +374,8 @@ func (e *simdEncoder) encodeFastBlockGo(src []byte) {
 		}
 		if e.fast(src, nextEmit, base, s, repeat) {
 			e.putBits(e.putOffset(repeat))
-			if e.putMatch(e.putLits(src[nextEmit:], base-nextEmit), repeat, s-base) {
+			e.putLits(src, nextEmit, base-nextEmit)
+			if e.putMatch(e.putLL(base-nextEmit), repeat, s-base) {
 				e.endChunk()
 			}
 		} else {
@@ -459,7 +461,7 @@ func (e *simdEncoder) encodeFastBlockGo64K(src []byte) {
 			const checkRep = 1
 			if uint32(cv1) == load32(src, s-repeat+checkRep) {
 				base := s + checkRep
-				for i := base - repeat; base > nextEmit && i > 0 && src[i-1] == src[base-1]; {
+				for i := base - repeat; base > nextEmit && i > 0 && load8(src, i-1) == load8(src, base-1); {
 					i--
 					base--
 				}
@@ -474,7 +476,8 @@ func (e *simdEncoder) encodeFastBlockGo64K(src []byte) {
 					candidate += 8
 				}
 				if e.fast(src, nextEmit, base, s, repeat) {
-					if e.putMatch(1|e.putLits(src[nextEmit:], base-nextEmit), repeat, s-base) {
+					e.putLits(src, nextEmit, base-nextEmit)
+					if e.putMatch(1|e.putLL(base-nextEmit), repeat, s-base) {
 						e.endChunk()
 					}
 				} else {
@@ -521,7 +524,8 @@ func (e *simdEncoder) encodeFastBlockGo64K(src []byte) {
 		}
 		if e.fast(src, nextEmit, base, s, repeat) {
 			e.putBits(e.putOffset(repeat))
-			if e.putMatch(e.putLits(src[nextEmit:], base-nextEmit), repeat, s-base) {
+			e.putLits(src, nextEmit, base-nextEmit)
+			if e.putMatch(e.putLL(base-nextEmit), repeat, s-base) {
 				e.endChunk()
 			}
 		} else {
@@ -632,7 +636,7 @@ func encodeFastBlockGo64K(dst, src []byte) (d int) {
 			if uint32(cv>>(checkRep*8)) == load32(src, s-repeat+checkRep) {
 				base := s + checkRep
 				// Extend back
-				for i := base - repeat; base > nextEmit && i > 0 && src[i-1] == src[base-1]; {
+				for i := base - repeat; base > nextEmit && i > 0 && load8(src, i-1) == load8(src, base-1); {
 					i--
 					base--
 				}
@@ -703,7 +707,7 @@ func encodeFastBlockGo64K(dst, src []byte) (d int) {
 
 		// Extend backwards.
 		// The top bytes will be rechecked to get the full match.
-		for false && candidate > 0 && s > nextEmit && src[candidate-1] == src[s-1] {
+		for false && candidate > 0 && s > nextEmit && load8(src, candidate-1) == load8(src, s-1) {
 			candidate--
 			s--
 		}

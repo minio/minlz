@@ -567,7 +567,7 @@ func (w *Writer) encodeBlock(dst, uncompressed []byte) int {
 		case LevelBalanced:
 			n = encodeBlockBetter(obuf, uncompressed)
 		case LevelSmallest:
-			n = encodeBlockBest(obuf, uncompressed, nil)
+			n = encodeBlockBest(obuf, uncompressed)
 		default:
 			// No SIMD block is this small, and dst may have no room for the hash.
 			if len(uncompressed) <= simdMinSaving {
