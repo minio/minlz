@@ -278,7 +278,7 @@ func (lb *lazyBlock) decode() []byte {
 		}
 		toCRC := dst
 		if lb.chunkType == chunkTypeMinLZCompressedDataCompCRC {
-			toCRC = buf
+			toCRC = buf[hdrLen:]
 		}
 		if !lb.ignoreCRC && crc(toCRC) != checksum {
 			return nil
@@ -1276,7 +1276,7 @@ func (s *BlockSearcher) decodePending(p *pendingBlock) ([]byte, error) {
 	}
 	toCRC := s.decoded[di][:n]
 	if lb.chunkType == chunkTypeMinLZCompressedDataCompCRC {
-		toCRC = buf
+		toCRC = buf[hdrLen:]
 	}
 	if !s.ignoreCRC && crc(toCRC) != checksum {
 		return nil, ErrCRC
