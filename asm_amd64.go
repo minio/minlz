@@ -274,3 +274,33 @@ func simdLLStatsAVX512(b *byte, n int) (sum int, esc int, ok bool)
 //
 //go:noescape
 func simdOffStatsAVX512(b *byte, n int) (sum int, zeros int, ok bool)
+
+// encodeFastBlockSIMDAsm parses src into st until it returns to Go, see parseAsm.
+//
+//go:noescape
+func encodeFastBlockSIMDAsm(st *simdStreams, src []byte, tab *[32768]byte) int
+
+// encodeBlockSIMDAsm parses src into st until it returns to Go, see parseAsm.
+//
+//go:noescape
+func encodeBlockSIMDAsm(st *simdStreams, src []byte, tab *[131072]byte) int
+
+// encodeBetterBlockSIMDAsm parses src into st until it returns to Go, see parseAsm.
+//
+//go:noescape
+func encodeBetterBlockSIMDAsm(st *simdStreams, src []byte, tab *[589824]byte) int
+
+// encodeFastBlockSIMDAsm64K parses src into st until it returns to Go, see parseAsm.
+//
+//go:noescape
+func encodeFastBlockSIMDAsm64K(st *simdStreams, src []byte, tab *[16384]byte) int
+
+// encodeBlockSIMDAsm64K parses src into st until it returns to Go, see parseAsm.
+//
+//go:noescape
+func encodeBlockSIMDAsm64K(st *simdStreams, src []byte, tab *[32768]byte) int
+
+// encodeBetterBlockSIMDAsm64K parses src into st until it returns to Go, see parseAsm.
+//
+//go:noescape
+func encodeBetterBlockSIMDAsm64K(st *simdStreams, src []byte, tab *[147456]byte) int

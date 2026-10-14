@@ -51,26 +51,41 @@ type simdTable struct {
 	b    [128]byte
 }
 
+// simdStreams holds the streams of the current chunk and the parser state that the assembly parsers share.
+// _generate/gen-simd-enc.go mirrors its layout, see TestSIMDAsmLayout.
+type simdStreams struct {
+	nTok, nLL, nOffc, nEsc, nRaw, nLits, nacc int
+	acc                                       uint64
+	pos, rep                                  int
+	// lits holds the literals of the block.
+	lits    []byte
+	overlap bool // a match of the chunk overlaps its output
+
+	// The arrays follow the fields of every operation, so those and tok have offsets below 128,
+	// which amd64 encodes in a byte.
+	// An offset has at most 20 raw bits.
+	// The fast paths mask their indexes, so the compiler drops the bounds checks.
+	tok, ll, offc [simdChunkOps]byte
+	esc           [2 * simdChunkOps]byte
+	raw           [1<<16 + 3]byte // room for a 4 byte store at any uint16 index
+
+	// An assembly parser resumes at asmSite. It leaves operations to Go as the literals src[pos:asmBase],
+	// then a match of asmLen bytes at offset asmOff, or at the repeat offset.
+	asmSite, asmBase, asmLen, asmOff int
+}
+
 // simdEncoder builds SIMD blocks. Parsers emit operations, which are coded a chunk at a time,
 // then finish codes the literals and writes the block.
 type simdEncoder struct {
-	pv  pivco.Encoder
-	src []byte
+	// First, so the parsers' fields have short offsets.
+	simdStreams
 
-	// The streams of the current chunk. An offset has at most 20 raw bits.
-	// The fast paths mask their indexes, so the compiler drops the bounds checks.
-	tok, ll, offc                [simdChunkOps]byte
-	esc                          [2 * simdChunkOps]byte
-	raw                          [1<<16 + 3]byte // room for a 4 byte store at any uint16 index
-	nTok, nLL, nOffc, nEsc, nRaw int
-	chunks                       int
-	acc                          uint64
-	nacc                         int
-	overlap                      bool // a match of the chunk overlaps its output
+	pv     pivco.Encoder
+	src    []byte
+	chunks int
 
-	// The literals of the block, and as delta literals. With delta literals only, dlits is lits.
-	buf, lits, dlits []byte
-	nLits            int
+	// buf holds lits and dlits, the literals of the block as delta literals. With delta literals only, dlits is lits.
+	buf, dlits []byte
 	// opLits ends the literals of the operations, and chunkLits starts those of the current chunk.
 	// switches holds the literal positions where plain and delta literals take turns, starting with plain.
 	opLits, chunkLits int
@@ -82,8 +97,9 @@ type simdEncoder struct {
 	// fastCode, when set, makes put build one table at most: code lengths for at least fastCode values,
 	// else class lengths. Building tables dominates the encoding of small blocks.
 	fastCode int
+	// tab holds the hash tables of the assembly parsers. They persist across the calls of a block.
+	tab []byte
 
-	pos, rep int
 	deltaDiv int // delta literals must save 1/deltaDiv of a chunk; 0 disables them, -1 uses only them
 	limit    int // largest size of the encoded block
 
@@ -112,36 +128,65 @@ func encodeBlockSIMD(dst, src []byte, level int) int {
 	return n
 }
 
+// simdEncAsm makes blocks without delta literals use the assembly parsers, which parse as the Go parsers.
+var simdEncAsm = hasAsm
+
+// The assembly parsers, see parseAsm.
+const (
+	simdAsmFast      = iota // encodeFastBlockGo
+	simdAsmBlock            // encodeBlockGo
+	simdAsmBetter           // encodeBlockBetterGo
+	simdAsmFast64K          // encodeFastBlockGo64K
+	simdAsmBlock64K         // encodeBlockGo64K
+	simdAsmBetter64K        // encodeBlockBetterGo64K
+)
+
 // parse codes the operations of src.
 func (e *simdEncoder) parse(src []byte, level int) {
 	delta := 0
 	if level&LevelSIMDDelta != 0 {
 		delta = -1
 	}
+	asm := simdEncAsm && delta == 0
 	e.splitLits = level == LevelSmallestSIMD
 	e.fastCode = 0
 	switch level &^ LevelSIMDDelta {
 	case LevelSuperFastSIMD:
 		e.fastCode = 1
 		e.reset(src, delta, len(src)>>3)
-		if len(src) <= 64<<10 {
+		switch {
+		case asm && len(src) <= 64<<10:
+			e.parseAsm(src, simdAsmFast64K)
+		case len(src) <= 64<<10:
 			e.encodeFastBlockGo64K(src)
-		} else {
+		case asm:
+			e.parseAsm(src, simdAsmFast)
+		default:
 			e.encodeFastBlockGo(src)
 		}
 	case LevelFastestSIMD:
 		e.fastCode = 4096
 		e.reset(src, delta, len(src)>>5)
-		if len(src) <= 64<<10 {
+		switch {
+		case asm && len(src) <= 64<<10:
+			e.parseAsm(src, simdAsmBlock64K)
+		case len(src) <= 64<<10:
 			e.encodeBlockGo64K(src)
-		} else {
+		case asm:
+			e.parseAsm(src, simdAsmBlock)
+		default:
 			e.encodeBlockGo(src)
 		}
 	case LevelBalancedSIMD:
 		e.reset(src, delta, len(src)>>5)
-		if len(src) <= 64<<10 {
+		switch {
+		case asm && len(src) <= 64<<10:
+			e.parseAsm(src, simdAsmBetter64K)
+		case len(src) <= 64<<10:
 			e.encodeBlockBetterGo64K(src)
-		} else {
+		case asm:
+			e.parseAsm(src, simdAsmBetter)
+		default:
 			e.encodeBlockBetterGo(src)
 		}
 	default:

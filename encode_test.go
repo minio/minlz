@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"math"
 	"math/rand"
 	"path/filepath"
 	"reflect"
@@ -1191,7 +1192,9 @@ func TestSIMDEncode(t *testing.T) {
 
 // TestSIMDEncodeRoom checks that blocks don't depend on spare room in dst, and save the level's minimum.
 // Skewed random bytes code close to the size limits of the levels.
-func TestSIMDEncodeRoom(t *testing.T) {
+func TestSIMDEncodeRoom(t *testing.T) { simdEncTiers(t, testSIMDEncodeRoom) }
+
+func testSIMDEncodeRoom(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
 	big := make([]byte, MaxEncodedLen(16<<10)+64<<10)
 	for _, size := range []int{1 << 10, 4 << 10, 16 << 10} {
@@ -1249,7 +1252,9 @@ func TestSIMDEncodeMaxChunks(t *testing.T) {
 }
 
 // TestSIMDEncodeOps decodes encoded blocks with the strict reference decoder, which also checks the no-overlap flags.
-func TestSIMDEncodeOps(t *testing.T) {
+func TestSIMDEncodeOps(t *testing.T) { simdEncTiers(t, testSIMDEncodeOps) }
+
+func testSIMDEncodeOps(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
 	inputs := [][]byte{
 		make([]byte, 100000),
@@ -1322,10 +1327,8 @@ func TestSIMDEncodeChunkEdge(t *testing.T) {
 	}
 }
 
-// TestSIMDEncodeParse checks that the parsers' operations cover the input, which blocks without delta literals don't show,
-// with literal runs and matches around the lengths where the parsers leave operations to the emitters.
-func TestSIMDEncodeParse(t *testing.T) {
-	rng := rand.New(rand.NewSource(1))
+// simdTestParseInput returns 1 MiB of literal runs and matches around the lengths where the parsers leave operations to the emitters.
+func simdTestParseInput(rng *rand.Rand) []byte {
 	lens := []int{0, 1, 4, 8, 31, 32, 33, 287, 288, 289, 290, 600}
 	offs := []int{1, 3, 8, 15, 16, 31, 32, 33, 1000, 100000}
 	src := []byte{0}
@@ -1338,7 +1341,17 @@ func TestSIMDEncodeParse(t *testing.T) {
 			src = append(src, src[len(src)-off])
 		}
 	}
-	for _, in := range [][]byte{src[:64<<10], src[:1<<20], genEncText(rng, 1<<20)} {
+	return src[:1<<20]
+}
+
+// TestSIMDEncodeParse checks that the parsers' operations cover the input, which blocks without delta literals don't show,
+// with literal runs and matches around the lengths where the parsers leave operations to the emitters.
+func TestSIMDEncodeParse(t *testing.T) { simdEncTiers(t, testSIMDEncodeParse) }
+
+func testSIMDEncodeParse(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	src := simdTestParseInput(rng)
+	for _, in := range [][]byte{src[:64<<10], src, genEncText(rng, 1<<20)} {
 		for _, level := range simdLevels {
 			block := make([]byte, MaxEncodedLen(len(in)))
 			e := simdEncoder{out: block[1:1:len(block)]}
@@ -1433,7 +1446,9 @@ func TestSIMDEncodeDelta(t *testing.T) {
 	}
 }
 
-func TestSIMDEncodeAllocs(t *testing.T) {
+func TestSIMDEncodeAllocs(t *testing.T) { simdEncTiers(t, testSIMDEncodeAllocs) }
+
+func testSIMDEncodeAllocs(t *testing.T) {
 	if race.Enabled {
 		t.Skip("sync.Pool drops items with -race")
 	}
@@ -1448,4 +1463,86 @@ func TestSIMDEncodeAllocs(t *testing.T) {
 			t.Errorf("level %d: %v allocations", level, n)
 		}
 	}
+}
+
+// simdAsmReturns, with assembly parsers, runs f and returns how often they returned to Go.
+var simdAsmReturns func(f func()) int
+
+// simdEncTiers runs f as a subtest with the Go parsers, and with the assembly parsers if there are any, which f must use.
+func simdEncTiers(t *testing.T, f func(t *testing.T)) {
+	defer func(asm bool) { simdEncAsm = asm }(simdEncAsm)
+	simdEncAsm = false
+	t.Run("go", f)
+	if hasAsm {
+		simdEncAsm = true
+		t.Run("asm", func(t *testing.T) {
+			if simdAsmReturns(func() { f(t) }) == 0 {
+				t.Error("the assembly parsers were not used")
+			}
+		})
+	}
+}
+
+// simdAsmParser is a Go parser with an assembly version, for blocks of at most max bytes.
+type simdAsmParser struct {
+	name             string
+	k, fastCode, max int
+	parse            func(e *simdEncoder, src []byte)
+}
+
+var simdAsmParsers = []simdAsmParser{
+	{"SuperFast", simdAsmFast, 1, MaxBlockSize, (*simdEncoder).encodeFastBlockGo},
+	{"Fastest", simdAsmBlock, 4096, MaxBlockSize, (*simdEncoder).encodeBlockGo},
+	{"Balanced", simdAsmBetter, 0, MaxBlockSize, (*simdEncoder).encodeBlockBetterGo},
+	{"SuperFast64K", simdAsmFast64K, 1, 64 << 10, (*simdEncoder).encodeFastBlockGo64K},
+	{"Fastest64K", simdAsmBlock64K, 4096, 64 << 10, (*simdEncoder).encodeBlockGo64K},
+	{"Balanced64K", simdAsmBetter64K, 0, 64 << 10, (*simdEncoder).encodeBlockBetterGo64K},
+}
+
+// simdParseResult is the state of a simdEncoder after a block is parsed, and the block.
+type simdParseResult struct {
+	pos, rep, chunks, size int
+	lits, out, recs, block []byte
+}
+
+// simdParseRun parses src with the Go parser of p, or its assembly version, as parse does but without the size limit.
+func simdParseRun(e *simdEncoder, src []byte, p simdAsmParser, asm bool) (r simdParseResult) {
+	if n := 2*len(src) + 1<<16; cap(e.out) < n {
+		e.out = make([]byte, 0, n)
+	}
+	e.splitLits, e.fastCode = false, p.fastCode
+	e.reset(src, 0, 0)
+	e.limit = math.MaxInt / 2
+	if asm {
+		e.parseAsm(src, p.k)
+	} else {
+		p.parse(e, src)
+	}
+	if e.nTok > 0 {
+		e.endChunk()
+	}
+	r = simdParseResult{pos: e.pos, rep: e.rep, chunks: e.chunks, lits: bytes.Clone(e.lits[:e.nLits]),
+		out: bytes.Clone(e.out), recs: bytes.Clone(e.chunkRecs)}
+	r.size = e.finish()
+	r.block = bytes.Clone(e.out)
+	return r
+}
+
+// simdParseDiff returns how the results of the Go and the assembly parser differ, or "".
+func simdParseDiff(g, a simdParseResult) string {
+	first := func(x, y []byte) int {
+		n := min(len(x), len(y))
+		return matchLen(x[:n], y[:n])
+	}
+	switch {
+	case g.pos != a.pos || g.rep != a.rep || g.chunks != a.chunks:
+		return fmt.Sprintf("pos, rep, chunks %d %d %d, assembly %d %d %d", g.pos, g.rep, g.chunks, a.pos, a.rep, a.chunks)
+	case !bytes.Equal(g.lits, a.lits):
+		return fmt.Sprintf("%d literals, assembly %d, first difference at %d", len(g.lits), len(a.lits), first(g.lits, a.lits))
+	case !bytes.Equal(g.out, a.out) || !bytes.Equal(g.recs, a.recs):
+		return fmt.Sprintf("chunks of %d+%d bytes, assembly %d+%d, first difference at %d", len(g.out), len(g.recs), len(a.out), len(a.recs), first(g.out, a.out))
+	case g.size != a.size || !bytes.Equal(g.block, a.block):
+		return fmt.Sprintf("block of %d bytes, assembly %d", g.size, a.size)
+	}
+	return ""
 }

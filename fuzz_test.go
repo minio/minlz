@@ -52,9 +52,20 @@ func FuzzEncodingBlocks(f *testing.F) {
 		maxSize = MaxBlockSize
 	)
 
+	eg, ea := new(simdEncoder), new(simdEncoder)
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if len(data) > maxSize {
 			return
+		}
+		if hasAsm && len(data) >= minNonLiteralBlockSize {
+			for _, p := range simdAsmParsers {
+				if len(data) > p.max {
+					continue
+				}
+				if d := simdParseDiff(simdParseRun(eg, data, p, false), simdParseRun(ea, data, p, true)); d != "" {
+					t.Errorf("%s: %s", p.name, d)
+				}
+			}
 		}
 		writeDst := make([]byte, MaxEncodedLen(len(data)), MaxEncodedLen(len(data))+4)
 		writeDst = append(writeDst, 1, 2, 3, 4)

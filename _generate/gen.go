@@ -126,6 +126,7 @@ func main() {
 		// The SIMD block loops need AVX2.
 		genSIMD()
 	}
+	genSIMDEnc()
 
 	// This has quite low impact, so we disable it.
 	if false {

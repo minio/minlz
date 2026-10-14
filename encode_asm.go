@@ -266,3 +266,61 @@ func encodeBlockBetter(dst, src []byte) (d int) {
 	}
 	return 0
 }
+
+// The return codes of the assembly parsers.
+const (
+	simdAsmDone   = iota // the literals from pos end the block
+	simdAsmFull          // the chunk is full
+	simdAsmCopy          // the operation of asmBase, asmLen and asmOff is for emitCopyLits
+	simdAsmRepeat        // the operation of asmBase and asmLen is for emitRepeatLits
+)
+
+// simdAsmTab holds the table sizes of the assembly parsers.
+var simdAsmTab = [...]int{simdAsmFast: 32 << 10, simdAsmBlock: 128 << 10, simdAsmBetter: 576 << 10,
+	simdAsmFast64K: 16 << 10, simdAsmBlock64K: 32 << 10, simdAsmBetter64K: 144 << 10}
+
+// simdAsmHook, when tests set it, sees each return of an assembly parser before Go acts on it.
+var simdAsmHook func(e *simdEncoder, r int)
+
+// parseAsm parses src with assembly parser k. It codes the chunks that the parser fills,
+// and adds the operations that the parser leaves to the emitters.
+func (e *simdEncoder) parseAsm(src []byte, k int) {
+	n := simdAsmTab[k]
+	if len(e.tab) < n {
+		e.tab = make([]byte, n)
+	}
+	clear(e.tab[:n])
+	race.ReadSlice(src)
+	e.asmSite = 0
+	for {
+		var r int
+		switch k {
+		case simdAsmFast:
+			r = encodeFastBlockSIMDAsm(&e.simdStreams, src, (*[32 << 10]byte)(e.tab))
+		case simdAsmBlock:
+			r = encodeBlockSIMDAsm(&e.simdStreams, src, (*[128 << 10]byte)(e.tab))
+		case simdAsmBetter:
+			r = encodeBetterBlockSIMDAsm(&e.simdStreams, src, (*[576 << 10]byte)(e.tab))
+		case simdAsmFast64K:
+			r = encodeFastBlockSIMDAsm64K(&e.simdStreams, src, (*[16 << 10]byte)(e.tab))
+		case simdAsmBlock64K:
+			r = encodeBlockSIMDAsm64K(&e.simdStreams, src, (*[32 << 10]byte)(e.tab))
+		case simdAsmBetter64K:
+			r = encodeBetterBlockSIMDAsm64K(&e.simdStreams, src, (*[144 << 10]byte)(e.tab))
+		}
+		if simdAsmHook != nil {
+			simdAsmHook(e, r)
+		}
+		switch r {
+		case simdAsmFull:
+			e.endChunk()
+		case simdAsmCopy:
+			e.emitCopyLits(src[e.pos:e.asmBase], e.asmOff, e.asmLen)
+		case simdAsmRepeat:
+			e.emitRepeatLits(src[e.pos:e.asmBase], e.asmLen)
+		default:
+			e.emitLiterals(src[e.pos:])
+			return
+		}
+	}
+}
