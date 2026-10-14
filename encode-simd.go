@@ -32,6 +32,9 @@ const (
 	simdMaxLong = simdMaxLen + 1 + 255
 	// simdBlockBits estimates the overhead of a pivco block.
 	simdBlockBits = 32 * 8
+	// simdFastBlockBits is the overhead SuperFast and Fastest assume. They store more small streams,
+	// which encodes ~5% faster at 4 KB and costs at most 0.2% size.
+	simdFastBlockBits = 40 * 8
 	// simdMinCoded is the fewest values that, at one bit each, code smaller than stored.
 	simdMinCoded = simdBlockBits/7 + 1
 	// simdRecordMax is the size of the largest chunk record: flags, 5 sizes and 4 tables.
@@ -679,12 +682,17 @@ func (e *simdEncoder) put(recs []byte, k int, v []byte) []byte {
 	k = min(k, simdLits)
 	var best *simdTable
 	bestBits := 8 * len(v)
+	blockBits := simdBlockBits
+	if e.fastCode != 0 {
+		blockBits = simdFastBlockBits
+	}
 	try := func(t *simdTable, extra int) {
-		if n, ok := t.cost(&e.hist); ok && n+extra+simdBlockBits < bestBits {
-			best, bestBits = t, n+extra+simdBlockBits
+		if n, ok := t.cost(&e.hist); ok && n+extra+blockBits < bestBits {
+			best, bestBits = t, n+extra+blockBits
 		}
 	}
-	if len(v) >= simdMinCoded {
+	// As simdMinCoded, for blockBits.
+	if len(v) > blockBits/7 {
 		e.histogram(v)
 		if e.have[k] {
 			try(&e.cur[k], 0)
