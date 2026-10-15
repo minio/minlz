@@ -32,6 +32,7 @@ import (
 	"github.com/minio/minlz/internal/pivco"
 	"github.com/minio/minlz/internal/race"
 	"github.com/minio/minlz/internal/reference"
+	"github.com/zeebo/xxh3"
 )
 
 // The test block builder below is written from SIMD_SPEC.md, independently of the encoder.
@@ -449,6 +450,14 @@ func simdTestDecode(t testing.TB, block, want []byte) {
 		if v != 0xfe {
 			t.Fatal("wrote past dst")
 		}
+	}
+	// Hashing chunk by chunk gives the hash of the output.
+	_, sb, err := simdHeader(block[1:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h, err := decodeSIMDHash(make([]byte, n), sb, true); err != nil || h != xxh3.Hash(want) {
+		t.Fatalf("hash %x, want %x (%v)", h, xxh3.Hash(want), err)
 	}
 }
 
@@ -1349,6 +1358,14 @@ func testSIMDDecodeAllocs(t *testing.T) {
 	if n := testing.AllocsPerRun(20, func() { Decode(dst, block) }); n != 0 {
 		t.Errorf("%v allocations", n)
 	}
+	_, body, err := simdHeader(block[1:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	decodeSIMDHash(dst, body, true)
+	if n := testing.AllocsPerRun(20, func() { decodeSIMDHash(dst, body, true) }); n != 0 {
+		t.Errorf("hashing: %v allocations", n)
+	}
 }
 
 // TestSIMDCorruptClears checks that a failed decode leaves nothing in dst, such as the literals
@@ -1800,7 +1817,7 @@ func simdTestLitDecode(t *testing.T, block []byte) ([]byte, error) {
 	}
 	s := simdDecoder{lits: lits[:0]}
 	dst := bytes.Repeat([]byte{0xfe}, size+64)
-	ok := s.decode(dst[:size], body)
+	ok := s.decode(dst[:size], body, nil)
 	for _, v := range dst[size:] {
 		if v != 0xfe {
 			t.Fatal("wrote past dst")

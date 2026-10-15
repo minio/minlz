@@ -24,7 +24,6 @@ import (
 	"sync"
 
 	"github.com/klauspost/compress/s2"
-	"github.com/zeebo/xxh3"
 )
 
 // ErrCantSeek is returned if the stream cannot be seeked.
@@ -1149,13 +1148,11 @@ func simdChunkHeader(payload []byte, maxBlock int) (int, []byte, error) {
 // decodeSIMDChunk decodes block, the SIMD block of payload, to dst, which must have the decoded size.
 // Unless ignoreHash is set, the decoded data must match the hash of payload.
 func decodeSIMDChunk(dst, payload, block []byte, ignoreHash bool) error {
-	if err := decodeSIMD(dst, block); err != nil {
-		return err
+	h, err := decodeSIMDHash(dst, block, !ignoreHash)
+	if err == nil && !ignoreHash && h != binary.LittleEndian.Uint64(payload) {
+		err = ErrCRC
 	}
-	if !ignoreHash && xxh3.Hash(dst) != binary.LittleEndian.Uint64(payload) {
-		return ErrCRC
-	}
-	return nil
+	return err
 }
 
 // Skip will skip n bytes forward in the decompressed output.

@@ -22,6 +22,7 @@ import (
 
 	"github.com/minio/minlz/internal/pivco"
 	"github.com/minio/minlz/internal/race"
+	"github.com/zeebo/xxh3"
 )
 
 // SIMD blocks are described in SIMD_SPEC.md.
@@ -217,6 +218,8 @@ type simdDecoder struct {
 
 	tok, ll, offc [simdMaxChunk + simdPad]byte
 	esc           [2*simdMaxChunk + simdPad]byte
+
+	h *xxh3.Hasher
 }
 
 // simdChunk holds the streams of a chunk. ll, offc, esc and raw stay readable past their values.
@@ -237,23 +240,44 @@ var simdDecoders sync.Pool
 
 // decodeSIMD decodes a SIMD block, from its flags byte, into dst, which must have the decoded size.
 func decodeSIMD(dst, block []byte) error {
+	_, err := decodeSIMDHash(dst, block, false)
+	return err
+}
+
+// decodeSIMDHash is decodeSIMD, which with hash also returns the XXH3 hash of dst.
+// It hashes the output of each chunk as soon as the chunk has run, while it is still in cache:
+// hashing a large block after decoding it reads it back from memory.
+func decodeSIMDHash(dst, block []byte, hash bool) (uint64, error) {
 	s, _ := simdDecoders.Get().(*simdDecoder)
 	if s == nil {
 		s = new(simdDecoder)
 	}
 	race.ReadSlice(block)
 	race.WriteSlice(dst)
-	ok := s.decode(dst, block)
+	var h *xxh3.Hasher
+	if hash {
+		if s.h == nil {
+			s.h = xxh3.New()
+		}
+		h = s.h
+		h.Reset()
+	}
+	ok := s.decode(dst, block, h)
+	var sum uint64
+	if h != nil {
+		sum = h.Sum64()
+	}
 	simdDecoders.Put(s)
 	if !ok {
 		// Literals of earlier blocks may have been copied.
 		clear(dst)
-		return ErrCorrupt
+		return 0, ErrCorrupt
 	}
-	return nil
+	return sum, nil
 }
 
-func (s *simdDecoder) decode(dst, block []byte) bool {
+// decode decodes block into dst, and adds dst to h unless h is nil.
+func (s *simdDecoder) decode(dst, block []byte, h *xxh3.Hasher) bool {
 	limit := 1024 << (block[0] & 7)
 	body := block[1:]
 	lz, n := rvarint(body)
@@ -267,7 +291,7 @@ func (s *simdDecoder) decode(dst, block []byte) bool {
 	// The first operation has literals, so offset 0 only occurs as a delta reference at position 0.
 	dst[0] = 0
 	st := [4]int{0, 0, 1, 0}
-	if lz > 0 && !s.ops(dst, body, int(lz), limit, &st, &lr) {
+	if lz > 0 && !s.ops(dst, body, int(lz), limit, &st, &lr, h) {
 		return false
 	}
 	if len(lr.recs) > 0 && !s.fill(&lr, 0, math.MaxInt, len(dst)) {
@@ -278,6 +302,10 @@ func (s *simdDecoder) decode(dst, block []byte) bool {
 		return false
 	}
 	copy(dst[d:], s.lits[l:nLits])
+	if h != nil {
+		// ops added dst[:d].
+		h.Write(dst[d:])
+	}
 	return true
 }
 
@@ -318,7 +346,8 @@ func (s *simdDecoder) fill(r *simdReader, l, need, size int) bool {
 }
 
 // ops runs the chunks of the LZ section body[:end], with the literal blocks of lr.
-func (s *simdDecoder) ops(dst, body []byte, end, limit int, st *[4]int, lr *simdReader) bool {
+// It adds the output of each chunk to h unless h is nil.
+func (s *simdDecoder) ops(dst, body []byte, end, limit int, st *[4]int, lr *simdReader, h *xxh3.Hasher) bool {
 	t, n := rvarint(body[:end])
 	if n == 0 || t > uint64(end-n) {
 		return false
@@ -373,10 +402,15 @@ func (s *simdDecoder) ops(dst, body []byte, end, limit int, st *[4]int, lr *simd
 		if need := sumLL + min(sumEsc, 255*nLLEsc); st[1]+need > len(s.lits) && !s.fill(lr, st[1], need, len(dst)) {
 			return false
 		}
+		d := st[0]
 		c.run(dst, lits, out, st)
 		// Chunks only use more literals than are decoded once the literal blocks run out.
 		if st[3] != 0 || st[1] > len(s.lits) {
 			return false
+		}
+		if h != nil {
+			// The output before st[0] is final: the executors only write past it.
+			h.Write(dst[d:st[0]])
 		}
 	}
 	return r.pos == r.end
