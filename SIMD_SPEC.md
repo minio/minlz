@@ -145,10 +145,29 @@ The literal section holds all literals of the block, in output order, in literal
     | literal block 1 | ... | literal block n | literal records | R |
 
 `R`, a reverse varint, is the size of the literal records. It ends the literal section, just before `L`.
-There is one literal record per literal block, in order, and a literal record is an entry (2.2).
+There is one literal record per literal block, in order. A literal record is an entry (2.2):
+
+    literal record:  | varint: stored size * 8 + mode | table (modes 2-4 only) |
+
+The mode and the table are in the record; the literal block holds only the stored data:
+
+| Mode | Table in the record           | Literal block                                       |
+|------|-------------------------------|-----------------------------------------------------|
+| 0    | None                          | The literals                                        |
+| 1    | None, the current table       | Number of literals (2 bytes LE), then a pivco block |
+| 2    | Code lengths, 128 bytes       | Number of literals (2 bytes LE), then a pivco block |
+| 3    | Class lengths (A.5), 7 bytes  | Number of literals (2 bytes LE), then a pivco block |
+| 4    | Class lengths (A.6), 5 bytes  | Number of literals (2 bytes LE), then a pivco block |
+
+The stored size is the size of the literal block, without the table.
+A table set by a literal record is the literals' current table for the following literal records (2.2).
 
 A decoder reads `R`, then the literal records forwards from their start.
 The literal blocks follow each other from the start of the section, with the sizes their records give.
+
+For example, 1000 literals in one literal block, coded with a new class-lengths table into a 600-byte pivco block:
+the literal block is the 2 bytes `E8 03` and the pivco block, 602 bytes,
+and the literal record is `D3 25` (`602 * 8 + 3` = 4819) followed by the 7 bytes of the table.
 
 There is at least one literal block, and a literal block holds 1 to 65535 literals.
 

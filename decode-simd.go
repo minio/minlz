@@ -459,20 +459,17 @@ func (s *simdDecoder) setTable(k, mode int, b []byte) (int, bool) {
 		}
 		grp := &simdLayouts[simdTok]
 		for v := range 136 {
-			ml, f := v>>2, g[14+v&3]
-			if ml >= 32 {
-				f = g[18+v&3]
-			}
-			if gl := g[grp.class[ml]]; gl != 0 && f != 0 {
-				lens[v] = gl + grp.in[ml] + f
-			}
+			ml := v >> 2
+			gl, f := g[grp.class[ml]], g[14+4*(v>>7)+v&3]
+			lens[v] = (gl + grp.in[ml] + f) & -((gl + 15) >> 4) & -((f + 15) >> 4)
 		}
 	default:
 		lay := &simdLayouts[k]
 		if mode == simdDeltaLens {
 			lay = &simdLayouts[simdDelta]
 		}
-		var cl [24]uint8
+		// Class 0xff, outside the stream's range, has length 0.
+		var cl [256]uint8
 		n = (lay.n + 1) / 2
 		if len(b) < n || lay.n&1 != 0 && b[n-1]>>4 != 0 {
 			return 0, false
@@ -480,20 +477,22 @@ func (s *simdDecoder) setTable(k, mode int, b []byte) (int, bool) {
 		for i, v := range b[:n] {
 			cl[2*i], cl[2*i+1] = v&15, v>>4
 		}
-		for v, c := range lay.class {
-			if c != 0xff && cl[c] != 0 {
-				lens[v] = cl[c] + lay.in[v]
-			}
+		// Branch-free: which classes have codes is data. x+15 has bit 4 set unless x is 0.
+		for v, c := range lay.class[:2*simdCodeBytes[min(k, simdLits)]] {
+			x := cl[c]
+			lens[v] = (x + lay.in[v]) & -((x + 15) >> 4)
 		}
 	}
-	used, last := 0, uint8(0)
-	for _, l := range lens {
-		if l != 0 {
-			used, last = used+1, l
-		}
+	// Lengths are at most 15, so adding 15 to a byte doesn't carry out of it,
+	// and the sum of 8 lengths fits a byte.
+	used, sum := 0, 0
+	for i := 0; i < 2*simdCodeBytes[min(k, simdLits)]; i += 8 {
+		x := load64(lens[:], i)
+		used += bits.OnesCount64((x + 0x0f0f0f0f0f0f0f0f) & 0x1010101010101010)
+		sum += int(x * 0x0101010101010101 >> 56)
 	}
 	// pivco accepts any length for a lone value.
-	if used == 1 && last != 1 || s.tab[k].SetLengths(&lens) != nil {
+	if used == 1 && sum != 1 || s.tab[k].SetLengths(&lens) != nil {
 		return 0, false
 	}
 	s.have[k] = true
