@@ -90,7 +90,7 @@ func canon(t testing.TB, c coder, tb *Table, blk, src []byte) {
 	t.Helper()
 	var h [256]uint64
 	c.enc.Histogram(&h, src)
-	again := make([]byte, tb.BlockSize(&h))
+	again := make([]byte, tb.BlockSize(h[:]))
 	if len(again) != len(blk) || c.enc.Encode(again, src, tb) != nil || !bytes.Equal(again, blk) {
 		t.Fatalf("accepted a block the encoder does not write for its output\nblock %x\n  enc %x", blk, again)
 	}

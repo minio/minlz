@@ -122,6 +122,15 @@ func kraftSum(lens *[256]uint8) int {
 	return k
 }
 
+// usedSyms returns the length of h up to its last used symbol.
+func usedSyms(h *[256]uint64) int {
+	k := len(h)
+	for k > 0 && h[k-1] == 0 {
+		k--
+	}
+	return k
+}
+
 func checkLengths(t *testing.T, h *[256]uint64, lens *[256]uint8) {
 	t.Helper()
 	used := 0
@@ -142,10 +151,14 @@ func TestBuildLengthsC(t *testing.T) {
 	d := fnv.New64a()
 	for _, h := range lensTestHists() {
 		var lens [256]uint8
-		if !BuildLengths(&h, &lens) {
+		if !BuildLengths(h[:], &lens) {
 			t.Fatal("empty")
 		}
 		checkLengths(t, &h, &lens)
+		var short [256]uint8
+		if !BuildLengths(h[:usedSyms(&h)], &short) || short != lens {
+			t.Fatalf("lengths up to the last used symbol: %v, want %v", short, lens)
+		}
 		d.Write(lens[:])
 	}
 	if got := d.Sum64(); got != lensTestDigest {
@@ -157,22 +170,22 @@ func TestBuildLengthsEdges(t *testing.T) {
 	var h [256]uint64
 	var lens [256]uint8
 	lens[3] = 9
-	if BuildLengths(&h, &lens) || lens != ([256]uint8{}) {
+	if BuildLengths(h[:], &lens) || lens != ([256]uint8{}) {
 		t.Fatal("empty histogram accepted or lens not cleared")
 	}
 	h[200] = 1 << 63
-	if !BuildLengths(&h, &lens) || lens[200] != 1 || kraftSum(&lens) != 1<<10 {
+	if !BuildLengths(h[:], &lens) || lens[200] != 1 || kraftSum(&lens) != 1<<10 {
 		t.Fatalf("single symbol: %v", lens)
 	}
 	h[7] = 3
-	BuildLengths(&h, &lens)
+	BuildLengths(h[:], &lens)
 	if lens[7] != 1 || lens[200] != 1 {
 		t.Fatal("two symbols")
 	}
 	for i := range h {
 		h[i] = 1000
 	}
-	BuildLengths(&h, &lens)
+	BuildLengths(h[:], &lens)
 	for _, l := range lens {
 		if l != 8 {
 			t.Fatal("uniform 256")
@@ -180,7 +193,7 @@ func TestBuildLengthsEdges(t *testing.T) {
 	}
 	// Equal frequencies: the leaf wins ties, so the shorter codes go to the first symbols.
 	h = [256]uint64{'a': 1, 'b': 1, 'c': 1}
-	BuildLengths(&h, &lens)
+	BuildLengths(h[:], &lens)
 	if lens['a'] != 2 || lens['b'] != 2 || lens['c'] != 1 {
 		t.Fatalf("ties: %d %d %d", lens['a'], lens['b'], lens['c'])
 	}
@@ -215,7 +228,7 @@ func TestBuildLengthsExtreme(t *testing.T) {
 	hs = append(hs, all)
 	for _, h := range hs {
 		var lens [256]uint8
-		BuildLengths(&h, &lens)
+		BuildLengths(h[:], &lens)
 		checkLengths(t, &h, &lens)
 	}
 }
@@ -247,7 +260,7 @@ func BenchmarkBuildLengths(b *testing.B) {
 	hs := lensTestHists()[:2000]
 	var lens [256]uint8
 	for i := 0; b.Loop(); i++ {
-		BuildLengths(&hs[i%len(hs)], &lens)
+		BuildLengths(hs[i%len(hs)][:], &lens)
 	}
 }
 
@@ -265,14 +278,14 @@ func FuzzLengths(f *testing.F) {
 			h[p[0]] = (uint64(p[1]) | uint64(p[2])<<8) << shift
 		}
 		var lens, again [256]uint8
-		if !BuildLengths(&h, &lens) {
+		if !BuildLengths(h[:], &lens) {
 			if h != ([256]uint64{}) {
 				t.Fatal("non-empty histogram rejected")
 			}
 			return
 		}
 		checkLengths(t, &h, &lens)
-		if BuildLengths(&h, &again); again != lens {
+		if BuildLengths(h[:], &again); again != lens {
 			t.Fatal("not deterministic")
 		}
 		mustTable(t, &lens)

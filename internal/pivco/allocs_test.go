@@ -45,11 +45,11 @@ func TestAllocs(t *testing.T) {
 			var h [256]uint64
 			enc.Histogram(&h, big)
 			var l [256]uint8
-			BuildLengths(&h, &l)
+			BuildLengths(h[:], &l)
 			if tb.SetLengths(&l) != nil {
 				t.Fatal("SetLengths")
 			}
-			b := buf[:tb.BlockSize(&h)]
+			b := buf[:tb.BlockSize(h[:])]
 			if err := enc.Encode(b, big, tb); err != nil {
 				t.Fatal(err)
 			}
@@ -64,13 +64,13 @@ func TestAllocs(t *testing.T) {
 			var h [256]uint64
 			enc.Histogram(&h, src[:])
 			var l [256]uint8
-			BuildLengths(&h, &l)
+			BuildLengths(h[:], &l)
 			var t1 Table
 			if t1.SetLengths(&l) != nil {
 				t.Fatal("SetLengths")
 			}
 			var enc1 [8192]byte
-			b := enc1[:t1.BlockSize(&h)]
+			b := enc1[:t1.BlockSize(h[:])]
 			if err := enc.Encode(b, src[:], &t1); err != nil {
 				t.Fatal(err)
 			}

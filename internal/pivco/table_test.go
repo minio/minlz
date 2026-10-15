@@ -208,7 +208,7 @@ func tableTestLens() [][256]uint8 {
 	var out [][256]uint8
 	for _, h := range lensTestHists() {
 		var l [256]uint8
-		BuildLengths(&h, &l)
+		BuildLengths(h[:], &l)
 		out = append(out, l)
 	}
 	r := lensRand(0xC0FFEE)
@@ -312,7 +312,7 @@ func TestTableReject(t *testing.T) {
 		if err := tb.SetLengths(&l); err != c.err || !errors.Is(err, ErrCorrupt) {
 			t.Errorf("%s: SetLengths = %v, want %v", c.name, err, c.err)
 		}
-		if tb.valid() || tb.BlockSize(&[256]uint64{1: 1}) != -1 {
+		if tb.valid() || tb.BlockSize([]uint64{1: 1}) != -1 {
 			t.Errorf("%s: table still valid", c.name)
 		}
 	}
@@ -336,7 +336,7 @@ func TestTableRebuild(t *testing.T) {
 
 func BenchmarkSetLengths(b *testing.B) {
 	var lens [256]uint8
-	BuildLengths(&lensTestHists()[1], &lens)
+	BuildLengths(lensTestHists()[1][:], &lens)
 	var tb Table
 	for b.Loop() {
 		tb.SetLengths(&lens)

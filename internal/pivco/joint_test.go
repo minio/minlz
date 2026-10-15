@@ -124,7 +124,7 @@ func shapeModel(t testing.TB, h *[256]uint64, lens *[256]uint8) (nbits, time uin
 func checkShape(t testing.TB, s *Shaper, h *[256]uint64, lo, hi int) (lens [256]uint8, changed bool) {
 	t.Helper()
 	var base [256]uint8
-	if !BuildLengths(h, &base) {
+	if !BuildLengths(h[:], &base) {
 		return base, false
 	}
 	lens = base
@@ -249,7 +249,7 @@ func TestShapeScratch(t *testing.T) {
 	for i := range hs {
 		h := &hs[i]
 		var want [256]uint8
-		if !BuildLengths(h, &want) {
+		if !BuildLengths(h[:], &want) {
 			continue
 		}
 		got1, got2 := want, want

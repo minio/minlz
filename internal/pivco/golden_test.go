@@ -60,7 +60,7 @@ func TestTableGolden(t *testing.T) {
 				t.Fatalf("%s: histogram generator differs from C", name)
 			}
 			var got [256]uint8
-			BuildLengths(h, &got)
+			BuildLengths(h[:], &got)
 			if got != *want {
 				t.Fatalf("%s: lengths\n got %x\nwant %x", name, got, *want)
 			}
@@ -136,7 +136,7 @@ func TestBlockGolden(t *testing.T) {
 			n, digest := r.lenDigest(t, "out")
 			var h [256]uint64
 			c.enc.Histogram(&h, in)
-			if size := tb.BlockSize(&h); size != n {
+			if size := tb.BlockSize(h[:]); size != n {
 				t.Fatalf("%s: BlockSize %d, want %d", r.f["case"], size, n)
 			}
 			out := make([]byte, n)
@@ -180,7 +180,7 @@ func TestJointGolden(t *testing.T) {
 			}
 		}
 		var lens [256]uint8
-		BuildLengths(&h, &lens)
+		BuildLengths(h[:], &lens)
 		if lens != *r.lens(t, "base") {
 			t.Fatalf("%s: BuildLengths\n got %x\nwant %x", r.f["name"], lens, *r.lens(t, "base"))
 		}

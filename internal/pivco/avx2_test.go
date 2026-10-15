@@ -36,7 +36,8 @@ func TestZeroCodersAVX2(t *testing.T) {
 	var e Encoder
 	var d Decoder
 	var h [256]uint64
-	e.Histogram(&h, []byte("abc"))
+	// Shorter inputs are counted without a kernel.
+	e.Histogram(&h, make([]byte, histDirect))
 	d.setup()
 	if e.tier != kernel.TierAVX2 || d.tier != kernel.TierAVX2 || e.hscratch != nil {
 		t.Fatalf("zero coders: encoder %v (scratch %v), decoder %v", e.tier, e.hscratch != nil, d.tier)

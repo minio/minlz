@@ -79,9 +79,9 @@ func blockSize(t testing.TB, c coder, src []byte, tb *Table) int {
 	t.Helper()
 	var h [256]uint64
 	c.enc.Histogram(&h, src)
-	size := tb.BlockSize(&h)
-	if size <= 0 {
-		t.Fatalf("n=%d: BlockSize %d", len(src), size)
+	size := tb.BlockSize(h[:])
+	if short := tb.BlockSize(h[:usedSyms(&h)]); size <= 0 || short != size {
+		t.Fatalf("n=%d: BlockSize %d, %d up to the last used symbol", len(src), size, short)
 	}
 	return size
 }
@@ -186,7 +186,7 @@ func checkFields(t testing.TB, tb *Table, b []byte, n int) {
 
 func lensOf(t testing.TB, h *[256]uint64) [256]uint8 {
 	var l [256]uint8
-	if !BuildLengths(h, &l) {
+	if !BuildLengths(h[:], &l) {
 		t.Fatal("empty histogram")
 	}
 	return l
@@ -435,28 +435,31 @@ func TestBlockErrors(t *testing.T) {
 	}
 	var h [256]uint64
 	h['d'] = 1
-	if tb.BlockSize(&h) != -1 || new(Table).BlockSize(&h) != -1 {
+	if tb.BlockSize(h[:]) != -1 || new(Table).BlockSize(h[:]) != -1 {
 		t.Fatal("BlockSize of a symbol without a code or an invalid table")
 	}
 }
 
 func TestHistogram(t *testing.T) {
 	src := sample(dist("english"), 100000, 1)
-	var want [256]uint64
-	for _, c := range src {
-		want[c] += 2
-	}
 	for _, c := range coders(t) {
-		for _, off := range []int{0, 1, 63} {
-			var h [256]uint64
-			for i := range want {
-				h[i] = uint64(b2i(i < off))
+		// Inputs below histDirect are counted without the kernels.
+		for _, n := range []int{histDirect - 1, histDirect, len(src)} {
+			var want [256]uint64
+			for _, b := range src[:n] {
+				want[b] += 2
 			}
-			c.enc.Histogram(&h, src)
-			c.enc.Histogram(&h, src)
-			for i := range h {
-				if h[i] != want[i]+uint64(b2i(i < off)) {
-					t.Fatalf("%v: symbol %d: %d, want %d", c.tier, i, h[i], want[i])
+			for _, off := range []int{0, 1, 63} {
+				var h [256]uint64
+				for i := range want {
+					h[i] = uint64(b2i(i < off))
+				}
+				c.enc.Histogram(&h, src[:n])
+				c.enc.Histogram(&h, src[:n])
+				for i := range h {
+					if h[i] != want[i]+uint64(b2i(i < off)) {
+						t.Fatalf("%v, %d bytes: symbol %d: %d, want %d", c.tier, n, i, h[i], want[i])
+					}
 				}
 			}
 		}

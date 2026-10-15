@@ -1446,6 +1446,117 @@ func TestSIMDEncodeDelta(t *testing.T) {
 	}
 }
 
+// TestSIMDEntropyBits checks the bound that put skips new tables with: simdEntropyBits is at most the entropy,
+// which no table codes below, and the table sizes it adds are those of the tables.
+// It also checks that the values of each stream are below syms and that e.hist[:syms] holds their counts.
+func TestSIMDEntropyBits(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	var e simdEncoder
+	checks := 0
+	check := func(name string, layout int, v []byte) {
+		k := min(layout, simdLits)
+		syms := 2 * simdCodeBytes[k]
+		if len(v) <= simdMinCoded {
+			return
+		}
+		checks++
+		e.histogram(v, syms)
+		var cnt [256]uint64
+		for _, b := range v {
+			cnt[b]++
+		}
+		n := float64(len(v))
+		h := 0.0
+		for s, f := range cnt {
+			if s < syms && e.hist[s] != f || s >= syms && f > 0 {
+				t.Fatalf("%s layout %d: value %d: count %d, histogram %d", name, layout, s, f, e.hist[s])
+			}
+			if f > 0 {
+				h -= float64(f) * math.Log2(float64(f)/n)
+			}
+		}
+		low := simdEntropyBits(e.hist[:syms], len(v))
+		if float64(low) > h {
+			t.Fatalf("%s layout %d: bound %d above entropy %.3f", name, layout, low, h)
+		}
+		e.tmp[0].setCode(k, &e.hist)
+		e.tmp[1].setClass(layout, &e.hist, syms)
+		for i, size := range []int{simdCodeBytes[k], simdClassBytes[layout]} {
+			c, ok := e.tmp[i].cost(&e.hist, syms)
+			if !ok || float64(c) < h-1e-6 || e.tmp[i].n != size {
+				t.Fatalf("%s layout %d table %d: cost %d (ok %v) below entropy %.3f, or %d table bytes, want %d", name, layout, i, c, ok, h, e.tmp[i].n, size)
+			}
+		}
+	}
+	lo := [...]int{simdTok: 0, simdLL: 1, simdOffc: 1, simdEsc: 0, simdLits: 0, simdDelta: 0}
+	sizes := []int{37, 64, 100, 300, 1000, 4096, 16384, 65535}
+	for layout := range simdDelta + 1 {
+		syms := 2 * simdCodeBytes[min(layout, simdLits)]
+		for _, size := range sizes {
+			for range 20 {
+				v := make([]byte, 0, size)
+				switch rng.Intn(3) {
+				case 0:
+					// Few values, uniform.
+					r := 1 + rng.Intn(min(8, syms-lo[layout]))
+					for len(v) < size {
+						v = append(v, byte(lo[layout]+rng.Intn(r)))
+					}
+				case 1:
+					// Skewed.
+					s := 0.5 + 8*rng.Float64()
+					for len(v) < size {
+						v = append(v, byte(min(lo[layout]+int(rng.ExpFloat64()*s), syms-1)))
+					}
+				default:
+					// Counts just below where simdLog2 truncates most, 2^b + 2^(b-8) - 1.
+					for len(v) < size {
+						b := 9 + rng.Intn(8)
+						f := min(1<<b+1<<(b-8)-1, size-len(v))
+						sym := byte(lo[layout] + rng.Intn(syms-lo[layout]))
+						for range f {
+							v = append(v, sym)
+						}
+					}
+				}
+				check(fmt.Sprintf("random size %d", size), layout, v)
+			}
+		}
+	}
+	// The streams of real data.
+	inputs := [][]byte{readFile(t, "testdata/Mark.Twain-Tom.Sawyer.txt"), genEncText(rng, 1<<20), genEncMixed(rng, 1<<20)}
+	files, _ := filepath.Glob("testdata/bench/*")
+	for _, f := range files {
+		inputs = append(inputs, readFile(t, f))
+	}
+	for i, in := range inputs {
+		for len(in) > 0 {
+			src := in[:min(len(in), 64<<10)]
+			in = in[len(src):]
+			for level := range 3 {
+				e.out = make([]byte, 0, MaxEncodedLen(len(src)))
+				e.reset(src, 0, 0)
+				switch level {
+				case 0:
+					e.encodeFastBlockGo64K(src)
+				case 1:
+					e.encodeBlockGo64K(src)
+				default:
+					e.encodeBlockBetterGo64K(src)
+				}
+				name := fmt.Sprintf("input %d level %d", i, level)
+				check(name, simdTok, e.tok[:e.nTok])
+				check(name, simdLL, e.ll[:e.nLL])
+				check(name, simdOffc, e.offc[:e.nOffc])
+				check(name, simdEsc, e.esc[:e.nEsc])
+				check(name, simdLits, e.lits[:e.nLits])
+				check(name, simdDelta, e.lits[:e.nLits])
+			}
+		}
+	}
+	t.Logf("%d histograms", checks)
+}
+
 func TestSIMDEncodeAllocs(t *testing.T) { simdEncTiers(t, testSIMDEncodeAllocs) }
 
 func testSIMDEncodeAllocs(t *testing.T) {

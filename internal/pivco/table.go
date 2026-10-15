@@ -53,25 +53,28 @@ func (t *Table) SetLengths(lens *[256]uint8) error {
 
 func (t *Table) valid() bool { return t.nsched != 0 }
 
-// BlockSize returns the encoded size of a block with the symbol counts h, which must
-// sum to 1..MaxBlockSize. It returns -1 if t is not built or a counted symbol has no code.
-func (t *Table) BlockSize(h *[256]uint64) int {
+// BlockSize returns the encoded size of a block with h, the counts of symbols 0 to len(h)-1,
+// at most 256, which must sum to 1..MaxBlockSize.
+// It returns -1 if t is not built or a counted symbol has no code.
+func (t *Table) BlockSize(h []uint64) int {
 	if !t.valid() {
 		return -1
 	}
 	// Every record codes a range of ranks, so prefix sums of the rank counts give the
 	// symbol count of each node.
 	var cum [257]uint64
+	lens, s2r := t.lens[:len(h)], t.s2r[:len(h)]
 	for s, f := range h {
 		if f != 0 {
-			if t.lens[s] == 0 {
+			if lens[s] == 0 {
 				return -1
 			}
-			cum[int(t.s2r[s])+1] += f
+			cum[int(s2r[s])+1] += f
 		}
 	}
-	for r := range 256 {
-		cum[r+1] += cum[r]
+	c := cum[:t.nranks+1]
+	for r := 1; r < len(c); r++ {
+		c[r] += c[r-1]
 	}
 	return t.nodeSize(&cum, 0, 0, int(t.nranks))
 }

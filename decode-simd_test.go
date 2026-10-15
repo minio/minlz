@@ -167,7 +167,7 @@ func (b *simdTestBuilder) code(k int, v []byte, t *pivco.Table) ([]byte, error) 
 	for _, c := range v {
 		h[c]++
 	}
-	size := t.BlockSize(&h)
+	size := t.BlockSize(h[:])
 	if size < 0 {
 		return nil, pivco.ErrSymbolNotInTable
 	}
@@ -239,7 +239,7 @@ func (b *simdTestBuilder) stream(k, mode int, v []byte) simdTestStream {
 		for _, c := range v {
 			h[c]++
 		}
-		if !pivco.BuildLengths(&h, &lens) {
+		if !pivco.BuildLengths(h[:], &lens) {
 			b.t.Fatal("no values")
 		}
 		s.table = simdTestNibbles(lens[:2*simdCodeBytes[k]])
@@ -1014,7 +1014,7 @@ func testSIMDValidation(t *testing.T) {
 			}
 			h[0] = 1
 			var lens [256]uint8
-			pivco.BuildLengths(&h, &lens)
+			pivco.BuildLengths(h[:], &lens)
 			recode(e, k, simdCodeLens, simdTestNibbles(lens[:2*simdCodeBytes[k]]), &lens)
 		})
 	}

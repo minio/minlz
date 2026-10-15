@@ -19,6 +19,10 @@ import "github.com/minio/minlz/internal/pivco/kernel"
 // stageSlots is one bitmap staging slot per depth of internal nodes, 0..MaxCodeLen-1.
 const stageSlots = MaxCodeLen
 
+// histDirect is the shortest input that Histogram counts with a kernel: a plain loop beats
+// the kernels' fixed cost below it.
+const histDirect = 512
+
 // Encoder codes blocks. The zero value is ready to use and allocates its scratch,
 // sized for MaxBlockSize, on first use. An Encoder is not safe for concurrent use
 // and must not be copied after first use.
@@ -51,6 +55,12 @@ func (e *Encoder) setup() {
 // Histogram adds the byte counts of src to hist.
 // src must be shorter than 4 GiB: the kernels count in uint32.
 func (e *Encoder) Histogram(hist *[256]uint64, src []byte) {
+	if len(src) < histDirect {
+		for _, b := range src {
+			hist[b]++
+		}
+		return
+	}
 	e.setup()
 	if e.hscratch == nil && e.tier.HistUsesScratch() {
 		e.hscratch = make([]byte, kernel.HistScratch)

@@ -54,6 +54,9 @@ type simdTable struct {
 	b    [128]byte
 }
 
+// simdClassBytes is the size of the class lengths of each layout.
+var simdClassBytes = [...]int{simdTok: 11, simdLL: 6, simdOffc: 12, simdEsc: 8, simdLits: 7, simdDelta: 5}
+
 // simdStreams holds the streams of the current chunk and the parser state that the assembly parsers share.
 // _generate/gen-simd-enc.go mirrors its layout, see TestSIMDAsmLayout.
 type simdStreams struct {
@@ -629,6 +632,27 @@ func simdLitBits(h *[256]uint64, n int) int {
 	return min(8*n, max(e>>8, 0)+simdBlockBits+simdTableBits+16*8)
 }
 
+// simdEntropyBits returns a lower bound of the entropy in bits of the counts h of n values.
+// simdLog2 is within -1.88 and +0.5 of 256*log2, so n*log2(n) - sum(f*log2(f)) in 1/256 bits, as simdLitBits
+// computes it, is at most 2.38n above 256 times the entropy.
+func simdEntropyBits(h []uint64, n int) int {
+	e := n*simdLog2(uint64(n)) - (5*n+1)/2
+	for _, f := range h {
+		if f > 1 {
+			e -= int(f) * simdLog2(f)
+		}
+	}
+	return max(e, 0) >> 8
+}
+
+// simdMaxEntropy is log2 of the alphabet size of each stream, in 1/256 bits, rounded up.
+var simdMaxEntropy = func() (m [simdLits + 1]int) {
+	for k, n := range simdCodeBytes {
+		m[k] = int(math.Ceil(256 * math.Log2(float64(2*n))))
+	}
+	return m
+}()
+
 // simdLog2Frac holds log2(1+i/256) in 1/256 units.
 var simdLog2Frac = func() (t [256]uint8) {
 	for i := range t {
@@ -661,14 +685,15 @@ func (e *simdEncoder) deltaChunk(lz int) bool {
 
 // litBits returns the estimated size of lits in bits.
 func (e *simdEncoder) litBits(lits []byte) int {
-	e.histogram(lits)
+	e.histogram(lits, 256)
 	e.tmp[0].setCode(simdLits, &e.hist)
-	n, _ := e.tmp[0].cost(&e.hist)
+	n, _ := e.tmp[0].cost(&e.hist, 256)
 	return n
 }
 
-func (e *simdEncoder) histogram(v []byte) {
-	e.hist = [256]uint64{}
+// histogram sets e.hist[:syms] to the counts of v, whose values are below syms.
+func (e *simdEncoder) histogram(v []byte, syms int) {
+	clear(e.hist[:syms])
 	e.pv.Histogram(&e.hist, v)
 }
 
@@ -680,6 +705,8 @@ func (e *simdEncoder) histogram(v []byte) {
 func (e *simdEncoder) put(recs []byte, k int, v []byte) []byte {
 	layout := k
 	k = min(k, simdLits)
+	// The values of the stream are below syms.
+	syms := 2 * simdCodeBytes[k]
 	var best *simdTable
 	bestBits := 8 * len(v)
 	blockBits := simdBlockBits
@@ -687,29 +714,31 @@ func (e *simdEncoder) put(recs []byte, k int, v []byte) []byte {
 		blockBits = simdFastBlockBits
 	}
 	try := func(t *simdTable, extra int) {
-		if n, ok := t.cost(&e.hist); ok && n+extra+blockBits < bestBits {
+		if n, ok := t.cost(&e.hist, syms); ok && n+extra+blockBits < bestBits {
 			best, bestBits = t, n+extra+blockBits
 		}
 	}
 	// As simdMinCoded, for blockBits.
 	if len(v) > blockBits/7 {
-		e.histogram(v)
+		e.histogram(v, syms)
 		if e.have[k] {
 			try(&e.cur[k], 0)
 		}
-		switch {
-		case e.fastCode == 0:
-			e.tmp[0].setCode(k, &e.hist)
-			try(&e.tmp[0], simdTableBits+8*e.tmp[0].n)
-			e.tmp[1].setClass(layout, &e.hist)
-			try(&e.tmp[1], simdTableBits+8*e.tmp[1].n)
-		case best != nil:
-		case len(v) >= e.fastCode:
-			e.tmp[0].setCode(k, &e.hist)
-			try(&e.tmp[0], simdTableBits+8*e.tmp[0].n)
-		default:
-			e.tmp[1].setClass(layout, &e.hist)
-			try(&e.tmp[1], simdTableBits+8*e.tmp[1].n)
+		if e.fastCode == 0 || best == nil {
+			// No prefix code codes v in fewer bits than its entropy, so new tables that can't win with that aren't built.
+			// The entropy is at most simdMaxEntropy per value, so it is only computed when it can stop a table.
+			low := simdTableBits + blockBits
+			if low < bestBits && bestBits <= low+(len(v)*simdMaxEntropy[k]+255)>>8+8*simdCodeBytes[k] {
+				low += simdEntropyBits(e.hist[:syms], len(v))
+			}
+			if len(v) >= e.fastCode && low+8*simdCodeBytes[k] < bestBits {
+				e.tmp[0].setCode(k, &e.hist)
+				try(&e.tmp[0], simdTableBits+8*e.tmp[0].n)
+			}
+			if (e.fastCode == 0 || len(v) < e.fastCode) && low+8*simdClassBytes[layout] < bestBits {
+				e.tmp[1].setClass(layout, &e.hist, syms)
+				try(&e.tmp[1], simdTableBits+8*e.tmp[1].n)
+			}
 		}
 	}
 	room := cap(e.out) - len(e.out)
@@ -727,7 +756,7 @@ func (e *simdEncoder) put(recs []byte, k int, v []byte) []byte {
 		if k == simdTok || k == simdLits {
 			hdr = 2
 		}
-		if size := hdr + best.t.BlockSize(&e.hist); size <= room && size+n < len(v) {
+		if size := hdr + best.t.BlockSize(e.hist[:syms]); size <= room && size+n < len(v) {
 			out := e.out[len(e.out):][:size]
 			if hdr > 0 {
 				binary.LittleEndian.PutUint16(out, uint16(len(v)))
@@ -751,11 +780,11 @@ func (e *simdEncoder) put(recs []byte, k int, v []byte) []byte {
 	return binary.AppendUvarint(recs, uint64(len(v))<<3)
 }
 
-// cost returns the size in bits of histogram h coded with t, and false if a value has no code.
-func (t *simdTable) cost(h *[256]uint64) (int, bool) {
+// cost returns the size in bits of histogram h[:syms] coded with t, and false if a value has no code.
+func (t *simdTable) cost(h *[256]uint64, syms int) (int, bool) {
 	var n uint64
 	ok := true
-	for v, f := range h {
+	for v, f := range h[:syms] {
 		n += f * uint64(t.lens[v])
 		ok = ok && (f == 0 || t.lens[v] != 0)
 	}
@@ -764,15 +793,17 @@ func (t *simdTable) cost(h *[256]uint64) (int, bool) {
 
 // setCode sets t to the Huffman code of h, as code lengths of stream k. h must not be empty.
 func (t *simdTable) setCode(k int, h *[256]uint64) {
-	if !pivco.BuildLengths(h, &t.lens) {
+	syms := 2 * simdCodeBytes[k]
+	if !pivco.BuildLengths(h[:syms], &t.lens) {
 		panic("empty histogram")
 	}
 	t.mode = simdCodeLens
-	t.setNibbles(t.lens[:2*simdCodeBytes[k]])
+	t.setNibbles(t.lens[:syms])
 }
 
 // setClass sets t to the class lengths of h for layout k (SIMD_SPEC.md 2.3).
-func (t *simdTable) setClass(k int, h *[256]uint64) {
+// The values of the stream are below syms.
+func (t *simdTable) setClass(k int, h *[256]uint64, syms int) {
 	var cl [24]uint8
 	n := 0
 	if k == simdTok {
@@ -781,7 +812,7 @@ func (t *simdTable) setClass(k int, h *[256]uint64) {
 		lay := &simdLayouts[k]
 		var w [24]uint64
 		var lim [24]uint8
-		for v, c := range lay.class {
+		for v, c := range lay.class[:syms] {
 			if c != 0xff {
 				w[c] += h[v]
 				lim[c] = max(lim[c], lay.in[v])
@@ -792,8 +823,8 @@ func (t *simdTable) setClass(k int, h *[256]uint64) {
 			lim[c] = pivco.MaxCodeLen - lim[c]
 		}
 		simdLimitedLens(w[:n], lim[:n], cl[:n])
-		for v, c := range lay.class {
-			t.lens[v] = 0
+		t.lens = [256]uint8{}
+		for v, c := range lay.class[:syms] {
 			if c != 0xff && cl[c] != 0 {
 				t.lens[v] = cl[c] + lay.in[v]
 			}

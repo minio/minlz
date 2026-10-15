@@ -36,7 +36,7 @@ func fuzzTable(lens, data []byte) *Table {
 		h[c]++
 	}
 	h[0]++
-	BuildLengths(&h, &l)
+	BuildLengths(h[:], &l)
 	if tb.SetLengths(&l) != nil {
 		panic("built lengths rejected")
 	}
@@ -127,7 +127,7 @@ func FuzzRoundTripBlock(f *testing.F) {
 			}
 		}
 		var l [256]uint8
-		BuildLengths(&h, &l)
+		BuildLengths(h[:], &l)
 		tb := mustTable(t, &l)
 		var ref []byte
 		for _, c := range cs {
