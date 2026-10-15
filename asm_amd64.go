@@ -288,7 +288,7 @@ func encodeBlockSIMDAsm(st *simdStreams, src []byte, tab *[131072]byte) int
 // encodeBetterBlockSIMDAsm parses src into st until it returns to Go, see parseAsm.
 //
 //go:noescape
-func encodeBetterBlockSIMDAsm(st *simdStreams, src []byte, tab *[589824]byte) int
+func encodeBetterBlockSIMDAsm(st *simdStreams, src []byte, tab *[589824]byte, maxOff4 int, maxOff5 int) int
 
 // encodeFastBlockSIMDAsm64K parses src into st until it returns to Go, see parseAsm.
 //
@@ -303,4 +303,4 @@ func encodeBlockSIMDAsm64K(st *simdStreams, src []byte, tab *[32768]byte) int
 // encodeBetterBlockSIMDAsm64K parses src into st until it returns to Go, see parseAsm.
 //
 //go:noescape
-func encodeBetterBlockSIMDAsm64K(st *simdStreams, src []byte, tab *[147456]byte) int
+func encodeBetterBlockSIMDAsm64K(st *simdStreams, src []byte, tab *[147456]byte, maxOff4 int, maxOff5 int) int

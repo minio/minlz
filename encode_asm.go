@@ -330,6 +330,7 @@ func (e *simdEncoder) runAsm(src []byte, k int, tab []byte) {
 	race.WriteSlice(tab)
 	clear(tab)
 	e.asmSite = 0
+	maxOff := simdBetterMaxOff(len(src))
 	for {
 		var r int
 		switch k {
@@ -338,13 +339,13 @@ func (e *simdEncoder) runAsm(src []byte, k int, tab []byte) {
 		case simdAsmBlock:
 			r = encodeBlockSIMDAsm(&e.simdStreams, src, (*[128 << 10]byte)(tab))
 		case simdAsmBetter:
-			r = encodeBetterBlockSIMDAsm(&e.simdStreams, src, (*[576 << 10]byte)(tab))
+			r = encodeBetterBlockSIMDAsm(&e.simdStreams, src, (*[576 << 10]byte)(tab), maxOff[0], maxOff[1])
 		case simdAsmFast64K:
 			r = encodeFastBlockSIMDAsm64K(&e.simdStreams, src, (*[16 << 10]byte)(tab))
 		case simdAsmBlock64K:
 			r = encodeBlockSIMDAsm64K(&e.simdStreams, src, (*[32 << 10]byte)(tab))
 		case simdAsmBetter64K:
-			r = encodeBetterBlockSIMDAsm64K(&e.simdStreams, src, (*[144 << 10]byte)(tab))
+			r = encodeBetterBlockSIMDAsm64K(&e.simdStreams, src, (*[144 << 10]byte)(tab), maxOff[0], maxOff[1])
 		}
 		if simdAsmHook != nil {
 			simdAsmHook(e, r)

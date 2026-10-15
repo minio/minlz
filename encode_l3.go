@@ -506,10 +506,14 @@ func (e *simdEncoder) encodeBlockBest(src []byte) {
 		inputMargin = 8 + 2
 
 		// Estimated sizes in 1/16 bits.
-		tokenBits  = 4 * 16
 		escapeBits = 6 * 16
-		symbolBits = 7 * 16
 	)
+	tokenBits, symbolBits, llBits := 4*16, 7*16, 0
+	// Up to 2 KB the operation streams are stored at 8 bits a value, and a match that splits a literal run
+	// adds a literal length. Slightly lower costs than that measure best.
+	if len(src) <= 2<<10 {
+		tokenBits, symbolBits, llBits = 7*16, 8*16, 6*16
+	}
 	// Literals cost the mean code length of src, which fits the data better than a fixed cost.
 	litBits := 8 * 16
 	if n := e.litBits(src); n+simdBlockBits+simdTableBits < 8*len(src) {
@@ -595,6 +599,9 @@ func (e *simdEncoder) encodeBlockBest(src []byte) {
 		score := litBits*(length-mS) - tokenBits
 		if mS-nextEmit > simdMaxLen {
 			score -= escapeBits
+		}
+		if mS > nextEmit {
+			score -= llBits
 		}
 		dist := mS - mOffset
 		if !rep {

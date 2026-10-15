@@ -338,6 +338,20 @@ emitRemainder:
 	return d
 }
 
+// simdBetterMaxOff returns the largest offsets of new 4 and 5 byte matches that Balanced SIMD takes in a block of n bytes,
+// indexed by length&1. Farther short matches cost more than their literals: up to 2 KB the operation streams are stored,
+// so every token, literal length and offset symbol costs 8 bits; in larger blocks the offset bits grow with the offset.
+// Between 2 and 8 KB fewer operations can make a coded stream go stored, so the bound is looser there.
+func simdBetterMaxOff(n int) [2]int {
+	switch {
+	case n <= 2<<10:
+		return [2]int{127, 511}
+	case n <= 8<<10:
+		return [2]int{2047, 16383}
+	}
+	return [2]int{1023, 16383}
+}
+
 // encodeBlockBetterGo parses src like the function encodeBlockBetterGo, without its size and offset limits.
 func (e *simdEncoder) encodeBlockBetterGo(src []byte) {
 	const (
@@ -363,6 +377,7 @@ func (e *simdEncoder) encodeBlockBetterGo(src []byte) {
 	cv := load64(src, s)
 	repeat := 1
 
+	maxOff := simdBetterMaxOff(len(src))
 	for {
 		candidateL := 0
 		nextS := 0
@@ -425,7 +440,7 @@ func (e *simdEncoder) encodeBlockBetterGo(src []byte) {
 			offset = base - candidateL
 			length = matchAt(src, base, candidateL)
 			// Bail if the match is equal or worse to the encoding.
-			if offset > 65535 && length <= 4 && repeat != offset {
+			if length <= 5 && offset > maxOff[length&1] && repeat != offset {
 				s = nextS + 1
 				if s >= sLimit {
 					goto emitRemainder
@@ -535,6 +550,7 @@ func (e *simdEncoder) encodeBlockBetterGo64K(src []byte) {
 	cv := load64(src, s)
 	repeat := 1
 
+	maxOff := simdBetterMaxOff(len(src))
 	for {
 		candidateL := 0
 		nextS := 0
@@ -596,6 +612,14 @@ func (e *simdEncoder) encodeBlockBetterGo64K(src []byte) {
 			base = s
 			offset = base - candidateL
 			length = matchAt(src, base, candidateL)
+			if length <= 5 && offset > maxOff[length&1] && repeat != offset {
+				s = nextS + 1
+				if s >= sLimit {
+					goto emitRemainder
+				}
+				cv = load64(src, s)
+				continue
+			}
 		}
 
 		// A match of simdMaxLen+1 bytes needs an escape, so leave its last byte as a literal.

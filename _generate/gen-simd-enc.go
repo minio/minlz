@@ -817,7 +817,7 @@ func genSIMDEncodeBlockAsm(name string, tableBits, entryBytes int, p simdBlockPa
 // as indexing touches only the tables.
 func genSIMDEncodeBetterBlockAsm(name string, lTableBits, sTableBits, entryBytes int) {
 	lSize := entryBytes << lTableBits
-	TEXT(name, 0, fmt.Sprintf("func(st *simdStreams, src []byte, tab *[%d]byte) int", lSize+entryBytes<<sTableBits))
+	TEXT(name, 0, fmt.Sprintf("func(st *simdStreams, src []byte, tab *[%d]byte, maxOff4, maxOff5 int) int", lSize+entryBytes<<sTableBits))
 	Doc(name+" parses src into st until it returns to Go, see parseAsm.", "")
 	Pragma("noescape")
 
@@ -963,27 +963,31 @@ func genSIMDEncodeBetterBlockAsm(name string, lTableBits, sTableBits, entryBytes
 		ADDQ(U8(4), s)
 		ADDQ(U8(4), cand)
 		e.extend(src, s, cand, true)
-		// A match of 4 bytes at an offset over 65535, other than the repeat offset, is passed over: the search goes on at nextS+1.
-		// Blocks of 16 bit entries have no such offsets.
-		if entryBytes > 2 {
-			far, near := e.label("far"), e.label("near")
-			CMPQ(off, U32(65536))
-			JAE(far)
-			Label(string(near))
-			e.later = append(e.later, func() {
-				Label(string(far))
-				t := GP64()
-				LEAQ(Mem{Base: base, Disp: 4}, t)
-				CMPQ(s, t)
-				JA(near)
-				LEAQ(Mem{Base: src, Disp: 1}, t)
-				SUBQ(e.repSrc, t)
-				CMPQ(t, off)
-				JEQ(near)
-				LEAQ(Mem{Base: nextS, Disp: 1}, s)
-				next()
-			})
-		}
+		// A match of 4 or 5 bytes at an offset over maxOff4 or maxOff5, other than the repeat offset, is passed over:
+		// the search goes on at nextS+1. The length goes first, as most matches are longer.
+		short, near := e.label("short"), e.label("near")
+		t := GP64()
+		LEAQ(Mem{Base: base, Disp: 5}, t)
+		CMPQ(s, t)
+		JBE(short)
+		Label(string(near))
+		e.later = append(e.later, func() {
+			Label(string(short))
+			m, five := GP64(), e.label("five")
+			Load(Param("maxOff5"), m)
+			CMPQ(s, t)
+			JEQ(five)
+			Load(Param("maxOff4"), m)
+			Label(string(five))
+			CMPQ(off, m)
+			JBE(near)
+			LEAQ(Mem{Base: src, Disp: 1}, t)
+			SUBQ(e.repSrc, t)
+			CMPQ(t, off)
+			JEQ(near)
+			LEAQ(Mem{Base: nextS, Disp: 1}, s)
+			next()
+		})
 		cut(base, s)
 		indexed := e.label("indexed")
 		CMPQ(s, e.sLimit)

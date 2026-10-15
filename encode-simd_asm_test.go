@@ -137,7 +137,8 @@ func simdParseAsmInputs(t *testing.T) (names []string, srcs [][]byte) {
 		add("overlap-split-"+sn, append(b, genEncRandom(rng, 16)...))
 	}
 	// Its own source fixes its bytes: with others, a later position can take the short table entry that it needs.
-	add("far-repeat", simdFarRepeatInput(rand.New(rand.NewSource(1))))
+	far, _ := simdFarRepeatInput(rand.New(rand.NewSource(1)), 70000)
+	add("far-repeat", far)
 
 	dir := os.Getenv("SIMDBENCH")
 	if dir == "" {
@@ -237,11 +238,11 @@ func simdLitsEdgeInput(rng *rand.Rand, n int) []byte {
 	return append(b, genEncRandom(rng, 64)...)
 }
 
-// simdFarRepeatInput returns a block where Balanced finds a copy of 4 bytes at an offset over 65535 that is the repeat
-// offset, which it keeps, where it passes over those at other offsets. The repeat check finds such copies at the positions
-// that the search checks one after another, so this one is at a position that it reaches with a step of 2.
-func simdFarRepeatInput(rng *rand.Rand) []byte {
-	const far = 70000
+// simdFarRepeatInput returns a block where Balanced finds a copy of 4 bytes at offset far+210 that is the repeat
+// offset, which it keeps, where it passes over those at other offsets over its bound, and the position of the copy.
+// The repeat check finds such copies at the positions that the search checks one after another,
+// so this one is at a position that it reaches with a step of 2.
+func simdFarRepeatInput(rng *rand.Rand, far int) ([]byte, int) {
 	// Zeros end an operation at q, so the search checks q to q+128, then every other position.
 	b := append(genEncRandom(rng, 16), make([]byte, 300)...)
 	b[15] = simdOtherByte(rng, 0)
@@ -260,6 +261,25 @@ func simdFarRepeatInput(rng *rand.Rand) []byte {
 	s := t + 30 + 140
 	copy(b[s:s+4], b[q+180:])
 	b[s-1], b[s+4] = simdOtherByte(rng, b[q+179]), simdOtherByte(rng, b[q+184])
+	return b, s
+}
+
+// simdShortInput returns n random bytes with a copy of length bytes at offset off, whose ends Balanced's search checks,
+// so it finds the copy unless a random match comes first. For other lengths only the bytes after the copy differ.
+func simdShortInput(n, off, length int) []byte {
+	rng := rand.New(rand.NewSource(int64(n + off)))
+	b := genEncRandom(rng, n)
+	// The positions that the search checks while it finds no match.
+	checked := make([]bool, n)
+	for s := 1; s < n; s += min(100, s>>7+1) {
+		checked[s] = true
+	}
+	p := off + 8
+	for !checked[p] || !checked[p-off] {
+		p++
+	}
+	copy(b[p:], b[p-off:][:length])
+	b[p-1], b[p+length] = simdOtherByte(rng, b[p-off-1]), simdOtherByte(rng, b[p-off+length])
 	return b
 }
 
@@ -493,6 +513,49 @@ func TestSIMDParseAsm(t *testing.T) {
 		// The end and repeats resume at the search, and so does all of Balanced.
 		if cov[simdAsmDone][1]+cov[simdAsmRepeat][1]+cov[simdAsmCopy][1-cs] != 0 || cs == 0 && cov[simdAsmFull][1] != 0 {
 			t.Errorf("%s: returns resume at the wrong site", p.name)
+		}
+	}
+}
+
+// TestSIMDParseAsmBounds checks that the Balanced parsers pass over new matches of 4 and 5 bytes over the offsets of
+// simdBetterMaxOff, at each bound and one over, and keep them at the repeat offset, and that the assembly parsers match.
+func TestSIMDParseAsmBounds(t *testing.T) {
+	eg, ea := new(simdEncoder), new(simdEncoder)
+	run := func(p simdAsmParser, src []byte, name string) simdParseResult {
+		g := simdParseRun(eg, src, p, false)
+		if d := simdParseDiff(g, simdParseRun(ea, src, p, true)); d != "" {
+			t.Errorf("%s %s: %s", p.name, name, d)
+		}
+		return g
+	}
+	for _, p := range simdAsmParsers {
+		if p.k != simdAsmBetter && p.k != simdAsmBetter64K {
+			continue
+		}
+		for _, n := range []int{2 << 10, 8 << 10, 64 << 10} {
+			m := simdBetterMaxOff(n)
+			for _, off := range []int{m[0], m[0] + 1, m[1], m[1] + 1} {
+				// The copy of 6 bytes, which is kept, shows that the search finds the shorter ones.
+				for length := 4; length <= 6 && off < n/2; length++ {
+					name := fmt.Sprintf("%d bytes, copy of %d at %d", n, length, off)
+					g := run(p, simdShortInput(n, off, length), name)
+					if want := length > 5 || off <= m[length&1]; (g.rep == off) != want {
+						t.Errorf("%s %s: kept %v", p.name, name, !want)
+					}
+				}
+			}
+		}
+		// Copies at the repeat offset, over the bound of each size class. Without the copy the block has 4 literals more.
+		for _, far := range []int{0, 2000, 10000, 70000} {
+			src, at := simdFarRepeatInput(rand.New(rand.NewSource(1)), far)
+			if len(src) > p.max {
+				continue
+			}
+			g := run(p, src, fmt.Sprintf("far repeat %d", far))
+			src[at+3]++
+			if c := simdParseRun(eg, src, p, false); len(c.lits) != len(g.lits)+4 {
+				t.Errorf("%s: far repeat %d: %d literals, without the copy %d", p.name, far, len(g.lits), len(c.lits))
+			}
 		}
 	}
 }
