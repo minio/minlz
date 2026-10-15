@@ -86,7 +86,8 @@ func encodeBlockBetterGo(dst, src []byte) (d int) {
 		lTable = new([maxLTableSize]uint32)
 	}
 	defer encLPool.Put(lTable)
-	var sTable [maxSTableSize]uint32
+	sTable := u32Tables14.get()
+	defer u32Tables14.Put(sTable)
 
 	// Bail if we can't compress to at least this.
 	dstLimit := len(src) - len(src)>>5 - 6
@@ -353,7 +354,8 @@ func (e *simdEncoder) encodeBlockBetterGo(src []byte) {
 		lTable = new([maxLTableSize]uint32)
 	}
 	defer encLPool.Put(lTable)
-	var sTable [maxSTableSize]uint32
+	sTable := u32Tables14.get()
+	defer u32Tables14.Put(sTable)
 
 	sLimit := len(src) - inputMargin
 	nextEmit := 0
@@ -524,7 +526,8 @@ func (e *simdEncoder) encodeBlockBetterGo64K(src []byte) {
 		lTable = new([maxLTableSize]uint16)
 	}
 	defer encLPoolSIMD64K.Put(lTable)
-	var sTable [maxSTableSize]uint16
+	sTable := u16Tables13.get()
+	defer u16Tables13.Put(sTable)
 
 	sLimit := len(src) - inputMargin
 	nextEmit := 0
@@ -696,7 +699,8 @@ func encodeBlockBetterGo64K(dst, src []byte) (d int) {
 		lTable = new([maxLTableSize]uint16)
 	}
 	defer encLPool64K.Put(lTable)
-	var sTable [maxSTableSize]uint16
+	sTable := u16Tables12.get()
+	defer u16Tables12.Put(sTable)
 
 	// Bail if we can't compress to at least this.
 	dstLimit := len(src) - len(src)>>5 - 6
@@ -964,8 +968,16 @@ func encodeBlockBetterDict(dst, src []byte, dict *dict) (d int) {
 
 	dict.initBetter()
 
-	var lTable [maxLTableSize]uint32
-	var sTable [maxSTableSize]uint32
+	var lTable *[maxLTableSize]uint32
+	if t := encLPool.Get(); t != nil {
+		lTable = t.(*[maxLTableSize]uint32)
+		*lTable = [maxLTableSize]uint32{}
+	} else {
+		lTable = new([maxLTableSize]uint32)
+	}
+	defer encLPool.Put(lTable)
+	sTable := u32Tables14.get()
+	defer u32Tables14.Put(sTable)
 
 	// Bail if we can't compress to at least this.
 	dstLimit := len(src) - len(src)>>5 - 6

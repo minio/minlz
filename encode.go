@@ -276,6 +276,31 @@ var (
 	encBetterPools [6]sync.Pool
 )
 
+// The hash tables of the Go encoders, by entry size and bits. Pooled tables don't grow goroutine stacks,
+// and the GC can reclaim them.
+var (
+	u32Tables13 tablePool[[1 << 13]uint32]
+	u32Tables14 tablePool[[1 << 14]uint32]
+	u32Tables15 tablePool[[1 << 15]uint32]
+	u16Tables12 tablePool[[1 << 12]uint16]
+	u16Tables13 tablePool[[1 << 13]uint16]
+	u16Tables14 tablePool[[1 << 14]uint16]
+)
+
+// tablePool holds hash tables of type T, which must be at most 128 KB:
+// get's zero value would be allocated on the heap otherwise.
+type tablePool[T any] struct{ sync.Pool }
+
+// get returns a zeroed table.
+func (p *tablePool[T]) get() *T {
+	if t, ok := p.Get().(*T); ok {
+		var zero T
+		*t = zero
+		return t
+	}
+	return new(T)
+}
+
 // encodeUncompressed will append src to dst as uncompressed data and return it.
 func encodeUncompressed(dst, src []byte) []byte {
 	if len(src) == 0 {

@@ -42,7 +42,8 @@ func encodeFastBlockGo(dst, src []byte) (d int) {
 	// Having values inside the table is ~the same speed as looking up
 	// - maybe slightly faster on bigger blocks.
 	// We go for the smaller stack allocation for now.
-	var table [maxTableSize]uint32
+	table := u32Tables13.get()
+	defer u32Tables13.Put(table)
 
 	// sLimit is when to stop looking for offset/length copies. The inputMargin
 	// lets us use a fast path for emitLiteral in the main loop, while we are
@@ -285,7 +286,8 @@ func (e *simdEncoder) encodeFastBlockGo(src []byte) {
 		maxTableSize = 1 << tableBits
 		skipLog      = 5
 	)
-	var table [maxTableSize]uint32
+	table := u32Tables13.get()
+	defer u32Tables13.Put(table)
 	sLimit := len(src) - inputMargin
 	nextEmit := 0
 	s := 1
@@ -435,7 +437,8 @@ func (e *simdEncoder) encodeFastBlockGo64K(src []byte) {
 		maxTableSize = 1 << tableBits
 		skipLog      = 5
 	)
-	var table [maxTableSize]uint16
+	table := u16Tables13.get()
+	defer u16Tables13.Put(table)
 	sLimit := len(src) - inputMargin
 	nextEmit := 0
 	s := 1
@@ -589,7 +592,8 @@ func encodeFastBlockGo64K(dst, src []byte) (d int) {
 	// Having values inside the table is ~the same speed as looking up
 	// - maybe slightly faster on bigger blocks.
 	// We go for the smaller stack allocation for now.
-	var table [maxTableSize]uint16
+	table := u16Tables12.get()
+	defer u16Tables12.Put(table)
 
 	// sLimit is when to stop looking for offset/length copies. The inputMargin
 	// lets us use a fast path for emitLiteral in the main loop, while we are

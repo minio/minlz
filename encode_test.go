@@ -1576,6 +1576,26 @@ func testSIMDEncodeAllocs(t *testing.T) {
 	}
 }
 
+// TestEncodeAllocs checks that the classic levels take their hash tables from pools.
+func TestEncodeAllocs(t *testing.T) {
+	if race.Enabled {
+		t.Skip("sync.Pool drops items with -race")
+	}
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
+	src := genEncText(rand.New(rand.NewSource(1)), 1<<20)
+	dst := make([]byte, MaxEncodedLen(len(src)))
+	for _, n := range []int{1 << 10, 64 << 10, len(src)} {
+		for _, level := range []int{LevelFastest, LevelBalanced, LevelSmallest} {
+			if _, err := Encode(dst, src[:n], level); err != nil {
+				t.Fatal(err)
+			}
+			if a := testing.AllocsPerRun(5, func() { Encode(dst, src[:n], level) }); a != 0 {
+				t.Errorf("size %d level %d: %v allocations", n, level, a)
+			}
+		}
+	}
+}
+
 // simdAsmReturns, with assembly parsers, runs f and returns how often they returned to Go.
 var simdAsmReturns func(f func()) int
 

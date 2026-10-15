@@ -103,8 +103,6 @@ type simdEncoder struct {
 	// fastCode, when set, makes put build one table at most: code lengths for at least fastCode values,
 	// else class lengths. Building tables dominates the encoding of small blocks.
 	fastCode int
-	// tab holds the hash tables of the assembly parsers. They persist across the calls of a block.
-	tab []byte
 
 	deltaDiv int // delta literals must save 1/deltaDiv of a chunk; 0 disables them, -1 uses only them
 	limit    int // largest size of the encoded block

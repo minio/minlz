@@ -22,6 +22,8 @@
 package minlz
 
 import (
+	"sync"
+
 	"github.com/minio/minlz/internal/race"
 )
 
@@ -275,9 +277,9 @@ const (
 	simdAsmRepeat        // the operation of asmBase and asmLen is for emitRepeatLits
 )
 
-// simdAsmTab holds the table sizes of the assembly parsers.
-var simdAsmTab = [...]int{simdAsmFast: 32 << 10, simdAsmBlock: 128 << 10, simdAsmBetter: 576 << 10,
-	simdAsmFast64K: 16 << 10, simdAsmBlock64K: 32 << 10, simdAsmBetter64K: 144 << 10}
+// simdBetterTables64K holds the tables of encodeBetterBlockSIMDAsm64K. The other assembly parsers
+// share the pools of the classic assembly encoders with tables of the same size.
+var simdBetterTables64K sync.Pool
 
 // simdAsmHook, when tests set it, sees each return of an assembly parser before Go acts on it.
 var simdAsmHook func(e *simdEncoder, r int)
@@ -285,28 +287,64 @@ var simdAsmHook func(e *simdEncoder, r int)
 // parseAsm parses src with assembly parser k. It codes the chunks that the parser fills,
 // and adds the operations that the parser leaves to the emitters.
 func (e *simdEncoder) parseAsm(src []byte, k int) {
-	n := simdAsmTab[k]
-	if len(e.tab) < n {
-		e.tab = make([]byte, n)
+	switch k {
+	case simdAsmFast:
+		t := simdAsmTable[[32 << 10]byte](&encFastPools[0])
+		e.runAsm(src, k, t[:])
+		encFastPools[0].Put(t)
+	case simdAsmBlock:
+		t := simdAsmTable[[128 << 10]byte](&encPools[0])
+		e.runAsm(src, k, t[:])
+		encPools[0].Put(t)
+	case simdAsmBetter:
+		t := simdAsmTable[[576 << 10]byte](&encBetterPools[0])
+		e.runAsm(src, k, t[:])
+		encBetterPools[0].Put(t)
+	case simdAsmFast64K:
+		t := simdAsmTable[[16 << 10]byte](&encPools[3])
+		e.runAsm(src, k, t[:])
+		encPools[3].Put(t)
+	case simdAsmBlock64K:
+		t := simdAsmTable[[32 << 10]byte](&encFastPools[0])
+		e.runAsm(src, k, t[:])
+		encFastPools[0].Put(t)
+	case simdAsmBetter64K:
+		t := simdAsmTable[[144 << 10]byte](&simdBetterTables64K)
+		e.runAsm(src, k, t[:])
+		simdBetterTables64K.Put(t)
 	}
-	clear(e.tab[:n])
+}
+
+// simdAsmTable returns a table from p, or a new one. runAsm clears it:
+// a zero value of the larger tables would not fit on the stack.
+func simdAsmTable[T any](p *sync.Pool) *T {
+	if t, ok := p.Get().(*T); ok {
+		return t
+	}
+	return new(T)
+}
+
+// runAsm runs assembly parser k on src with its table tab.
+func (e *simdEncoder) runAsm(src []byte, k int, tab []byte) {
 	race.ReadSlice(src)
+	race.WriteSlice(tab)
+	clear(tab)
 	e.asmSite = 0
 	for {
 		var r int
 		switch k {
 		case simdAsmFast:
-			r = encodeFastBlockSIMDAsm(&e.simdStreams, src, (*[32 << 10]byte)(e.tab))
+			r = encodeFastBlockSIMDAsm(&e.simdStreams, src, (*[32 << 10]byte)(tab))
 		case simdAsmBlock:
-			r = encodeBlockSIMDAsm(&e.simdStreams, src, (*[128 << 10]byte)(e.tab))
+			r = encodeBlockSIMDAsm(&e.simdStreams, src, (*[128 << 10]byte)(tab))
 		case simdAsmBetter:
-			r = encodeBetterBlockSIMDAsm(&e.simdStreams, src, (*[576 << 10]byte)(e.tab))
+			r = encodeBetterBlockSIMDAsm(&e.simdStreams, src, (*[576 << 10]byte)(tab))
 		case simdAsmFast64K:
-			r = encodeFastBlockSIMDAsm64K(&e.simdStreams, src, (*[16 << 10]byte)(e.tab))
+			r = encodeFastBlockSIMDAsm64K(&e.simdStreams, src, (*[16 << 10]byte)(tab))
 		case simdAsmBlock64K:
-			r = encodeBlockSIMDAsm64K(&e.simdStreams, src, (*[32 << 10]byte)(e.tab))
+			r = encodeBlockSIMDAsm64K(&e.simdStreams, src, (*[32 << 10]byte)(tab))
 		case simdAsmBetter64K:
-			r = encodeBetterBlockSIMDAsm64K(&e.simdStreams, src, (*[144 << 10]byte)(e.tab))
+			r = encodeBetterBlockSIMDAsm64K(&e.simdStreams, src, (*[144 << 10]byte)(tab))
 		}
 		if simdAsmHook != nil {
 			simdAsmHook(e, r)
