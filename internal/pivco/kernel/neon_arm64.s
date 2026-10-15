@@ -728,6 +728,9 @@ TEXT ·execNEONAsm(SB), NOSPLIT, $0-16
 	CSEL LT, ZR, R15, R15
 	B    next
 
+	// The loop head of every op; 64 also aligns the function, so its code lines up the same in every build.
+	PCALIGN $64
+
 advance:
 	ADD $Op__size, R23, R23
 

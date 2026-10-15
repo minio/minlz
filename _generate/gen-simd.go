@@ -147,7 +147,8 @@ func genSIMDExec(name string, delta bool, tab, otab Mem) {
 	CMPQ(tok, end)
 	JAE(LabelRef(name + "_done"))
 
-	PCALIGN(Imm(32))
+	// 64 also aligns the function to 64, so the loop's place in cache lines is the same in every build.
+	PCALIGN(Imm(64))
 	Label(name + "_loop")
 	t := GP64()
 	MOVBQZX(Mem{Base: tok}, t)
@@ -550,7 +551,8 @@ func genSIMDExec512(name string, delta bool, tab, lowbTab, iotaTab Mem) {
 	j := GP64()
 	XORQ(j, j)
 
-	PCALIGN(Imm(32))
+	// 64 also aligns the function to 64, so the loop's place in cache lines is the same in every build.
+	PCALIGN(Imm(64))
 	Label(name + "_loop")
 	t := GP64()
 	MOVBQZX(at(Mem{Base: tok}, j, 1), t)

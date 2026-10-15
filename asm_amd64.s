@@ -25652,7 +25652,7 @@ TEXT ·simdExecAVX2(SB), NOSPLIT, $8-72
 	XORQ    R11, R11
 	CMPQ    DX, R8
 	JAE     simdExecAVX2_done
-	PCALIGN $0x20
+	PCALIGN $0x40
 
 simdExecAVX2_loop:
 	MOVBQZX (DX), R12
@@ -25802,7 +25802,7 @@ TEXT ·simdExecDeltaAVX2(SB), NOSPLIT, $8-72
 	XORQ    R11, R11
 	CMPQ    DX, R8
 	JAE     simdExecDeltaAVX2_done
-	PCALIGN $0x20
+	PCALIGN $0x40
 
 simdExecDeltaAVX2_loop:
 	MOVBQZX (DX), R12
@@ -26585,7 +26585,7 @@ simdExecAVX512_batch:
 
 simdExecAVX512_exec:
 	XORQ    SI, SI
-	PCALIGN $0x20
+	PCALIGN $0x40
 
 simdExecAVX512_loop:
 	MOVBQZX   (BX)(SI*1), R8
@@ -26983,7 +26983,7 @@ simdExecDeltaAVX512_batch:
 
 simdExecDeltaAVX512_exec:
 	XORQ    R8, R8
-	PCALIGN $0x20
+	PCALIGN $0x40
 
 simdExecDeltaAVX512_loop:
 	MOVBQZX   (BX)(R8*1), R9
