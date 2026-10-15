@@ -212,6 +212,7 @@ type simdDecoder struct {
 	pv   pivco.Decoder
 	tab  [simdLits + 1]pivco.Table
 	have [simdLits + 1]bool
+	// lits holds the literals decoded so far. Its capacity holds every literal of the block and simdPad.
 	lits []byte
 
 	tok, ll, offc [simdMaxChunk + simdPad]byte
@@ -259,41 +260,50 @@ func (s *simdDecoder) decode(dst, block []byte) bool {
 	if n == 0 || lz > uint64(len(body)-n) {
 		return false
 	}
-	nLits, ok := s.literals(body[lz:len(body)-n], len(dst))
+	lr, ok := s.literals(body[lz:len(body)-n], len(dst))
 	if !ok {
 		return false
 	}
 	// The first operation has literals, so offset 0 only occurs as a delta reference at position 0.
 	dst[0] = 0
 	st := [4]int{0, 0, 1, 0}
-	if lz > 0 && !s.ops(dst, body, int(lz), limit, &st) {
+	if lz > 0 && !s.ops(dst, body, int(lz), limit, &st, &lr) {
 		return false
 	}
-	d, l := st[0], st[1]
-	if d+nLits-l != len(dst) {
+	if len(lr.recs) > 0 && !s.fill(&lr, 0, math.MaxInt, len(dst)) {
+		return false
+	}
+	d, l, nLits := st[0], st[1], len(s.lits)
+	if nLits == 0 || lr.pos != lr.end || d+nLits-l != len(dst) {
 		return false
 	}
 	copy(dst[d:], s.lits[l:nLits])
 	return true
 }
 
-// literals decodes the literal section sec and returns the number of literals.
-func (s *simdDecoder) literals(sec []byte, size int) (int, bool) {
+// literals starts the literal section sec of a block of size bytes, and returns the reader of its literal blocks.
+func (s *simdDecoder) literals(sec []byte, size int) (simdReader, bool) {
 	s.have = [len(s.have)]bool{}
 	t, n := rvarint(sec)
 	if n == 0 || t > uint64(len(sec)-n) {
-		return 0, false
+		return simdReader{}, false
 	}
 	end := len(sec) - n - int(t)
 	if cap(s.lits) < size+simdPad {
 		s.lits = make([]byte, 0, size+simdPad)
 	}
-	lits := s.lits[:0]
-	r := simdReader{recs: sec[end : len(sec)-n], body: sec, end: end}
-	for len(r.recs) > 0 {
-		v, nv, stored, ok := s.stream(&r, simdLits, 1, min(pivco.MaxBlockSize, size-len(lits)), lits[len(lits):])
+	s.lits = s.lits[:0]
+	return simdReader{recs: sec[end : len(sec)-n], body: sec, end: end}, true
+}
+
+// fill decodes literal blocks of r until need literals follow position l, or none are left.
+// Decoding them just before the chunk that reads them keeps them in cache.
+func (s *simdDecoder) fill(r *simdReader, l, need, size int) bool {
+	lits := s.lits
+	for len(r.recs) > 0 && len(lits)-l < need {
+		v, nv, stored, ok := s.stream(r, simdLits, 1, min(pivco.MaxBlockSize, size-len(lits)), lits[len(lits):])
 		if !ok {
-			return 0, false
+			return false
 		}
 		if stored {
 			lits = append(lits, v[:nv]...)
@@ -301,16 +311,14 @@ func (s *simdDecoder) literals(sec []byte, size int) (int, bool) {
 			lits = lits[:len(lits)+nv]
 		}
 	}
-	if len(lits) == 0 || r.pos != r.end {
-		return 0, false
-	}
+	// The executors read up to 32 bytes past the literals of a chunk.
 	clear(lits[len(lits) : len(lits)+simdPad])
 	s.lits = lits
-	return len(lits), true
+	return true
 }
 
-// ops runs the chunks of the LZ section body[:end].
-func (s *simdDecoder) ops(dst, body []byte, end, limit int, st *[4]int) bool {
+// ops runs the chunks of the LZ section body[:end], with the literal blocks of lr.
+func (s *simdDecoder) ops(dst, body []byte, end, limit int, st *[4]int, lr *simdReader) bool {
 	t, n := rvarint(body[:end])
 	if n == 0 || t > uint64(end-n) {
 		return false
@@ -361,8 +369,13 @@ func (s *simdDecoder) ops(dst, body []byte, end, limit int, st *[4]int) bool {
 		r.recs = r.recs[m:]
 		c.raw = body[r.pos:]
 		r.pos += nb
+		// Each literal escape adds at most 255; the escapes of long matches can add far more.
+		if need := sumLL + min(sumEsc, 255*nLLEsc); st[1]+need > len(s.lits) && !s.fill(lr, st[1], need, len(dst)) {
+			return false
+		}
 		c.run(dst, lits, out, st)
-		if st[3] != 0 {
+		// Chunks only use more literals than are decoded once the literal blocks run out.
+		if st[3] != 0 || st[1] > len(s.lits) {
 			return false
 		}
 	}

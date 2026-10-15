@@ -1339,7 +1339,7 @@ func testSIMDDecodeAllocs(t *testing.T) {
 	defer debug.SetGCPercent(debug.SetGCPercent(-1))
 	b := newSIMDTestBuilder(t)
 	ops, lits := simdTestOps(rand.New(rand.NewSource(5)), 5000, "abcdef", 288, 30000)
-	tb := simdTestBlock{ops: ops, lits: lits, modes: []int{simdCodeLens, simdCurrent, simdClassLens}, litModes: []int{simdCodeLens, simdDeltaLens}, chunk: 2000, limit: 1, delta: 2}
+	tb := simdTestBlock{ops: ops, lits: lits, modes: []int{simdCodeLens, simdCurrent, simdClassLens}, litModes: []int{simdCodeLens, simdDeltaLens}, chunk: 2000, limit: 1, delta: 2, litBlock: 3000}
 	e, want := simdTestPad(b, &tb)
 	block := e.bytes()
 	dst := make([]byte, len(want))
@@ -1776,5 +1776,169 @@ func testSIMDClassLen16(t *testing.T) {
 		if _, err := Decode(nil, block); !errors.Is(err, ErrCorrupt) || rerr == nil {
 			t.Fatalf("length 16: %v, reference %v", err, rerr)
 		}
+	}
+}
+
+// simdTestLitDecode decodes block with a new decoder. Its literal buffer holds bytes of an earlier block, and
+// ends at an inaccessible page right after the size+simdPad bytes that decode needs.
+func simdTestLitDecode(t *testing.T, block []byte) ([]byte, error) {
+	t.Helper()
+	_, _, _, body, size, err := isMinLZ(block)
+	if err != nil {
+		return nil, err
+	}
+	lits, free, err := mapGuarded(size + simdPad)
+	if errors.Is(err, errors.ErrUnsupported) {
+		lits, free, err = make([]byte, size+simdPad), func() {}, nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer free()
+	for i := range lits {
+		lits[i] = byte(i) | 0x80
+	}
+	s := simdDecoder{lits: lits[:0]}
+	dst := bytes.Repeat([]byte{0xfe}, size+64)
+	ok := s.decode(dst[:size], body)
+	for _, v := range dst[size:] {
+		if v != 0xfe {
+			t.Fatal("wrote past dst")
+		}
+	}
+	if !ok {
+		return nil, ErrCorrupt
+	}
+	return dst[:size], nil
+}
+
+// TestSIMDLitLazy decodes blocks whose chunks take their literals from literal blocks decoded just before them:
+// chunks that need many literal blocks, literal blocks that serve many chunks, stored and coded literal blocks,
+// delta chunks, and literals after the last operation. Changed blocks, among them blocks whose literals run out
+// or are more than the block holds, must be accepted and decoded as the reference does.
+func TestSIMDLitLazy(t *testing.T) { simdTiers(t, testSIMDLitLazy) }
+
+func testSIMDLitLazy(t *testing.T) {
+	rng := rand.New(rand.NewSource(11))
+	b := newSIMDTestBuilder(t)
+	litModes := []int{simdStored, simdCodeLens, simdCurrent, simdClassLens, simdDeltaLens, simdStored}
+	type tcase struct {
+		name string
+		e    *simdTestEnc
+		want []byte
+	}
+	var cases []tcase
+	add := func(name string, tb simdTestBlock) {
+		e, want := simdTestPad(b, &tb)
+		cases = append(cases, tcase{name, e, want})
+	}
+	for i := range 6 {
+		ops, lits := simdTestOps(rng, 3000+rng.Intn(3000), "abcdefgh\x00", 288, 1<<rng.Intn(20))
+		delta := uint64(i&1) * rng.Uint64()
+		add(fmt.Sprint("many literal blocks per chunk ", i), simdTestBlock{ops: ops, lits: lits, limit: 2, chunk: 500 + rng.Intn(3000),
+			litBlock: 1 + rng.Intn(200), modes: []int{simdCodeLens, simdCurrent}, litModes: litModes[i:], delta: delta})
+		add(fmt.Sprint("many chunks per literal block ", i), simdTestBlock{ops: ops, lits: lits, chunk: len(ops)/90 + rng.Intn(20),
+			litBlock: 5000 + rng.Intn(60000), litModes: litModes[i:], delta: delta})
+	}
+	// Few literals in the operations, many after them.
+	tail := make([]byte, 30000)
+	for i := range tail {
+		tail[i] = "abcd"[rng.Intn(4)]
+	}
+	add("literals after the operations", simdTestBlock{ops: []simdTestOp{{ll: 40, ml: 32, off: 7}, {ll: 2, ml: 30}}, lits: tail,
+		chunk: 1, litBlock: 2000, litModes: []int{simdStored, simdCodeLens, simdCurrent}, delta: 1})
+	e := &simdTestEnc{typ: simdBlockType, size: len(tail), noLZ: true}
+	for i := 0; i < len(tail); i += 7000 {
+		e.lits = append(e.lits, b.stream(simdLits, []int{simdCodeLens, simdCurrent}[i%2], tail[i:min(i+7000, len(tail))]))
+	}
+	cases = append(cases, tcase{"no operations", e, tail})
+
+	extra := bytes.Repeat([]byte("yz"), 500)
+	for _, tc := range cases {
+		block := tc.e.bytes()
+		if ref, err := reference.DecodeSIMDBlock(block); err != nil || !bytes.Equal(ref, tc.want) {
+			t.Fatalf("%s: reference: %v", tc.name, err)
+		}
+		simdTestDecode(t, block, tc.want)
+		if got, err := simdTestLitDecode(t, block); err != nil || !bytes.Equal(got, tc.want) {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		for j := range 60 {
+			e := *tc.e
+			e.lits = slices.Clone(e.lits)
+			var want []byte
+			switch j % 6 {
+			case 0:
+				// The literals run out, mostly in the operations.
+				e.lits = e.lits[:rng.Intn(len(e.lits))]
+			case 1:
+				i := rng.Intn(len(e.lits))
+				e.lits = slices.Delete(e.lits, i, i+1)
+			case 2:
+				// One literal more than the block holds.
+				e.lits = append(e.lits, simdTestStream{data: []byte("x")})
+			case 3:
+				e.size += len(extra)
+				e.lits = append(e.lits, b.stream(simdLits, simdCodeLens, extra))
+				want = append(bytes.Clone(tc.want), extra...)
+			case 4:
+				s := &e.lits[rng.Intn(len(e.lits))]
+				s.data = s.data[:max(len(s.data)-1-rng.Intn(3), 0)]
+			}
+			block := e.bytes()
+			if j%6 == 5 {
+				_, h := binary.Uvarint(block[1:])
+				block[1+h+rng.Intn(len(block)-1-h)] ^= 1 << rng.Intn(8)
+			}
+			got, err := simdTestLitDecode(t, block)
+			ref, rerr := reference.DecodeSIMDBlock(block)
+			if (err == nil) != (rerr == nil) || err == nil && !bytes.Equal(got, ref) || want != nil && !bytes.Equal(got, want) {
+				t.Fatalf("%s change %d: %v, reference %v", tc.name, j, err, rerr)
+			}
+		}
+	}
+}
+
+// TestSIMDLitFill checks that fill decodes literal blocks only until the literals a chunk needs are decoded,
+// and that zeros follow them.
+func TestSIMDLitFill(t *testing.T) {
+	rng := rand.New(rand.NewSource(12))
+	b := newSIMDTestBuilder(t)
+	lits := make([]byte, 50000)
+	for i := range lits {
+		lits[i] = "abcdefgh"[rng.Intn(8)]
+	}
+	e := simdTestEnc{typ: simdBlockType, size: len(lits), noLZ: true}
+	var ends []int
+	for i := 0; i < len(lits); i = ends[len(ends)-1] {
+		v := lits[i:min(i+1+rng.Intn(4000), len(lits))]
+		e.lits = append(e.lits, b.stream(simdLits, []int{simdStored, simdCodeLens, simdCurrent}[len(ends)%3], v))
+		ends = append(ends, i+len(v))
+	}
+	raw := e.bytes()
+	_, h := binary.Uvarint(raw[1:])
+	body := raw[2+h:]
+	_, n := rvarint(body)
+	s := simdDecoder{lits: bytes.Repeat([]byte{0xa5}, len(lits)+simdPad)[:0]}
+	r, ok := s.literals(body[:len(body)-n], len(lits))
+	if !ok {
+		t.Fatal("no literal section")
+	}
+	for l := 0; len(r.recs) > 0; {
+		need := rng.Intn(6000)
+		want := len(s.lits)
+		for i := 0; want-l < need && i < len(ends); i++ {
+			want = max(want, ends[i])
+		}
+		if !s.fill(&r, l, need, len(lits)) {
+			t.Fatal("fill failed")
+		}
+		if len(s.lits) != want || !bytes.Equal(s.lits, lits[:want]) || !bytes.Equal(s.lits[want:want+simdPad], make([]byte, simdPad)) {
+			t.Fatalf("%d literals from %d: decoded %d, want %d", need, l, len(s.lits), want)
+		}
+		l += rng.Intn(min(need, want-l) + 1)
+	}
+	if r.pos != r.end {
+		t.Fatal("literal data left")
 	}
 }
