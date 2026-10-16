@@ -25,7 +25,7 @@ import (
 	"github.com/zeebo/xxh3"
 )
 
-// SIMD blocks are described in SIMD_SPEC.md.
+// SIMD blocks are described in SPEC_SIMD.md.
 
 const (
 	simdBlockType = 1

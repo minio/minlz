@@ -68,7 +68,7 @@ func simdParseAsmInputs(t *testing.T) (names []string, srcs [][]byte) {
 		names, srcs = append(names, name), append(srcs, b)
 	}
 	for _, z := range []string{"testdata/enc_regressions.zip", "testdata/fuzz/block-corpus-raw.zip"} {
-		fuzz.ReturnFromZip(t, z, fuzz.TypeRaw, func(b []byte) { add(fmt.Sprintf("%s#%d", filepath.Base(z), len(srcs)), b) })
+		fuzz.ReturnFromZip(t, z, fuzz.TypeRaw, testing.Short(), func(b []byte) { add(fmt.Sprintf("%s#%d", filepath.Base(z), len(srcs)), b) })
 	}
 	rng := rand.New(rand.NewSource(1))
 	parse := simdTestParseInput(rng)

@@ -157,9 +157,9 @@ func FuzzDecodeBlock(f *testing.F) {
 			f.Add(buf.Bytes())
 		}
 	}
-	fuzz.ReturnFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, addCompressed)
-	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, addCompressed)
-	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, addCompressed)
+	fuzz.ReturnFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, false, addCompressed)
+	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, testing.Short(), addCompressed)
+	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, testing.Short(), addCompressed)
 	fuzz.AddFromZip(f, "testdata/dec-block-regressions.zip", fuzz.TypeRaw, false)
 	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-dec.zip", fuzz.TypeGoFuzz, false)
 
@@ -285,8 +285,8 @@ func FuzzDecodeSIMD(f *testing.F) {
 			}
 		}
 	}
-	fuzz.ReturnFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, add)
-	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, add)
+	fuzz.ReturnFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, false, add)
+	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, testing.Short(), add)
 	f.Fuzz(func(t *testing.T, extra uint32, body []byte) {
 		// Larger blocks only cost memory: every check is per chunk or per literal block.
 		n := len(body) + 4 + simdMinSaving + int(extra)
@@ -318,8 +318,8 @@ func FuzzDecodeSIMD(f *testing.F) {
 
 func FuzzStreamEncode(f *testing.F) {
 	fuzz.AddFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, false)
-	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, false)
-	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, false)
+	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, testing.Short())
+	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, testing.Short())
 	for delta := 1; delta <= 2; delta++ {
 		if b := buildMaxOffsetBoundary(0, delta); b != nil {
 			f.Add(b)
@@ -421,9 +421,9 @@ func FuzzStreamDecode(f *testing.F) {
 	type readerOnly struct {
 		io.Reader
 	}
-	fuzz.ReturnFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, addCompressed)
-	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, addCompressed)
-	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, addCompressed)
+	fuzz.ReturnFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, false, addCompressed)
+	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, testing.Short(), addCompressed)
+	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, testing.Short(), addCompressed)
 	dec := NewReader(nil, ReaderIgnoreCRC(), ReaderMaxBlockSize(1<<20))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		// Using Read

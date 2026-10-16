@@ -240,7 +240,7 @@ func TestBlockSingleSymbol(t *testing.T) {
 	}
 }
 
-// TestBlockSpecExamples encodes the examples of PIVCO_SPEC.md appendix A.
+// TestBlockSpecExamples encodes the examples of SPEC_PIVCO.md appendix A.
 func TestBlockSpecExamples(t *testing.T) {
 	table := func(lens map[byte]uint8) *Table {
 		var l [256]uint8

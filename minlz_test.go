@@ -218,9 +218,17 @@ func TestSmallCopy(t *testing.T) {
 	}
 }
 
+// smallStep is the size step of the TestSmall tests.
+func smallStep() int {
+	if testing.Short() {
+		return 97
+	}
+	return 23
+}
+
 func TestSmallRand(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
-	for n := 1; n < 20000; n += 23 {
+	for n := 1; n < 20000; n += smallStep() {
 		b := make([]byte, n)
 		for i := range b {
 			b[i] = uint8(rng.Intn(256))
@@ -232,7 +240,7 @@ func TestSmallRand(t *testing.T) {
 }
 
 func TestSmallRegular(t *testing.T) {
-	for n := 1; n < 20000; n += 23 {
+	for n := 1; n < 20000; n += smallStep() {
 		b := make([]byte, n)
 		for i := range b {
 			b[i] = uint8(i%10 + 'a')
@@ -244,7 +252,7 @@ func TestSmallRegular(t *testing.T) {
 }
 
 func TestSmallRepeat(t *testing.T) {
-	for n := 1; n < 20000; n += 23 {
+	for n := 1; n < 20000; n += smallStep() {
 		b := make([]byte, n)
 		for i := range b[:n/2] {
 			b[i] = uint8(i * 255 / n)

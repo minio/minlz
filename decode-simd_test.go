@@ -35,7 +35,7 @@ import (
 	"github.com/zeebo/xxh3"
 )
 
-// The test block builder below is written from SIMD_SPEC.md, independently of the encoder.
+// The test block builder below is written from SPEC_SIMD.md, independently of the encoder.
 
 // simdTestOp copies ll literals, then ml bytes from offset off back. off 0 repeats the offset.
 type simdTestOp struct{ ll, ml, off int }
@@ -162,7 +162,7 @@ func newSIMDTestBuilder(t testing.TB) *simdTestBuilder {
 }
 
 // code returns v coded with t as stored in an entry of stream k: a pivco block,
-// after the number of values for tokens and literals (SIMD_SPEC.md 2.2).
+// after the number of values for tokens and literals (SPEC_SIMD.md 2.2).
 func (b *simdTestBuilder) code(k int, v []byte, t *pivco.Table) ([]byte, error) {
 	var h [256]uint64
 	for _, c := range v {
@@ -519,9 +519,9 @@ func TestSIMDOffsets(t *testing.T) {
 	}
 }
 
-// TestSIMDLayoutsSpec compares the class layouts with the arrays in SIMD_SPEC.md.
+// TestSIMDLayoutsSpec compares the class layouts with the arrays in SPEC_SIMD.md.
 func TestSIMDLayoutsSpec(t *testing.T) {
-	spec, err := os.ReadFile("SIMD_SPEC.md")
+	spec, err := os.ReadFile("SPEC_SIMD.md")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -622,7 +622,7 @@ func testSIMDDecodeBuilt(t *testing.T) {
 	}
 }
 
-// TestSIMDStoredKeepsTable checks that a stored entry keeps the current table (SIMD_SPEC.md 2.2),
+// TestSIMDStoredKeepsTable checks that a stored entry keeps the current table (SPEC_SIMD.md 2.2),
 // in the chunks and the literal blocks.
 func TestSIMDStoredKeepsTable(t *testing.T) {
 	ops := make([]simdTestOp, 3*64)
@@ -647,7 +647,7 @@ func TestSIMDStoredKeepsTable(t *testing.T) {
 }
 
 func TestSIMDDeltaExample(t *testing.T) {
-	// SIMD_SPEC.md 4.5: the output ends with 41 42 43 07 00 41 42 43, and the repeat offset is 5.
+	// SPEC_SIMD.md 4.5: the output ends with 41 42 43 07 00 41 42 43, and the repeat offset is 5.
 	lits := []byte{0x41, 0x42, 0x43, 0x07, 0x00, 0x41, 0x42, 0x43, 0x07, 0x01, 0x41, 0x42, 0x44, 0x07}
 	ops := []simdTestOp{{ll: 8, ml: 0, off: 5}, {ll: 6, ml: 4, off: 0}}
 	b := newSIMDTestBuilder(t)
@@ -783,7 +783,11 @@ func testSIMDExecRandom(t *testing.T) {
 	want, got := bytes.Clone(base), bytes.Clone(base)
 	lits := make([]byte, 400*(simdMaxLen+256)+1000+simdPad)
 	pad := func(b []byte) []byte { return append(b, make([]byte, simdPad)...) }
-	for i := range 3000 {
+	cases := 3000
+	if testing.Short() {
+		cases = 300
+	}
+	for i := range cases {
 		var c simdChunk
 		c.delta = i&1 != 0
 		// Mostly new offsets with 20 raw bits span the most raw bytes per 16 operations.
@@ -1871,6 +1875,10 @@ func testSIMDLitLazy(t *testing.T) {
 	cases = append(cases, tcase{"no operations", e, tail})
 
 	extra := bytes.Repeat([]byte("yz"), 500)
+	changes := 60
+	if testing.Short() {
+		changes = 12
+	}
 	for _, tc := range cases {
 		block := tc.e.bytes()
 		if ref, err := reference.DecodeSIMDBlock(block); err != nil || !bytes.Equal(ref, tc.want) {
@@ -1880,7 +1888,7 @@ func testSIMDLitLazy(t *testing.T) {
 		if got, err := simdTestLitDecode(t, block); err != nil || !bytes.Equal(got, tc.want) {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
-		for j := range 60 {
+		for j := range changes {
 			e := *tc.e
 			e.lits = slices.Clone(e.lits)
 			var want []byte

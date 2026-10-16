@@ -27,7 +27,7 @@ const (
 	simdBatch = 64
 )
 
-// genSIMD generates the operation loops of SIMD blocks (SIMD_SPEC.md).
+// genSIMD generates the operation loops of SIMD blocks (SPEC_SIMD.md).
 func genSIMD() {
 	tab := simdPatternTable()
 	otab := NewDataAddr(Symbol{Name: "·simdOffTab"}, 0)

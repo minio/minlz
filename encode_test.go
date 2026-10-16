@@ -1036,9 +1036,13 @@ func buildMaxOffsetBoundary(seed int64, delta int) []byte {
 }
 
 func TestMaxOffsetBoundary(t *testing.T) {
+	seeds := int64(10)
+	if testing.Short() {
+		seeds = 3
+	}
 	for _, level := range []int{LevelFastest, LevelBalanced, LevelSmallest} {
 		for delta := range 4 {
-			for seed := range int64(10) {
+			for seed := range seeds {
 				src := buildMaxOffsetBoundary(seed, delta)
 				if src == nil {
 					continue

@@ -3,7 +3,7 @@
 This document adds SIMD blocks to the [MinLZ specification](SPEC.md): entropy-coded blocks that decode with SIMD.
 Anything not described here is as defined there.
 
-Entropy coding uses pivco blocks, defined in [PIVCO_SPEC.md](PIVCO_SPEC.md): a subset of [pivco-huffman](https://github.com/MarcinZukowski/pivco-huffman).
+Entropy coding uses pivco blocks, defined in [SPEC_PIVCO.md](SPEC_PIVCO.md): a subset of [pivco-huffman](https://github.com/MarcinZukowski/pivco-huffman).
 
 # BLOCK FORMAT
 

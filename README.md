@@ -37,7 +37,7 @@ compression ratio while retaining a high decompression speed.
 
 This package implements the MinLZ specification v1.0 in Go, plus SIMD blocks from v1.1.
 
-For format specification see the included [SPEC.md](SPEC.md) and [SIMD_SPEC.md](SIMD_SPEC.md).
+For format specification see the included [SPEC.md](SPEC.md) and [SPEC_SIMD.md](SPEC_SIMD.md).
 
 # Changelog
 
@@ -126,7 +126,7 @@ Use `minlz.AppendEncoded` and `minlz.AppendDecoded` to append to existing slices
 
 ## SIMD Blocks
 
-SIMD blocks are a block type added in v1.1 of the format, see [SIMD_SPEC.md](SIMD_SPEC.md).
+SIMD blocks are a block type added in v1.1 of the format, see [SPEC_SIMD.md](SPEC_SIMD.md).
 They store literals and operations in separate Huffman coded streams, laid out so they can be decoded with SIMD.
 
 Compared to MinLZ blocks at the same level, SIMD blocks are typically 17-28% smaller (10-19% on 4KB blocks).

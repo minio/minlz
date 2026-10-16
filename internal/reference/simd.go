@@ -289,7 +289,7 @@ type SIMDWalker struct {
 	Op func(lits, ml, offset int, repeat bool)
 }
 
-// DecodeSIMDBlock is a reference decoder of SIMD blocks, as specified in SIMD_SPEC.md.
+// DecodeSIMDBlock is a reference decoder of SIMD blocks, as specified in SPEC_SIMD.md.
 // src is the block, including its indicator byte.
 // This implementation is not optimized for speed, but for readability.
 func DecodeSIMDBlock(src []byte) ([]byte, error) {
@@ -297,7 +297,7 @@ func DecodeSIMDBlock(src []byte) ([]byte, error) {
 }
 
 // DecodeSIMDBlockStrict is DecodeSIMDBlock, but also rejects overlapping matches in chunks with
-// the no-overlap flag, which SIMD_SPEC.md doesn't require. It checks encoders.
+// the no-overlap flag, which SPEC_SIMD.md doesn't require. It checks encoders.
 func DecodeSIMDBlockStrict(src []byte) ([]byte, error) {
 	return decodeSIMDBlock(src, true, &SIMDWalker{})
 }
@@ -410,7 +410,7 @@ func (d *simdDecoder) chunks(sec []byte, limit int) error {
 			return fmt.Errorf("more than %d chunks", maxChunks)
 		}
 		// The tokens give the number of values of the next streams, and the literal lengths
-		// add escapes (SIMD_SPEC.md 4.1). -1 is a number stored with the values.
+		// add escapes (SPEC_SIMD.md 4.1). -1 is a number stored with the values.
 		var c [streamOffsetBits + 1][]byte
 		counts := [streamOffsetBits + 1]int{streamTokens: -1, streamOffsetBits: -1}
 		for k := range c {

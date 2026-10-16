@@ -460,7 +460,7 @@ func (e *simdEncoder) emitLong(lits []byte, prev int, t byte, length int) {
 	}
 }
 
-// deltaLits adds lits, and their delta literals (SIMD_SPEC.md 4.5), for an operation at e.pos with repeat offset rep.
+// deltaLits adds lits, and their delta literals (SPEC_SIMD.md 4.5), for an operation at e.pos with repeat offset rep.
 func (e *simdEncoder) deltaLits(lits []byte, rep int) {
 	n := e.nLits
 	e.nLits += copy(e.lits[n:], lits)
@@ -749,7 +749,7 @@ func (e *simdEncoder) put(recs []byte, k int, v []byte) []byte {
 				panic("invalid table")
 			}
 		}
-		// Only tokens and literal blocks store their number of values (SIMD_SPEC.md 2.2).
+		// Only tokens and literal blocks store their number of values (SPEC_SIMD.md 2.2).
 		hdr := 0
 		if k == simdTok || k == simdLits {
 			hdr = 2
@@ -799,7 +799,7 @@ func (t *simdTable) setCode(k int, h *[256]uint64) {
 	t.setNibbles(t.lens[:syms])
 }
 
-// setClass sets t to the class lengths of h for layout k (SIMD_SPEC.md 2.3).
+// setClass sets t to the class lengths of h for layout k (SPEC_SIMD.md 2.3).
 // The values of the stream are below syms.
 func (t *simdTable) setClass(k int, h *[256]uint64, syms int) {
 	var cl [24]uint8
@@ -835,7 +835,7 @@ func (t *simdTable) setClass(k int, h *[256]uint64, syms int) {
 	t.setNibbles(cl[:n])
 }
 
-// simdTokClassLens sets cl to the token class lengths of h (SIMD_SPEC.md A.4),
+// simdTokClassLens sets cl to the token class lengths of h (SPEC_SIMD.md A.4),
 // and lens to the code lengths. It returns the number of class lengths.
 func simdTokClassLens(h *[256]uint64, cl *[24]uint8, lens *[256]uint8) int {
 	const groups = 14

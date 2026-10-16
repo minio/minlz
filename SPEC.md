@@ -14,7 +14,7 @@ The spec versioning follows [semantic versioning](https://semver.org/).
 * Patch version numbers indicate non-breaking additions to the spec.
 
 * v1.0: Initial release.
-* v1.1: Adds [SIMD Blocks](SIMD_SPEC.md).
+* v1.1: Adds [SIMD Blocks](SPEC_SIMD.md).
 
 # BLOCK FORMAT
 
@@ -43,7 +43,7 @@ of the block if this value is non-zero.
 
 A block starts with the uncompressed length up to a maximum of 2^24,
 stored as an unsigned varint.
-Bits 24-31 of the varint are the block type ([SIMD_SPEC.md](SIMD_SPEC.md) 1.0); MinLZ blocks are type 0.
+Bits 24-31 of the varint are the block type ([SPEC_SIMD.md](SPEC_SIMD.md) 1.0); MinLZ blocks are type 0.
 
 Maximum uncompressed block size is 8 MiB = 8,388,608 bytes.
 
@@ -361,7 +361,7 @@ The final byte of the identifier is a block size indicator.
 |------|-----------------------------------------------------------------|
 | 0-3  | Max block size indicator                                        |
 | 4-5  | Reserved, must be ignored                                       |
-| 6    | Stream contains [SIMD Block(s)](SIMD_SPEC.md) (chunk type 0x10) |
+| 6    | Stream contains [SIMD Block(s)](SPEC_SIMD.md) (chunk type 0x10) |
 | 7    | Reserved, must be 0                                             |
 
 #### 4.1.1 Max Block Size
@@ -422,7 +422,7 @@ If possible prefer type `0x02` over this.
 
 ### 4.5B. MinLZ SIMD Block (chunk type 0x10).
 
-A [SIMD block](SIMD_SPEC.md) *without* the MinLZ indicator (initial 0 byte).
+A [SIMD block](SPEC_SIMD.md) *without* the MinLZ indicator (initial 0 byte).
 The block type (see 1.1) must be 1.
 
 An [xxhash3](https://github.com/Cyan4973/xxHash#xxhash---extremely-fast-hash-algorithm)
@@ -434,7 +434,7 @@ The bit applies until the next stream identifier.
 A decoder that starts at an index entry (see 4.12) has not read the stream identifier, and may accept SIMD blocks until it reads one.
 Encoders may set it in streams that end up without SIMD blocks.
 
-See [SIMD_SPEC.md](SIMD_SPEC.md) for details on SIMD blocks.
+See [SPEC_SIMD.md](SPEC_SIMD.md) for details on SIMD blocks.
 
 ### 4.6 EOF (chunk type 0x20)
 
@@ -619,7 +619,7 @@ Formats like xz/bzip2 also offer excellent compression, but these offer even mor
 
 MinLZ blocks by design only offer static encoding types and no entropy coding of remainder literals,
 making decoding possible with no tables.
-[SIMD blocks](SIMD_SPEC.md) add Huffman coding, laid out to decode with SIMD.
+[SIMD blocks](SPEC_SIMD.md) add Huffman coding, laid out to decode with SIMD.
 
 While it was considered, all conditional decoding (decoding based on previous operation or output position)
 was avoided to simplify the decoder.

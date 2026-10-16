@@ -729,10 +729,15 @@ func TestWriterSIMD(t *testing.T) {
 			return w.EncodeBuffer(data[n/2:])
 		}},
 	}
+	var k int
 	for _, level := range simdLevels {
 		for _, bs := range []int{4 << 10, 64 << 10, 1 << 20, 8 << 20} {
 			for _, conc := range []int{1, 4} {
 				for _, wr := range writes {
+					// -short runs every fifth case. 5 shares no factor with the loop sizes, so every pair of settings still runs.
+					if k++; testing.Short() && k%5 != 0 {
+						continue
+					}
 					t.Run(fmt.Sprintf("level-%d/bs-%d/c-%d/%s", level, bs, conc, wr.name), func(t *testing.T) {
 						var buf bytes.Buffer
 						w := NewWriter(&buf, append(wr.opts, WriterLevel(level), WriterBlockSize(bs), WriterConcurrency(conc), WriterAddIndex(true))...)

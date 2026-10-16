@@ -26,7 +26,7 @@
 // FlatVertical layout and raw bitmaps (no ANS), without the pivcohuf container.
 // Shaper ports the shaping of lengths for faster decoding (effort 2, src/joint_lengths.c),
 // which MinLZ doesn't use for now: it costs encode time for a few percent of block decode speed.
-// The block format is defined in PIVCO_SPEC.md. It is the upstream PH block without its
+// The block format is defined in SPEC_PIVCO.md. It is the upstream PH block without its
 // symbol count, its marker prefix and the marker byte before each flat region; otherwise
 // the regions are byte for byte those of upstream.
 package pivco

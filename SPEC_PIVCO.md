@@ -1,7 +1,7 @@
 # PIVCO BLOCKS SPECIFICATION
 
 A pivco block codes 1 to 65535 byte values with a Huffman code, in a form that decodes with SIMD.
-MinLZ SIMD blocks use pivco blocks for their entropy coded streams ([SIMD_SPEC.md](SIMD_SPEC.md) 2.2).
+MinLZ SIMD blocks use pivco blocks for their entropy coded streams ([SPEC_SIMD.md](SPEC_SIMD.md) 2.2).
 
 A pivco block does not store a code per value.
 It stores a *bitmap* per node of the Huffman tree, with one bit per value that passes through the node:
@@ -33,7 +33,7 @@ Otherwise, the regions of a pivco block (3) are byte for byte those of the upstr
 A block codes `n` values, each a byte (0-255), with `n` from 1 to 65535.
 
 The block stores neither `n` nor its own size: the container provides both.
-MinLZ stores `n` for some streams and derives it for others (SIMD_SPEC.md 2.2).
+MinLZ stores `n` for some streams and derives it for others (SPEC_SIMD.md 2.2).
 A decoder must know both before it decodes the block. A block can be valid for more than one `n`.
 
 ### 1.2 Huffman Table
@@ -44,7 +44,7 @@ Length 0 means the value has no code. Values with a code are *coded*.
 The table must either:
 
 * Form a complete code: the sum of `2^(11 - length)` over the coded values is exactly `2^11`.
-* Or code exactly one value. Its length does not change the blocks. MinLZ requires length 1 (SIMD_SPEC.md 2.3).
+* Or code exactly one value. Its length does not change the blocks. MinLZ requires length 1 (SPEC_SIMD.md 2.3).
 
 Every value of the input must be coded.
 How an encoder chooses the code lengths is not part of this format.
@@ -239,7 +239,7 @@ A decoder must report an error when:
 
 A node that holds no values has no regions: a decoder must not read any for it.
 The bitmap of a BOTH node whose two values differ is not checked further: all its bits are valid.
-A container can restrict tables further: MinLZ requires length 1 for a single coded value (SIMD_SPEC.md 2.3).
+A container can restrict tables further: MinLZ requires length 1 for a single coded value (SPEC_SIMD.md 2.3).
 
 With these checks, a decoder accepts exactly the blocks an encoder writes:
 a valid block is the encoding of the values it decodes to, and every input of `n` coded values has one encoding.

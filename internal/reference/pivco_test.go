@@ -20,7 +20,7 @@ import (
 	"testing"
 )
 
-// TestPivcoExamples decodes the examples of PIVCO_SPEC.md appendix A, and changed copies of them.
+// TestPivcoExamples decodes the examples of SPEC_PIVCO.md appendix A, and changed copies of them.
 func TestPivcoExamples(t *testing.T) {
 	table := func(lens map[byte]uint8) *pivcoTable {
 		var l [256]uint8

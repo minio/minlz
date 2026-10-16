@@ -25,9 +25,9 @@ import (
 	"testing"
 )
 
-// TestSIMDLayoutsSpec compares the class layouts with the arrays in SIMD_SPEC.md.
+// TestSIMDLayoutsSpec compares the class layouts with the arrays in SPEC_SIMD.md.
 func TestSIMDLayoutsSpec(t *testing.T) {
-	spec, err := os.ReadFile("../../SIMD_SPEC.md")
+	spec, err := os.ReadFile("../../SPEC_SIMD.md")
 	if err != nil {
 		t.Skip(err)
 	}
@@ -76,7 +76,7 @@ func TestSIMDLayoutsSpec(t *testing.T) {
 	}
 }
 
-// TestSIMDDeltaExample decodes the example of SIMD_SPEC.md 4.5.
+// TestSIMDDeltaExample decodes the example of SPEC_SIMD.md 4.5.
 func TestSIMDDeltaExample(t *testing.T) {
 	rv := func(b []byte, v int) []byte {
 		r := binary.AppendUvarint(nil, uint64(v))

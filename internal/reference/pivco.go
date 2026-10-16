@@ -24,7 +24,7 @@ import (
 	"slices"
 )
 
-// Node kinds of the coding tree (PIVCO_SPEC.md 2.3). Groups are pivcoBoth and up.
+// Node kinds of the coding tree (SPEC_PIVCO.md 2.3). Groups are pivcoBoth and up.
 const (
 	pivcoFull = iota
 	pivcoLeafLeft
@@ -39,14 +39,14 @@ type pivcoNode struct {
 	first, d    int // of a group: its first rank, and log2 of its number of values
 }
 
-// pivcoTable is the coding tree of a Huffman table (PIVCO_SPEC.md 2).
+// pivcoTable is the coding tree of a Huffman table (SPEC_PIVCO.md 2).
 type pivcoTable struct {
 	root   *pivcoNode
 	ranks  []byte // the value of each rank
 	single bool   // the table codes one value (2.5)
 }
 
-// newPivcoTable builds the coding tree of the code lengths lens (PIVCO_SPEC.md 1.2, 2).
+// newPivcoTable builds the coding tree of the code lengths lens (SPEC_PIVCO.md 1.2, 2).
 func newPivcoTable(lens *[256]uint8) (*pivcoTable, error) {
 	var coded []byte
 	kraft := 0
@@ -146,7 +146,7 @@ func newPivcoTable(lens *[256]uint8) (*pivcoTable, error) {
 	return t, kinds(t.root)
 }
 
-// decode decodes the pivco block src of n values (PIVCO_SPEC.md 5, 6).
+// decode decodes the pivco block src of n values (SPEC_PIVCO.md 5, 6).
 func (t *pivcoTable) decode(src []byte, n int) ([]byte, error) {
 	if n < 1 || n > 65535 {
 		return nil, fmt.Errorf("pivco block of %d values", n)
@@ -177,7 +177,7 @@ func (r *pivcoReader) take(n int) ([]byte, error) {
 	return b, nil
 }
 
-// bitmap reads the bitmap of a node holding k values (PIVCO_SPEC.md 3.2).
+// bitmap reads the bitmap of a node holding k values (SPEC_PIVCO.md 3.2).
 func (r *pivcoReader) bitmap(k int) ([]byte, error) {
 	b, err := r.take((k + 7) / 8)
 	if err == nil && k&7 != 0 && b[len(b)-1]>>(k&7) != 0 {
@@ -267,7 +267,7 @@ func (r *pivcoReader) node(nd *pivcoNode, k int) ([]byte, error) {
 	return out, nil
 }
 
-// flatCodes reads the k flat codes of d bits in b (PIVCO_SPEC.md 3.3).
+// flatCodes reads the k flat codes of d bits in b (SPEC_PIVCO.md 3.3).
 func flatCodes(b []byte, k, d int) ([]int, error) {
 	var n512, n128 int
 	if d < 8 {
