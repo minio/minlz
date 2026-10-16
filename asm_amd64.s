@@ -25471,6 +25471,23 @@ decodeBlockAsm_remain_copy_done:
 
 decodeBlockAsm_remain_copy_overlap:
 	ADDQ DX, DI
+	CMPQ DX, $0x80
+	JAE  decodeBlockAsm_remain_copy_overlap_prefix
+	CMPQ R9, $0x10
+	JB   decodeBlockAsm_remain_copy_overlap_simple
+	CMPQ DX, $0x10
+	JB   decodeBlockAsm_remain_copy_overlap_simple
+
+decodeBlockAsm_remain_copy_overlap_exact16:
+	MOVOU (BX), X0
+	MOVOU X0, (SI)
+	ADDQ  $0x10, BX
+	ADDQ  $0x10, SI
+	SUBQ  $0x10, DX
+	CMPQ  DX, $0x10
+	JAE   decodeBlockAsm_remain_copy_overlap_exact16
+	TESTQ DX, DX
+	JZ    decodeBlockAsm_remain_copy_overlap_finished
 
 decodeBlockAsm_remain_copy_overlap_simple:
 	MOVB (BX), R10
@@ -25479,7 +25496,124 @@ decodeBlockAsm_remain_copy_overlap_simple:
 	INCQ SI
 	DECQ DX
 	JNZ  decodeBlockAsm_remain_copy_overlap_simple
-	JMP  decodeBlockAsm_remain_loop
+
+decodeBlockAsm_remain_copy_overlap_finished:
+	JMP decodeBlockAsm_remain_loop
+
+decodeBlockAsm_remain_copy_overlap_prefix:
+	MOVQ R9, R10
+
+decodeBlockAsm_remain_copy_overlap_prefix_loop:
+	MOVQ R10, R11
+	CMPQ R11, DX
+	JBE  decodeBlockAsm_remain_copy_overlap_prefix_size
+	MOVQ DX, R11
+
+decodeBlockAsm_remain_copy_overlap_prefix_size:
+	CMPQ R11, $0x40
+	JB   decodeBlockAsm_remain_copy_overlap_prefix_short
+
+	// genMemMoveLong
+	MOVQ    R11, R12
+	SHRQ    $0x06, R12
+	MOVQ    BX, R13
+	MOVQ    SI, R14
+	MOVQ    R11, R15
+	PCALIGN $0x10
+
+decodeBlockAsm_remain_overlap_prefixlarge_big_loop_back:
+	MOVOU (R13), X0
+	MOVOU 16(R13), X1
+	MOVOU 32(R13), X2
+	MOVOU 48(R13), X3
+	MOVOU X0, (R14)
+	MOVOU X1, 16(R14)
+	MOVOU X2, 32(R14)
+	MOVOU X3, 48(R14)
+	ADDQ  $0x40, R14
+	ADDQ  $0x40, R13
+	SUBQ  $0x40, R15
+	JZ    decodeBlockAsm_remain_copy_overlap_prefix_done
+	DECQ  R12
+	JNZ   decodeBlockAsm_remain_overlap_prefixlarge_big_loop_back
+	TESTQ R15, R15
+	JZ    decodeBlockAsm_remain_copy_overlap_prefix_done
+	MOVOU -64(R13)(R15*1), X0
+	MOVOU -48(R13)(R15*1), X1
+	MOVOU -32(R13)(R15*1), X2
+	MOVOU -16(R13)(R15*1), X3
+	MOVOU X0, -64(R14)(R15*1)
+	MOVOU X1, -48(R14)(R15*1)
+	MOVOU X2, -32(R14)(R15*1)
+	MOVOU X3, -16(R14)(R15*1)
+	JMP   decodeBlockAsm_remain_copy_overlap_prefix_done
+
+decodeBlockAsm_remain_copy_overlap_prefix_short:
+	// genMemMoveShort
+	// margin: 0, min move: 1
+	CMPQ R11, $0x03
+	JB   decodeBlockAsm_remain_overlap_prefix_memmove_move_1or2
+	JE   decodeBlockAsm_remain_overlap_prefix_memmove_move_3
+	CMPQ R11, $0x08
+	JBE  decodeBlockAsm_remain_overlap_prefix_memmove_move_4through8
+	CMPQ R11, $0x10
+	JBE  decodeBlockAsm_remain_overlap_prefix_memmove_move_8through16
+	CMPQ R11, $0x20
+	JBE  decodeBlockAsm_remain_overlap_prefix_memmove_move_17through32
+	JMP  decodeBlockAsm_remain_overlap_prefix_memmove_move_33through64
+
+decodeBlockAsm_remain_overlap_prefix_memmove_move_1or2:
+	MOVB (BX), R12
+	MOVB -1(BX)(R11*1), R13
+	MOVB R12, (SI)
+	MOVB R13, -1(SI)(R11*1)
+	JMP  decodeBlockAsm_remain_copy_overlap_prefix_done
+
+decodeBlockAsm_remain_overlap_prefix_memmove_move_3:
+	MOVW (BX), R12
+	MOVB 2(BX), R13
+	MOVW R12, (SI)
+	MOVB R13, 2(SI)
+	JMP  decodeBlockAsm_remain_copy_overlap_prefix_done
+
+decodeBlockAsm_remain_overlap_prefix_memmove_move_4through8:
+	MOVL (BX), R12
+	MOVL -4(BX)(R11*1), R13
+	MOVL R12, (SI)
+	MOVL R13, -4(SI)(R11*1)
+	JMP  decodeBlockAsm_remain_copy_overlap_prefix_done
+	PCALIGN $0x10
+
+decodeBlockAsm_remain_overlap_prefix_memmove_move_8through16:
+	MOVQ (BX), R12
+	MOVQ -8(BX)(R11*1), R13
+	MOVQ R12, (SI)
+	MOVQ R13, -8(SI)(R11*1)
+	JMP  decodeBlockAsm_remain_copy_overlap_prefix_done
+
+decodeBlockAsm_remain_overlap_prefix_memmove_move_17through32:
+	MOVOU (BX), X0
+	MOVOU -16(BX)(R11*1), X1
+	MOVOU X0, (SI)
+	MOVOU X1, -16(SI)(R11*1)
+	JMP   decodeBlockAsm_remain_copy_overlap_prefix_done
+
+decodeBlockAsm_remain_overlap_prefix_memmove_move_33through64:
+	MOVOU (BX), X0
+	MOVOU 16(BX), X1
+	MOVOU -32(BX)(R11*1), X2
+	MOVOU -16(BX)(R11*1), X3
+	MOVOU X0, (SI)
+	MOVOU X1, 16(SI)
+	MOVOU X2, -32(SI)(R11*1)
+	MOVOU X3, -16(SI)(R11*1)
+
+decodeBlockAsm_remain_copy_overlap_prefix_done:
+	ADDQ R11, SI
+	SUBQ R11, DX
+	JZ   decodeBlockAsm_remain_copy_overlap_finished
+	ADDQ R11, R10
+	JMP  decodeBlockAsm_remain_copy_overlap_prefix_loop
 
 decodeBlockAsm_remain_end_copy:
 decodeBlockAsm_remain_end_done:

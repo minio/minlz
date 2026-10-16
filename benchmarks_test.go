@@ -810,3 +810,33 @@ func BenchmarkIndexFind(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkDecodeOverlapTail covers copy-width, prefix-growth, and long-match boundaries.
+func BenchmarkDecodeOverlapTail(b *testing.B) {
+	for _, match := range []struct{ offset, length int }{
+		{1, 127}, {1, 128}, {3, 129}, {15, 127},
+		{16, 31}, {16, 32}, {16, 129}, {17, 257},
+		{63, 127}, {64, 128}, {4096, 1 << 20}, {65536, 1 << 20},
+	} {
+		encoded, want := overlapTailBlock(match.offset, match.length, 0)
+		b.Run(fmt.Sprintf("offset%d/length%d", match.offset, match.length), func(b *testing.B) {
+			dst := make([]byte, len(want))
+			got, err := Decode(dst, encoded)
+			if err != nil || !bytes.Equal(got, want) {
+				b.Fatal("invalid decode", err)
+			}
+			b.ReportAllocs()
+			b.SetBytes(int64(len(want)))
+			b.ResetTimer()
+			for b.Loop() {
+				got, err = Decode(dst, encoded)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+			if !bytes.Equal(got, want) {
+				b.Fatal("decoded bytes changed")
+			}
+		})
+	}
+}

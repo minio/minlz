@@ -16,6 +16,7 @@ package minlz
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -232,5 +233,86 @@ func BenchmarkDecodeBlock(b *testing.B) {
 				Decode(dst, encoded[i])
 			}
 		})
+	}
+}
+
+// overlapTailBlock constructs checked tail matches with an exact expected output.
+func overlapTailBlock(offset, length, trailing int) (encoded, want []byte) {
+	// A preceding match keeps even short final copies smaller than raw input.
+	const prefixMatch = 64
+	literal := make([]byte, offset)
+	for i := range literal {
+		literal[i] = byte(i*173 + i/97)
+	}
+	want = make([]byte, offset+prefixMatch+length+trailing)
+	for i := range want[:offset+prefixMatch+length] {
+		want[i] = literal[i%offset]
+	}
+	for i := range want[offset+prefixMatch+length:] {
+		want[offset+prefixMatch+length+i] = byte(i*29 + 7)
+	}
+	payload := make([]byte, MaxEncodedLen(len(want))+16)
+	n := emitLiteral(payload, literal)
+	n += emitCopy(payload[n:], offset, prefixMatch)
+	n += emitCopy(payload[n:], offset, length)
+	if trailing != 0 {
+		n += emitLiteral(payload[n:], want[offset+prefixMatch+length:])
+	}
+	encoded = binary.AppendUvarint([]byte{0}, uint64(len(want)))
+	return append(encoded, payload[:n]...), want
+}
+
+// TestDecodeOverlapTail checks copy-width boundaries and exact-capacity destination guards.
+func TestDecodeOverlapTail(t *testing.T) {
+	offsets := []int{1, 2, 3, 4, 5, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 255, 256, 1023, 1024, 4095, 4096, 65535, 65536, 65537}
+	lengths := []int{4, 7, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257, 1023, 1024, 4096}
+	for _, offset := range offsets {
+		for _, length := range append(append([]int(nil), lengths...), 7*offset+1, 7*offset+3) {
+			for _, trailing := range []int{0, 1, 32} {
+				t.Run(fmt.Sprintf("offset%d/length%d/trailing%d", offset, length, trailing), func(t *testing.T) {
+					encoded, want := overlapTailBlock(offset, length, trailing)
+					storage := bytes.Repeat([]byte{0xa5}, len(want)+64)
+					dst := storage[32 : 32+len(want) : 32+len(want)]
+					got, err := Decode(dst, encoded)
+					if err != nil || !bytes.Equal(got, want) {
+						t.Fatalf("decode: %v; equal=%v", err, bytes.Equal(got, want))
+					}
+					if !bytes.Equal(storage[:32], bytes.Repeat([]byte{0xa5}, 32)) || !bytes.Equal(storage[32+len(want):], bytes.Repeat([]byte{0xa5}, 32)) {
+						t.Fatal("decoder wrote outside the destination")
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestDecodeOverlapTailCorrupt checks length mismatches and truncated matches.
+func TestDecodeOverlapTailCorrupt(t *testing.T) {
+	for _, offset := range []int{1, 3, 15, 16, 17, 63, 64, 65, 1024, 65536} {
+		encoded, want := overlapTailBlock(offset, 7*offset+1, 0)
+		_, header := binary.Uvarint(encoded[1:])
+		for _, delta := range []int{-1, 1} {
+			bad := binary.AppendUvarint([]byte{0}, uint64(len(want)+delta))
+			bad = append(bad, encoded[1+header:]...)
+			if _, err := Decode(nil, bad); err != ErrCorrupt {
+				t.Fatalf("offset=%d delta=%d: got %v, want ErrCorrupt", offset, delta, err)
+			}
+		}
+		for cut := 1; cut <= 3; cut++ {
+			if _, err := Decode(nil, encoded[:len(encoded)-cut]); err != ErrCorrupt {
+				t.Fatalf("offset=%d cut=%d: got %v, want ErrCorrupt", offset, cut, err)
+			}
+		}
+	}
+}
+
+// TestDecodeOverlapTailLarge checks overlapping copies at the maximum block size.
+func TestDecodeOverlapTailLarge(t *testing.T) {
+	for _, offset := range []int{1, 3, 16, 17, 63, 64, 65, 4096, 65536} {
+		encoded, want := overlapTailBlock(offset, MaxBlockSize-offset-64, 0)
+		got, err := Decode(nil, encoded)
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("offset=%d: decode %v; equal=%v", offset, err, bytes.Equal(got, want))
+		}
 	}
 }
