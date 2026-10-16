@@ -1,3 +1,17 @@
+// Copyright 2026 MinIO Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package minlz
 
 import (
@@ -10,6 +24,7 @@ import (
 	"testing"
 )
 
+// crcTestChunk constructs a compressed chunk with the checksum coverage selected by kind.
 func crcTestChunk(t *testing.T, data []byte, kind byte) []byte {
 	t.Helper()
 	encoded, err := Encode(nil, data, LevelFastest)
@@ -31,6 +46,7 @@ func crcTestChunk(t *testing.T, data []byte, kind byte) []byte {
 	return payload
 }
 
+// TestDeferredBlockCRC checks CRC validation and ignore options in both deferred decoders.
 func TestDeferredBlockCRC(t *testing.T) {
 	for _, size := range []int{64, 16 << 10, 256 << 10} {
 		data := bytes.Repeat([]byte("overlap and checksum\n"), size/21+1)[:size]
@@ -72,6 +88,7 @@ func TestDeferredBlockCRC(t *testing.T) {
 	}
 }
 
+// TestDeferredBlockCRCRejectsSizeHeaderChecksum rejects CRCs that include the size header.
 func TestDeferredBlockCRCRejectsSizeHeaderChecksum(t *testing.T) {
 	data := bytes.Repeat([]byte("compressed CRC excludes the size header\n"), 500)
 	payload := crcTestChunk(t, data, chunkTypeMinLZCompressedDataCompCRC)
@@ -87,6 +104,7 @@ func TestDeferredBlockCRCRejectsSizeHeaderChecksum(t *testing.T) {
 	}
 }
 
+// TestDeferredBlockCRCIgnoreRejectsMalformed checks that ignoring CRCs still rejects invalid blocks.
 func TestDeferredBlockCRCIgnoreRejectsMalformed(t *testing.T) {
 	for _, payload := range [][]byte{nil, {0, 0, 0, 0, 0x80}} {
 		lb := lazyBlock{chunkData: payload, chunkType: chunkTypeMinLZCompressedDataCompCRC, decompLen: 32, ignoreCRC: true}
@@ -103,6 +121,7 @@ func TestDeferredBlockCRCIgnoreRejectsMalformed(t *testing.T) {
 
 // The Writer emits 0x02. Rewrite only its checksum and chunk type to create
 // equivalent 0x03 streams; chunk lengths and search tables stay unchanged.
+// crcTestCompressedStream converts compressed chunks to compressed-data CRCs.
 func crcTestCompressedStream(t *testing.T, stream []byte) ([]byte, []int) {
 	t.Helper()
 	converted := append([]byte(nil), stream...)
@@ -134,6 +153,7 @@ func crcTestCompressedStream(t *testing.T, stream []byte) ([]byte, []int) {
 	return converted, checksums
 }
 
+// TestConcurrentChunkCRC checks ordered decoding, CRC rejection, and input-buffer reuse.
 func TestConcurrentChunkCRC(t *testing.T) {
 	const blockSize = 256 << 10
 	blocks, attempts := 96, 3
@@ -148,7 +168,7 @@ func TestConcurrentChunkCRC(t *testing.T) {
 			b[i] = byte(block)
 		}
 		if block%2 != 0 {
-			for i := 0; i < blockSize/2; i++ {
+			for i := range blockSize / 2 {
 				b[i] = byte(i%64 + block)
 			}
 			if _, err := rng.Read(b[blockSize/2:]); err != nil {
@@ -211,13 +231,18 @@ func TestConcurrentChunkCRC(t *testing.T) {
 	}
 }
 
+// TestSearchCompressedCRCStraddle forces a boundary match through decodePending.
+// The common first prefix window is present in the first table, while later
+// windows occur only in the next block and keep the first block deferred.
 func TestSearchCompressedCRCStraddle(t *testing.T) {
-	bs := minBlockSize
+	const bs = minBlockSize
+	const split = len(" brown")
+	pattern := []byte(" brown fox zqxjvkmarker9")
 	filler := bytes.Repeat([]byte("the quick brown fox jumps over\n"), bs/31+2)
-	first := append([]byte(nil), filler[:bs]...)
-	first[bs-1] = ' '
-	pattern := []byte(" zqxjvkmarker9")
-	second := append(append([]byte(nil), pattern[1:]...), filler...)
+	first := bytes.Clone(filler[:bs])
+	copy(first[bs-split:], pattern[:split])
+	second := bytes.Clone(filler[:bs])
+	copy(second, pattern[split:])
 	var stream bytes.Buffer
 	cfg := NewSearchTableConfig().WithMatchLen(6).WithBytePrefix(' ')
 	w := NewWriter(&stream, WriterSearchTable(cfg), WriterBlockSize(bs), WriterConcurrency(1))
@@ -232,20 +257,26 @@ func TestSearchCompressedCRCStraddle(t *testing.T) {
 	converted, _ := crcTestCompressedStream(t, stream.Bytes())
 	for _, encoded := range [][]byte{stream.Bytes(), converted} {
 		var offsets []int64
-		err := NewBlockSearcher(bytes.NewReader(encoded)).Search(pattern, func(r SearchResult) error {
+		searcher := NewBlockSearcher(bytes.NewReader(encoded), BlockSearchCollectStats())
+		err := searcher.Search(pattern, func(r SearchResult) error {
 			offsets = append(offsets, r.StreamOffset)
-			joined := append(append([]byte(nil), r.PrevBlock()...), r.Blocks[1]...)
+			joined := append(bytes.Clone(r.PrevBlock()), r.Blocks[1]...)
 			if !bytes.Contains(joined, pattern) {
 				t.Fatal("match context does not contain the pattern")
 			}
 			return nil
 		})
-		if err != nil || len(offsets) != 1 || offsets[0] != int64(bs-1) {
-			t.Fatalf("search: %v; offsets %v, want [%d]", err, offsets, bs-1)
+		if err != nil || len(offsets) != 1 || offsets[0] != int64(bs-split) {
+			t.Fatalf("search: %v; offsets %v, want [%d]", err, offsets, bs-split)
+		}
+		stats := searcher.Stats()
+		if stats.BlocksDeferred == 0 || stats.BlocksDeferredSkipped != 0 {
+			t.Fatalf("fixture must decode a deferred block: %+v", stats)
 		}
 	}
 }
 
+// TestSearchCompressedCRCLazyPrevious verifies CRCs when a skipped block is loaded on demand.
 func TestSearchCompressedCRCLazyPrevious(t *testing.T) {
 	bs := minBlockSize
 	first := bytes.Repeat([]byte("x"), bs)
