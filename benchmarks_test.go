@@ -810,3 +810,44 @@ func BenchmarkIndexFind(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkDecodeOverlapTail keeps six copy boundaries and eight captured Reindexer replies.
+func BenchmarkDecodeOverlapTail(b *testing.B) {
+	type decodeCase struct {
+		name          string
+		encoded, want []byte
+	}
+	var cases []decodeCase
+	for _, match := range []struct{ offset, length int }{
+		{1, 127}, {1, 128}, {16, 129},
+		{17, 257}, {4096, 1 << 20}, {65536, 1 << 20},
+	} {
+		encoded, want := overlapTailBlock(match.offset, match.length, 0)
+		cases = append(cases, decodeCase{fmt.Sprintf("offset%d/length%d", match.offset, match.length), encoded, want})
+	}
+	names, encoded, decoded := reindexerDecodeBlocks(b)
+	for i, name := range names {
+		cases = append(cases, decodeCase{"reindexer/" + name, encoded[i], decoded[i]})
+	}
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			dst := make([]byte, len(tc.want))
+			got, err := Decode(dst, tc.encoded)
+			if err != nil || !bytes.Equal(got, tc.want) {
+				b.Fatal("invalid decode", err)
+			}
+			b.ReportAllocs()
+			b.SetBytes(int64(len(tc.want)))
+			b.ResetTimer()
+			for b.Loop() {
+				got, err = Decode(dst, tc.encoded)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+			if !bytes.Equal(got, tc.want) {
+				b.Fatal("decoded bytes changed")
+			}
+		})
+	}
+}
