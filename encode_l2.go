@@ -86,7 +86,8 @@ func encodeBlockBetterGo(dst, src []byte) (d int) {
 		lTable = new([maxLTableSize]uint32)
 	}
 	defer encLPool.Put(lTable)
-	var sTable [maxSTableSize]uint32
+	sTable := u32Tables14.get()
+	defer u32Tables14.Put(sTable)
 
 	// Bail if we can't compress to at least this.
 	dstLimit := len(src) - len(src)>>5 - 6
@@ -337,6 +338,363 @@ emitRemainder:
 	return d
 }
 
+// simdBetterMaxOff returns the largest offsets of new 4 and 5 byte matches that Balanced SIMD takes in a block of n bytes,
+// indexed by length&1. Farther short matches cost more than their literals: up to 2 KB the operation streams are stored,
+// so every token, literal length and offset symbol costs 8 bits; in larger blocks the offset bits grow with the offset.
+// Between 2 and 8 KB fewer operations can make a coded stream go stored, so the bound is looser there.
+func simdBetterMaxOff(n int) [2]int {
+	switch {
+	case n <= 2<<10:
+		return [2]int{127, 511}
+	case n <= 8<<10:
+		return [2]int{2047, 16383}
+	}
+	return [2]int{1023, 16383}
+}
+
+// encodeBlockBetterGo parses src like the function encodeBlockBetterGo, without its size and offset limits.
+func (e *simdEncoder) encodeBlockBetterGo(src []byte) {
+	const (
+		lTableBits    = 17
+		maxLTableSize = 1 << lTableBits
+		sTableBits    = 14
+		maxSTableSize = 1 << sTableBits
+	)
+	var lTable *[maxLTableSize]uint32
+	if t := encLPool.Get(); t != nil {
+		lTable = t.(*[maxLTableSize]uint32)
+		*lTable = [maxLTableSize]uint32{}
+	} else {
+		lTable = new([maxLTableSize]uint32)
+	}
+	defer encLPool.Put(lTable)
+	sTable := u32Tables14.get()
+	defer u32Tables14.Put(sTable)
+
+	sLimit := len(src) - inputMargin
+	nextEmit := 0
+	s := 1
+	cv := load64(src, s)
+	repeat := 1
+
+	maxOff := simdBetterMaxOff(len(src))
+	for {
+		candidateL := 0
+		nextS := 0
+		base, offset, length, rep := 0, 0, 0, false
+		for {
+			nextS = s + min(100, (s-nextEmit)>>7+1)
+			if nextS > sLimit {
+				goto emitRemainder
+			}
+			hashL := hash7(cv, lTableBits)
+			hashS := hash4(cv, sTableBits)
+			candidateL = int(lTable[hashL])
+			candidateS := int(sTable[hashS])
+			lTable[hashL] = uint32(s)
+			sTable[hashS] = uint32(s)
+
+			valLong := load64(src, candidateL)
+			valShort := load64(src, candidateS)
+			if cv == valLong {
+				break
+			}
+
+			const checkRep = 1
+			const wantRepeatBytes = 4
+			const repeatMask = ((1 << (wantRepeatBytes * 8)) - 1) << (8 * checkRep)
+			if cv&repeatMask == load64(src, s-repeat)&repeatMask {
+				base = s + checkRep
+				for i := base - repeat; base > nextEmit && i > 0 && load8(src, i-1) == load8(src, base-1); {
+					i--
+					base--
+				}
+				offset, length, rep = repeat, matchAt(src, base, base-repeat), true
+				break
+			}
+
+			if uint32(cv) == uint32(valLong) {
+				break
+			}
+			if uint32(cv) == uint32(valShort) {
+				hashL = hash7(cv>>8, lTableBits)
+				candidateL = int(lTable[hashL])
+				lTable[hashL] = uint32(s + 1)
+				if uint32(cv>>8) == load32(src, candidateL) {
+					s++
+					break
+				}
+				candidateL = candidateS
+				break
+			}
+			cv = load64(src, nextS)
+			s = nextS
+		}
+
+		if !rep {
+			for candidateL > 0 && s > nextEmit && load8(src, candidateL-1) == load8(src, s-1) {
+				candidateL--
+				s--
+			}
+			base = s
+			offset = base - candidateL
+			length = matchAt(src, base, candidateL)
+			// Bail if the match is equal or worse to the encoding.
+			if length <= 5 && offset > maxOff[length&1] && repeat != offset {
+				s = nextS + 1
+				if s >= sLimit {
+					goto emitRemainder
+				}
+				cv = load64(src, s)
+				continue
+			}
+		}
+
+		// A match of simdMaxLen+1 bytes needs an escape, so leave its last byte as a literal.
+		if length == simdMaxLen+1 {
+			length--
+		}
+		if !e.fast(src, nextEmit, base, base+length, offset) {
+			if rep {
+				e.emitRepeatLits(src[nextEmit:base], length)
+			} else {
+				e.emitCopyLits(src[nextEmit:base], offset, length)
+			}
+		} else if rep {
+			e.putLits(src, nextEmit, base-nextEmit)
+			if e.putMatch(1|e.putLL(base-nextEmit), offset, length) {
+				e.endChunk()
+			}
+		} else {
+			e.putBits(e.putOffset(offset))
+			e.putLits(src, nextEmit, base-nextEmit)
+			if e.putMatch(e.putLL(base-nextEmit), offset, length) {
+				e.endChunk()
+			}
+		}
+		repeat = offset
+		s = base + length
+		nextEmit = s
+		if s >= sLimit {
+			goto emitRemainder
+		}
+
+		if rep {
+			index0 := base + 1
+			index1 := s - 2
+			for index0 < index1 {
+				cv0 := load64(src, index0)
+				cv1 := load64(src, index1)
+				lTable[hash7(cv0, lTableBits)] = uint32(index0)
+				sTable[hash4(cv0>>8, sTableBits)] = uint32(index0 + 1)
+				lTable[hash7(cv1, lTableBits)] = uint32(index1)
+				sTable[hash4(cv1>>8, sTableBits)] = uint32(index1 + 1)
+				index0 += 2
+				index1 -= 2
+			}
+			cv = load64(src, s)
+			continue
+		}
+
+		index0 := base + 1
+		index1 := s - 2
+		cv0 := load64(src, index0)
+		cv1 := load64(src, index1)
+		lTable[hash7(cv0, lTableBits)] = uint32(index0)
+		sTable[hash4(cv0>>8, sTableBits)] = uint32(index0 + 1)
+		lTable[hash7(cv1, lTableBits)] = uint32(index1)
+		sTable[hash4(cv1>>8, sTableBits)] = uint32(index1 + 1)
+		index0 += 1
+		index1 -= 1
+		cv = load64(src, s)
+
+		index2 := (index0 + index1 + 1) >> 1
+		for index2 < index1 {
+			lTable[hash7(load64(src, index0), lTableBits)] = uint32(index0)
+			lTable[hash7(load64(src, index2), lTableBits)] = uint32(index2)
+			index0 += 2
+			index2 += 2
+		}
+	}
+
+emitRemainder:
+	if nextEmit < len(src) {
+		e.emitLiterals(src[nextEmit:])
+	}
+}
+
+var encLPoolSIMD64K sync.Pool
+
+// encodeBlockBetterGo64K is encodeBlockBetterGo for blocks of at most 64 KB, with fewer and 16 bit table entries.
+func (e *simdEncoder) encodeBlockBetterGo64K(src []byte) {
+	const (
+		lTableBits    = 16
+		maxLTableSize = 1 << lTableBits
+		sTableBits    = 13
+		maxSTableSize = 1 << sTableBits
+	)
+	var lTable *[maxLTableSize]uint16
+	if t := encLPoolSIMD64K.Get(); t != nil {
+		lTable = t.(*[maxLTableSize]uint16)
+		*lTable = [maxLTableSize]uint16{}
+	} else {
+		lTable = new([maxLTableSize]uint16)
+	}
+	defer encLPoolSIMD64K.Put(lTable)
+	sTable := u16Tables13.get()
+	defer u16Tables13.Put(sTable)
+
+	sLimit := len(src) - inputMargin
+	nextEmit := 0
+	s := 1
+	cv := load64(src, s)
+	repeat := 1
+
+	maxOff := simdBetterMaxOff(len(src))
+	for {
+		candidateL := 0
+		nextS := 0
+		base, offset, length, rep := 0, 0, 0, false
+		for {
+			nextS = s + min(100, (s-nextEmit)>>7+1)
+			if nextS > sLimit {
+				goto emitRemainder
+			}
+			hashL := hash7(cv, lTableBits)
+			hashS := hash4(cv, sTableBits)
+			candidateL = int(lTable[hashL])
+			candidateS := int(sTable[hashS])
+			lTable[hashL] = uint16(s)
+			sTable[hashS] = uint16(s)
+
+			valLong := load64(src, candidateL)
+			valShort := load64(src, candidateS)
+			if cv == valLong {
+				break
+			}
+
+			const checkRep = 1
+			const wantRepeatBytes = 4
+			const repeatMask = ((1 << (wantRepeatBytes * 8)) - 1) << (8 * checkRep)
+			if cv&repeatMask == load64(src, s-repeat)&repeatMask {
+				base = s + checkRep
+				for i := base - repeat; base > nextEmit && i > 0 && load8(src, i-1) == load8(src, base-1); {
+					i--
+					base--
+				}
+				offset, length, rep = repeat, matchAt(src, base, base-repeat), true
+				break
+			}
+
+			if uint32(cv) == uint32(valLong) {
+				break
+			}
+			if uint32(cv) == uint32(valShort) {
+				hashL = hash7(cv>>8, lTableBits)
+				candidateL = int(lTable[hashL])
+				lTable[hashL] = uint16(s + 1)
+				if uint32(cv>>8) == load32(src, candidateL) {
+					s++
+					break
+				}
+				candidateL = candidateS
+				break
+			}
+			cv = load64(src, nextS)
+			s = nextS
+		}
+
+		if !rep {
+			for candidateL > 0 && s > nextEmit && load8(src, candidateL-1) == load8(src, s-1) {
+				candidateL--
+				s--
+			}
+			base = s
+			offset = base - candidateL
+			length = matchAt(src, base, candidateL)
+			if length <= 5 && offset > maxOff[length&1] && repeat != offset {
+				s = nextS + 1
+				if s >= sLimit {
+					goto emitRemainder
+				}
+				cv = load64(src, s)
+				continue
+			}
+		}
+
+		// A match of simdMaxLen+1 bytes needs an escape, so leave its last byte as a literal.
+		if length == simdMaxLen+1 {
+			length--
+		}
+		if !e.fast(src, nextEmit, base, base+length, offset) {
+			if rep {
+				e.emitRepeatLits(src[nextEmit:base], length)
+			} else {
+				e.emitCopyLits(src[nextEmit:base], offset, length)
+			}
+		} else if rep {
+			e.putLits(src, nextEmit, base-nextEmit)
+			if e.putMatch(1|e.putLL(base-nextEmit), offset, length) {
+				e.endChunk()
+			}
+		} else {
+			e.putBits(e.putOffset(offset))
+			e.putLits(src, nextEmit, base-nextEmit)
+			if e.putMatch(e.putLL(base-nextEmit), offset, length) {
+				e.endChunk()
+			}
+		}
+		repeat = offset
+		s = base + length
+		nextEmit = s
+		if s >= sLimit {
+			goto emitRemainder
+		}
+
+		if rep {
+			index0 := base + 1
+			index1 := s - 2
+			for index0 < index1 {
+				cv0 := load64(src, index0)
+				cv1 := load64(src, index1)
+				lTable[hash7(cv0, lTableBits)] = uint16(index0)
+				sTable[hash4(cv0>>8, sTableBits)] = uint16(index0 + 1)
+				lTable[hash7(cv1, lTableBits)] = uint16(index1)
+				sTable[hash4(cv1>>8, sTableBits)] = uint16(index1 + 1)
+				index0 += 2
+				index1 -= 2
+			}
+			cv = load64(src, s)
+			continue
+		}
+
+		index0 := base + 1
+		index1 := s - 2
+		cv0 := load64(src, index0)
+		cv1 := load64(src, index1)
+		lTable[hash7(cv0, lTableBits)] = uint16(index0)
+		sTable[hash4(cv0>>8, sTableBits)] = uint16(index0 + 1)
+		lTable[hash7(cv1, lTableBits)] = uint16(index1)
+		sTable[hash4(cv1>>8, sTableBits)] = uint16(index1 + 1)
+		index0 += 1
+		index1 -= 1
+		cv = load64(src, s)
+
+		index2 := (index0 + index1 + 1) >> 1
+		for index2 < index1 {
+			lTable[hash7(load64(src, index0), lTableBits)] = uint16(index0)
+			lTable[hash7(load64(src, index2), lTableBits)] = uint16(index2)
+			index0 += 2
+			index2 += 2
+		}
+	}
+
+emitRemainder:
+	if nextEmit < len(src) {
+		e.emitLiterals(src[nextEmit:])
+	}
+}
+
 var encLPool64K sync.Pool
 
 // encodeBlockBetterGo64K is a specialized version that handles inputs <= 64KB
@@ -365,7 +723,8 @@ func encodeBlockBetterGo64K(dst, src []byte) (d int) {
 		lTable = new([maxLTableSize]uint16)
 	}
 	defer encLPool64K.Put(lTable)
-	var sTable [maxSTableSize]uint16
+	sTable := u16Tables12.get()
+	defer u16Tables12.Put(sTable)
 
 	// Bail if we can't compress to at least this.
 	dstLimit := len(src) - len(src)>>5 - 6
@@ -417,7 +776,7 @@ func encodeBlockBetterGo64K(dst, src []byte) (d int) {
 			if repeat > 0 && cv&repeatMask == load64(src, s-repeat)&repeatMask {
 				base := s + checkRep
 				// Extend back
-				for i := base - repeat; base > nextEmit && i > 0 && src[i-1] == src[base-1]; {
+				for i := base - repeat; base > nextEmit && i > 0 && load8(src, i-1) == load8(src, base-1); {
 					i--
 					base--
 				}
@@ -498,7 +857,7 @@ func encodeBlockBetterGo64K(dst, src []byte) (d int) {
 		}
 
 		// Extend backwards
-		for candidateL > 0 && s > nextEmit && src[candidateL-1] == src[s-1] {
+		for candidateL > 0 && s > nextEmit && load8(src, candidateL-1) == load8(src, s-1) {
 			candidateL--
 			s--
 		}
@@ -633,8 +992,16 @@ func encodeBlockBetterDict(dst, src []byte, dict *dict) (d int) {
 
 	dict.initBetter()
 
-	var lTable [maxLTableSize]uint32
-	var sTable [maxSTableSize]uint32
+	var lTable *[maxLTableSize]uint32
+	if t := encLPool.Get(); t != nil {
+		lTable = t.(*[maxLTableSize]uint32)
+		*lTable = [maxLTableSize]uint32{}
+	} else {
+		lTable = new([maxLTableSize]uint32)
+	}
+	defer encLPool.Put(lTable)
+	sTable := u32Tables14.get()
+	defer u32Tables14.Put(sTable)
 
 	// Bail if we can't compress to at least this.
 	dstLimit := len(src) - len(src)>>5 - 6
@@ -901,7 +1268,7 @@ searchDict:
 	emitMatch:
 
 		// Extend backwards
-		for candidateL > 0 && s > nextEmit && src[candidateL-1] == src[s-1] {
+		for candidateL > 0 && s > nextEmit && load8(src, candidateL-1) == load8(src, s-1) {
 			candidateL--
 			s--
 		}
@@ -1047,7 +1414,7 @@ searchDict:
 			if cv&repeatMask == load64(src, s-repeat)&repeatMask {
 				base := s + checkRep
 				// Extend back
-				for i := base - repeat; base > nextEmit && i > 0 && src[i-1] == src[base-1]; {
+				for i := base - repeat; base > nextEmit && i > 0 && load8(src, i-1) == load8(src, base-1); {
 					i--
 					base--
 				}
@@ -1128,7 +1495,7 @@ searchDict:
 		}
 
 		// Extend backwards
-		for candidateL > 0 && s > nextEmit && src[candidateL-1] == src[s-1] {
+		for candidateL > 0 && s > nextEmit && load8(src, candidateL-1) == load8(src, s-1) {
 			candidateL--
 			s--
 		}

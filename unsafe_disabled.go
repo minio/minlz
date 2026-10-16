@@ -37,6 +37,14 @@ func load64(b []byte, i int) uint64 {
 	return binary.LittleEndian.Uint64(b[i:])
 }
 
+func load256(b []byte, i int) [32]byte {
+	return [32]byte(b[i : i+32])
+}
+
+func store256(b []byte, idx int, v [32]byte) {
+	*(*[32]byte)(b[idx : idx+32]) = v
+}
+
 func store8(b []byte, idx int, v uint8) {
 	b[idx] = v
 }

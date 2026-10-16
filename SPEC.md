@@ -1,6 +1,6 @@
-# MINLZ FORMAT SPECIFICATION V1.0.1
+# MINLZ FORMAT SPECIFICATION V1.1.0
 
-All implementations are requested to state: "This implements the MinLZ specification v1.0"
+All implementations are requested to state: "This implements the MinLZ specification v1.1"
 
 Furthermore, if a subset of features is supported, it should state this clearly.
 
@@ -12,6 +12,9 @@ The spec versioning follows [semantic versioning](https://semver.org/).
 * Major version numbers indicate breaking changes.
 * Minor version numbers indicate added functionality that will not be readable by previous versions.
 * Patch version numbers indicate non-breaking additions to the spec.
+
+* v1.0: Initial release.
+* v1.1: Adds [SIMD Blocks](SPEC_SIMD.md).
 
 # BLOCK FORMAT
 
@@ -40,6 +43,7 @@ of the block if this value is non-zero.
 
 A block starts with the uncompressed length up to a maximum of 2^24,
 stored as an unsigned varint.
+Bits 24-31 of the varint are the block type ([SPEC_SIMD.md](SPEC_SIMD.md) 1.0); MinLZ blocks are type 0.
 
 Maximum uncompressed block size is 8 MiB = 8,388,608 bytes.
 
@@ -330,10 +334,11 @@ be extended in the future.
 | ID      | Description                   | See Section |
 |---------|-------------------------------|-------------|
 | 0       | (legacy compressed Data)      | 4.3         |
-| 1       | Uncompressed Data             | 4.3         |
+| 1       | Uncompressed Data             | 4.2         |
 | 2, 3    | MinLZ Compressed Block        | 4.4, 4.5    |
+| 16      | MinLZ SIMD Block              | 4.5B        |
 | 32      | EOF                           | 4.6         |
-| 4-63    | (reserved, non-skippable)     | 4.8         |
+| 0-63    | (non-skippable)               | 4.8         |
 | 64      | Stream Index                  | 4.12        |
 | 65-127  | (reserved, skippable)         | 4.9         |
 | 128-191 | (user defined, skippable)     | 4.10        |
@@ -352,11 +357,12 @@ This means that a valid MinLZ framed stream always starts with the bytes:
 
 The final byte of the identifier is a block size indicator.
 
-| Bits | Description               |
-|------|---------------------------|
-| 0-3  | Max block size indicator  |
-| 4-5  | Reserved, must be ignored |
-| 6-7  | Reserved, must be 0       |
+| Bits | Description                                                     |
+|------|-----------------------------------------------------------------|
+| 0-3  | Max block size indicator                                        |
+| 4-5  | Reserved, must be ignored                                       |
+| 6    | Stream contains [SIMD Block(s)](SPEC_SIMD.md) (chunk type 0x10) |
+| 7    | Reserved, must be 0                                             |
 
 #### 4.1.1 Max Block Size
 
@@ -393,6 +399,7 @@ Instead, use type 0x02, which indicates a MinLZ compressed block.
 ### 4.4. MinLZ Compressed data (chunk type 0x02)
 
 A MinLZ block *without* the MinLZ identifier (initial 0 byte).
+The block type (see 1.1) must be 0. SIMD blocks are stored as chunk type 0x10.
 
 A CRC32C (see section 3) checksum of the *uncompressed* 
 data is stored at the beginning of the block.
@@ -403,6 +410,7 @@ as well as blocks with decompressed size less than compressed size.
 ### 4.5. MinLZ Compressed data - Compressed CRC (chunk type 0x03).
 
 A MinLZ block *without* the MinLZ identifier (initial 0 byte).
+The block type (see 1.1) must be 0.
 
 A CRC32C (see section 3) checksum of the *compressed* 
 data is stored at the beginning of the block.
@@ -411,6 +419,22 @@ Chunks with 0 decompressed bytes are not allowed,
 as well as blocks with decompressed size less than compressed size.
 
 If possible prefer type `0x02` over this.
+
+### 4.5B. MinLZ SIMD Block (chunk type 0x10).
+
+A [SIMD block](SPEC_SIMD.md) *without* the MinLZ indicator (initial 0 byte).
+The block type (see 1.1) must be 1.
+
+An [xxhash3](https://github.com/Cyan4973/xxHash#xxhash---extremely-fast-hash-algorithm)
+(XXH3 64-bit, seed 0) of the *uncompressed* data is stored as little endian value at the start of the block.
+
+The stream identifier *must* indicate that SIMD blocks are present (bit 6 set).
+Otherwise, the decoder should reject the stream.
+The bit applies until the next stream identifier.
+A decoder that starts at an index entry (see 4.12) has not read the stream identifier, and may accept SIMD blocks until it reads one.
+Encoders may set it in streams that end up without SIMD blocks.
+
+See [SPEC_SIMD.md](SPEC_SIMD.md) for details on SIMD blocks.
 
 ### 4.6 EOF (chunk type 0x20)
 
@@ -439,7 +463,7 @@ All bytes of the padding chunk, except the chunk byte itself and the length,
 should be zero, but decompressors must not try to interpret or verify the
 padding data in any way.
 
-### 4.8. Reserved unskippable chunks (chunk types 0x04-0x3f)
+### 4.8. Reserved unskippable chunks (chunk types 0x04-0x0f, 0x11-0x1f, 0x21-0x3f)
 
 These are reserved for future expansion. A decoder that sees such a chunk
 should immediately return an error, as it must assume it cannot decode the
@@ -450,7 +474,7 @@ Future versions of this specification may define meanings for these chunks.
 ### 4.9. Reserved skippable chunks (chunk types 0x40-0x7f)
 
 These are also reserved for future expansion, but unlike the chunks
-described in 4.5, a decoder seeing these must skip them and continue
+described in 4.8, a decoder seeing these must skip them and continue
 decoding.
 
 Future versions of this specification may define meanings for these chunks.
@@ -494,7 +518,7 @@ with un-encoded value length of 64 bits, unless other limits are specified.
 | UncompressedSize, Varint             | Total Uncompressed size.                                                                                                      |
 | CompressedSize, Varint               | Total Compressed size if known. Should be -1 if unknown.                                                                      |
 | EstBlockSize, Varint                 | Block Size, used for guessing uncompressed offsets. Must be >= 0.                                                             |
-| Entries, Varint                      | Number of Entries in index, must be < 65536 and >=0.                                                                          |
+| Entries, Varint                      | Number of Entries in index, must be <= 65536 and >=0.                                                                         |
 | HasUncompressedOffsets `byte`        | 0 if no uncompressed offsets are present, 1 if present. Other values are invalid.                                             |
 | UncompressedOffsets, [Entries]VarInt | Uncompressed offsets. See below how to decode.                                                                                |
 | CompressedOffsets, [Entries]VarInt   | Compressed offsets. See below how to decode.                                                                                  |
@@ -512,7 +536,7 @@ but it is then not allowed to also have an entry for the next block since
 that would give an uncompressed offset duplicate.
 
 There is no requirement for all blocks to be represented in the index.
-In fact there is a maximum of 65535 block entries in an index.
+In fact there is a maximum of 65536 block entries in an index.
 
 The writer can use any method to reduce the number of entries.
 An implicit block start at 0,0 can be assumed.
@@ -574,7 +598,7 @@ To decode from any given uncompressed offset `(wantOffset)`:
 
 This is similar to S2, except the ID is 0x40 instead of 0x99.
 
-### 4.12 Block Search (chunk type 0x44 -> 0x47) — OPTIONAL
+### 4.13 Block Search (chunk type 0x44 -> 0x47) — OPTIONAL
 
 See [SPEC_SEARCH.md](SPEC_SEARCH.md) for details.
 
@@ -593,8 +617,9 @@ Formats like xz/bzip2 also offer excellent compression, but these offer even mor
 
 ## No entropy nor dynamic encoding
 
-MinLZ by design only offers static encoding types and no entropy coding of remainder literals, 
+MinLZ blocks by design only offer static encoding types and no entropy coding of remainder literals,
 making decoding possible with no tables.
+[SIMD blocks](SPEC_SIMD.md) add Huffman coding, laid out to decode with SIMD.
 
 While it was considered, all conditional decoding (decoding based on previous operation or output position)
 was avoided to simplify the decoder.

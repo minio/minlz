@@ -49,7 +49,8 @@ func encodeBlockGo(dst, src []byte) (d int) {
 	// Having values inside the table is ~the same speed as looking up
 	// - maybe slightly faster on bigger blocks.
 	// We go for the smaller stack allocation for now.
-	var table [maxTableSize]uint32
+	table := u32Tables15.get()
+	defer u32Tables15.Put(table)
 
 	// sLimit is when to stop looking for offset/length copies. The inputMargin
 	// lets us use a fast path for emitLiteral in the main loop, while we are
@@ -282,6 +283,312 @@ emitRemainder:
 	return d
 }
 
+// encodeBlockGo parses src like the function encodeBlockGo, without its size and offset limits.
+func (e *simdEncoder) encodeBlockGo(src []byte) {
+	const (
+		tableBits    = 15
+		maxTableSize = 1 << tableBits
+		skipLog      = 6
+	)
+	table := u32Tables15.get()
+	defer u32Tables15.Put(table)
+	sLimit := len(src) - inputMargin
+	nextEmit := 0
+	s := 1
+	cv := load64(src, s)
+	repeat := 1
+	for {
+		candidate := 0
+		for {
+			nextS := s + (s-nextEmit)>>skipLog + 4
+			if nextS > sLimit {
+				goto emitRemainder
+			}
+			hash0 := hash6(cv, tableBits)
+			hash1 := hash6(cv>>8, tableBits)
+			candidate = int(table[hash0])
+			candidate2 := int(table[hash1])
+			table[hash0] = uint32(s)
+			table[hash1] = uint32(s + 1)
+			hash2 := hash6(cv>>16, tableBits)
+
+			const checkRep = 1
+			if uint32(cv>>(checkRep*8)) == load32(src, s-repeat+checkRep) {
+				base := s + checkRep
+				for i := base - repeat; base > nextEmit && i > 0 && load8(src, i-1) == load8(src, base-1); {
+					i--
+					base--
+				}
+				candidate := s - repeat + 4 + checkRep
+				s += 4 + checkRep
+				for s <= sLimit {
+					if diff := load64(src, s) ^ load64(src, candidate); diff != 0 {
+						s += bits.TrailingZeros64(diff) >> 3
+						break
+					}
+					s += 8
+					candidate += 8
+				}
+				if e.fast(src, nextEmit, base, s, repeat) {
+					e.putLits(src, nextEmit, base-nextEmit)
+					if e.putMatch(1|e.putLL(base-nextEmit), repeat, s-base) {
+						e.endChunk()
+					}
+				} else {
+					e.emitRepeatLits(src[nextEmit:base], s-base)
+				}
+				nextEmit = s
+				if s >= sLimit {
+					goto emitRemainder
+				}
+				cv = load64(src, s)
+				continue
+			}
+
+			if uint32(cv) == load32(src, candidate) {
+				break
+			}
+			candidate = int(table[hash2])
+			if uint32(cv>>8) == load32(src, candidate2) {
+				table[hash2] = uint32(s + 2)
+				candidate = candidate2
+				s++
+				break
+			}
+			table[hash2] = uint32(s + 2)
+			if uint32(cv>>16) == load32(src, candidate) {
+				s += 2
+				break
+			}
+			cv = load64(src, nextS)
+			s = nextS
+		}
+
+		for candidate > 0 && s > nextEmit && load8(src, candidate-1) == load8(src, s-1) {
+			candidate--
+			s--
+		}
+		base := s
+		repeat = base - candidate
+		s += 4
+		candidate += 4
+		for s <= len(src)-8 {
+			if diff := load64(src, s) ^ load64(src, candidate); diff != 0 {
+				s += bits.TrailingZeros64(diff) >> 3
+				break
+			}
+			s += 8
+			candidate += 8
+		}
+		if e.fast(src, nextEmit, base, s, repeat) {
+			e.putBits(e.putOffset(repeat))
+			e.putLits(src, nextEmit, base-nextEmit)
+			if e.putMatch(e.putLL(base-nextEmit), repeat, s-base) {
+				e.endChunk()
+			}
+		} else {
+			e.emitCopyLits(src[nextEmit:base], repeat, s-base)
+		}
+
+		for {
+			nextEmit = s
+			if s >= sLimit {
+				goto emitRemainder
+			}
+			x := load64(src, s-2)
+			m2Hash := hash6(x, tableBits)
+			x = x >> 16
+			currHash := hash6(x, tableBits)
+			candidate = int(table[currHash])
+			table[m2Hash] = uint32(s - 2)
+			table[currHash] = uint32(s)
+			if uint32(x) != load32(src, candidate) {
+				cv = load64(src, s+1)
+				s++
+				break
+			}
+			repeat = s - candidate
+			base = s
+			s += 4
+			candidate += 4
+			for s <= len(src)-8 {
+				if diff := load64(src, s) ^ load64(src, candidate); diff != 0 {
+					s += bits.TrailingZeros64(diff) >> 3
+					break
+				}
+				s += 8
+				candidate += 8
+			}
+			if oneOp(repeat, s-base) {
+				e.putBits(e.putOffset(repeat))
+				if e.putMatch(0, repeat, s-base) {
+					e.endChunk()
+				}
+			} else {
+				e.emitCopy(repeat, s-base)
+			}
+		}
+	}
+
+emitRemainder:
+	if nextEmit < len(src) {
+		e.emitLiterals(src[nextEmit:])
+	}
+}
+
+// encodeBlockGo64K is encodeBlockGo for blocks of at most 64 KB, with fewer and 16 bit table entries.
+func (e *simdEncoder) encodeBlockGo64K(src []byte) {
+	const (
+		tableBits    = 14
+		maxTableSize = 1 << tableBits
+		skipLog      = 6
+	)
+	table := u16Tables14.get()
+	defer u16Tables14.Put(table)
+	sLimit := len(src) - inputMargin
+	nextEmit := 0
+	s := 1
+	cv := load64(src, s)
+	repeat := 1
+	for {
+		candidate := 0
+		for {
+			nextS := s + (s-nextEmit)>>skipLog + 4
+			if nextS > sLimit {
+				goto emitRemainder
+			}
+			hash0 := hash6(cv, tableBits)
+			hash1 := hash6(cv>>8, tableBits)
+			candidate = int(table[hash0])
+			candidate2 := int(table[hash1])
+			table[hash0] = uint16(s)
+			table[hash1] = uint16(s + 1)
+			hash2 := hash6(cv>>16, tableBits)
+
+			const checkRep = 1
+			if uint32(cv>>(checkRep*8)) == load32(src, s-repeat+checkRep) {
+				base := s + checkRep
+				for i := base - repeat; base > nextEmit && i > 0 && load8(src, i-1) == load8(src, base-1); {
+					i--
+					base--
+				}
+				candidate := s - repeat + 4 + checkRep
+				s += 4 + checkRep
+				for s <= sLimit {
+					if diff := load64(src, s) ^ load64(src, candidate); diff != 0 {
+						s += bits.TrailingZeros64(diff) >> 3
+						break
+					}
+					s += 8
+					candidate += 8
+				}
+				if e.fast(src, nextEmit, base, s, repeat) {
+					e.putLits(src, nextEmit, base-nextEmit)
+					if e.putMatch(1|e.putLL(base-nextEmit), repeat, s-base) {
+						e.endChunk()
+					}
+				} else {
+					e.emitRepeatLits(src[nextEmit:base], s-base)
+				}
+				nextEmit = s
+				if s >= sLimit {
+					goto emitRemainder
+				}
+				cv = load64(src, s)
+				continue
+			}
+
+			if uint32(cv) == load32(src, candidate) {
+				break
+			}
+			candidate = int(table[hash2])
+			if uint32(cv>>8) == load32(src, candidate2) {
+				table[hash2] = uint16(s + 2)
+				candidate = candidate2
+				s++
+				break
+			}
+			table[hash2] = uint16(s + 2)
+			if uint32(cv>>16) == load32(src, candidate) {
+				s += 2
+				break
+			}
+			cv = load64(src, nextS)
+			s = nextS
+		}
+
+		for candidate > 0 && s > nextEmit && load8(src, candidate-1) == load8(src, s-1) {
+			candidate--
+			s--
+		}
+		base := s
+		repeat = base - candidate
+		s += 4
+		candidate += 4
+		for s <= len(src)-8 {
+			if diff := load64(src, s) ^ load64(src, candidate); diff != 0 {
+				s += bits.TrailingZeros64(diff) >> 3
+				break
+			}
+			s += 8
+			candidate += 8
+		}
+		if e.fast(src, nextEmit, base, s, repeat) {
+			e.putBits(e.putOffset(repeat))
+			e.putLits(src, nextEmit, base-nextEmit)
+			if e.putMatch(e.putLL(base-nextEmit), repeat, s-base) {
+				e.endChunk()
+			}
+		} else {
+			e.emitCopyLits(src[nextEmit:base], repeat, s-base)
+		}
+
+		for {
+			nextEmit = s
+			if s >= sLimit {
+				goto emitRemainder
+			}
+			x := load64(src, s-2)
+			m2Hash := hash6(x, tableBits)
+			x = x >> 16
+			currHash := hash6(x, tableBits)
+			candidate = int(table[currHash])
+			table[m2Hash] = uint16(s - 2)
+			table[currHash] = uint16(s)
+			if uint32(x) != load32(src, candidate) {
+				cv = load64(src, s+1)
+				s++
+				break
+			}
+			repeat = s - candidate
+			base = s
+			s += 4
+			candidate += 4
+			for s <= len(src)-8 {
+				if diff := load64(src, s) ^ load64(src, candidate); diff != 0 {
+					s += bits.TrailingZeros64(diff) >> 3
+					break
+				}
+				s += 8
+				candidate += 8
+			}
+			if oneOp(repeat, s-base) {
+				e.putBits(e.putOffset(repeat))
+				if e.putMatch(0, repeat, s-base) {
+					e.endChunk()
+				}
+			} else {
+				e.emitCopy(repeat, s-base)
+			}
+		}
+	}
+
+emitRemainder:
+	if nextEmit < len(src) {
+		e.emitLiterals(src[nextEmit:])
+	}
+}
+
 func encodeBlockGo64K(dst, src []byte) (d int) {
 	// Initialize the hash table.
 	const (
@@ -293,7 +600,8 @@ func encodeBlockGo64K(dst, src []byte) (d int) {
 	// Having values inside the table is ~the same speed as looking up
 	// - maybe slightly faster on bigger blocks.
 	// We go for the smaller stack allocation for now.
-	var table [maxTableSize]uint16
+	table := u16Tables13.get()
+	defer u16Tables13.Put(table)
 
 	// sLimit is when to stop looking for offset/length copies. The inputMargin
 	// lets us use a fast path for emitLiteral in the main loop, while we are
@@ -338,7 +646,7 @@ func encodeBlockGo64K(dst, src []byte) (d int) {
 			if uint32(cv>>(checkRep*8)) == load32(src, s-repeat+checkRep) {
 				base := s + checkRep
 				// Extend back
-				for i := base - repeat; base > nextEmit && i > 0 && src[i-1] == src[base-1]; {
+				for i := base - repeat; base > nextEmit && i > 0 && load8(src, i-1) == load8(src, base-1); {
 					i--
 					base--
 				}
@@ -409,7 +717,7 @@ func encodeBlockGo64K(dst, src []byte) (d int) {
 
 		// Extend backwards.
 		// The top bytes will be rechecked to get the full match.
-		for candidate > 0 && s > nextEmit && src[candidate-1] == src[s-1] {
+		for candidate > 0 && s > nextEmit && load8(src, candidate-1) == load8(src, s-1) {
 			candidate--
 			s--
 		}

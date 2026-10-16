@@ -142,7 +142,7 @@ func testDecoderComparison(t *testing.T, data []byte) {
 			}
 
 			// Get decoded length
-			_, _, block, dLen, err := isMinLZ(encoded)
+			_, _, _, block, dLen, err := isMinLZ(encoded)
 			if err != nil {
 				t.Fatalf("isMinLZ failed: %v", err)
 			}
@@ -437,7 +437,7 @@ func TestSrcMarginBoundary(t *testing.T) {
 					}
 
 					// Get block info
-					_, _, block, dLen, err := isMinLZ(encoded)
+					_, _, _, block, dLen, err := isMinLZ(encoded)
 					if err != nil {
 						t.Fatalf("pattern %d, level %d: isMinLZ failed: %v", i, level, err)
 					}

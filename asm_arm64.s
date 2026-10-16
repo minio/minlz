@@ -30277,3 +30277,4631 @@ corrupt:
 	MOVD $0x00000001, R16
 	MOVD R16, ret+48(FP)
 	RET
+
+// func encodeFastBlockSIMDAsm(st *simdStreams, src []byte, tab *[32768]byte) int
+// Requires: BMI, CMOV, SSE2
+TEXT ·encodeFastBlockSIMDAsm(SB), $88-48
+	MOVD    st+0(FP), R1
+	MOVD    src_base+8(FP), R0
+	MOVD    (R1), R19
+	MOVD    8(R1), R24
+	ADD     R24, R1, R24
+	ADD     $16489, R24, R24
+	MOVD    16(R1), R25
+	ADD     R25, R1, R25
+	ADD     $32873, R25, R25
+	MOVD    32(R1), R26
+	ADD     R26, R1, R26
+	ADD     $82025, R26, R26
+	MOVD    56(R1), R2
+	MOVD    R2, 88(RSP)
+	MOVD    48(R1), R21
+	MOVD    64(R1), R20
+	ADD     $1, R0, R23
+	MOVD    72(R1), R16
+	SUB     R16, R23, R23
+	MOVD    40(R1), R17
+	MOVD    80(R1), R16
+	ADD     R16, R17, R17
+	MOVBU   104(R1), R22
+	MOVD    src_len+16(FP), R3
+	SUB     $8, R3, R2
+	SUB     $32, R3, R3
+	MOVD    R3, 8(RSP)
+	MOVD    64(R1), R3
+	MOVD    tab+32(FP), R5
+	MOVD    $0xcf1bbcdcb7a56463, R6
+	MOVD    st+0(FP), R1
+	MOVD    147568(R1), R16
+	CMP     $0x01, R16
+	BEQ     post_encodeFastBlockSIMDAsm
+	MOVD    $0x00000001, R1
+	CMP     R1, R3
+	CSEL    LT, R1, R3, R3
+	CMP     R2, R3
+	BGE     exit0_0_1_encodeFastBlockSIMDAsm
+	MOVD    (R0)(R3), R1
+	PCALIGN $0x40
+
+search_encodeFastBlockSIMDAsm:
+	MOVD  R3, R7
+	SUB   R20, R7, R7
+	LSR   $0x05, R7, R7
+	ADD   R7, R3, R7
+	ADD   $5, R7, R7
+	CMP   R2, R7
+	BGT   exit0_0_1_encodeFastBlockSIMDAsm
+	MOVD  R1, R9
+	MUL   R6, R9, R9
+	LSR   $0x33, R9, R9
+	ADD   R3, R0, R15
+	MOVD  1(R15), R10
+	MOVD  R10, R11
+	MUL   R6, R11, R11
+	LSR   $0x33, R11, R11
+	MOVWU (R5)(R9<<2), R8
+	MOVWU (R5)(R11<<2), R12
+	MOVW  R3, (R5)(R9<<2)
+	ADD   $1, R3, R9
+	MOVW  R9, (R5)(R11<<2)
+	ADD   R3, R0, R15
+	MOVD  2(R15), R11
+	MOVD  R11, R13
+	MUL   R6, R13, R13
+	LSR   $0x33, R13, R13
+	MOVWU (R23)(R3), R16
+	CMPW  R10, R16
+	BEQ   repeat_encodeFastBlockSIMDAsm
+	MOVD  (R0)(R8), R16
+	CMP   R1, R16
+	BEQ   match_encodeFastBlockSIMDAsm
+	MOVWU (R5)(R13<<2), R8
+	MOVD  (R0)(R12), R16
+	CMP   R10, R16
+	BEQ   match1_encodeFastBlockSIMDAsm
+	ADD   $2, R3, R9
+	MOVW  R9, (R5)(R13<<2)
+	MOVD  (R0)(R8), R16
+	CMP   R11, R16
+	BEQ   match2_encodeFastBlockSIMDAsm
+	MOVD  (R0)(R7), R1
+	MOVD  R7, R3
+	JMP   search_encodeFastBlockSIMDAsm
+
+match1_encodeFastBlockSIMDAsm:
+	ADD  $2, R3, R9
+	MOVW R9, (R5)(R13<<2)
+	MOVD R12, R8
+	ADD  $1, R3, R3
+	JMP  match_encodeFastBlockSIMDAsm
+
+match2_encodeFastBlockSIMDAsm:
+	ADD $0x02, R3, R3
+
+match_encodeFastBlockSIMDAsm:
+	MOVD R3, R1
+	MOVD R3, R7
+	SUB  R8, R7, R7
+	ADD  $0x08, R3, R3
+	ADD  $0x08, R8, R8
+	JMP  ext_check_3_encodeFastBlockSIMDAsm
+	PCALIGN $0x20
+
+ext_loop_2_encodeFastBlockSIMDAsm:
+	ADD $0x08, R3, R3
+	ADD $0x08, R8, R8
+
+ext_check_3_encodeFastBlockSIMDAsm:
+	CMP  R2, R3
+	BGT  ext_end_4_encodeFastBlockSIMDAsm
+	MOVD (R0)(R3), R9
+	MOVD (R0)(R8), R16
+	SUBS R16, R9, R9
+	BEQ  ext_loop_2_encodeFastBlockSIMDAsm
+	RBIT R9, R9
+	CLZ  R9, R9
+	LSR  $0x03, R9, R9
+	ADD  R9, R3, R3
+
+ext_end_4_encodeFastBlockSIMDAsm:
+	MOVD R1, R8
+	SUB  R20, R8, R8
+	CMP  $0x00000120, R8
+	BHI  exit2_1_5_encodeFastBlockSIMDAsm
+	MOVD 8(RSP), R16
+	CMP  R16, R20
+	BGT  exit2_1_5_encodeFastBlockSIMDAsm
+	MOVD R3, R9
+	SUB  R1, R9, R9
+	CMP  $0x20, R9
+	BLS  one_op_6_encodeFastBlockSIMDAsm
+	CMP  $0x00000120, R9
+	BHI  split_7_encodeFastBlockSIMDAsm
+	CMP  $0x20, R7
+	BLO  split_7_encodeFastBlockSIMDAsm
+
+one_op_6_encodeFastBlockSIMDAsm:
+	LSR   $0x03, R7, R1
+	ORR   $0x01, R1, R1
+	CLZ   R1, R16
+	MOVD  $63, R1
+	SUB   R16, R1, R1
+	LSR   R1, R7, R10
+	ADD   R1<<3, R10, R11
+	MOVB  R11, (R25)
+	ADD   $1, R25, R25
+	LSL   R1, R10, R10
+	MOVD  R7, R11
+	SUB   R10, R11, R11
+	MOVD  R21, R10
+	ADD   R1, R10, R10
+	LSL   R21, R11, R11
+	MOVD  88(RSP), R16
+	ORR   R16, R11, R11
+	MOVW  R11, (R26)
+	MOVD  R10, R1
+	AND   $0x20, R1, R1
+	LSR   R1, R11, R11
+	MOVD  R11, 88(RSP)
+	LSR   $0x03, R1, R1
+	ADD   R1, R26, R26
+	AND   $0x1f, R10, R10
+	MOVD  R10, R21
+	MOVD  $0x00000021, R1
+	CMP   R1, R8
+	CSEL  LO, R8, R1, R1
+	MOVB  R1, (R24)
+	TST   R8, R8
+	CSET  NE, R1
+	ADD   R1, R24, R24
+	ADD   R0, R20, R20
+	MOVD  R17, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	CMP   $0x20, R8
+	BHI   lits_long_8_encodeFastBlockSIMDAsm
+
+lits_done_9_encodeFastBlockSIMDAsm:
+	ADD  R8, R17, R17
+	ADD  R1, R1, R1
+	ADD  $1, R0, R23
+	SUB  R7, R23, R23
+	CMP  $0x20, R9
+	BHI  match_long_11_encodeFastBlockSIMDAsm
+	ADD  R9<<2, R1, R1
+	CMP  R9, R7
+	CSET LO, R8
+	ORR  R8, R22, R22
+
+match_tok_12_encodeFastBlockSIMDAsm:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_1_10_encodeFastBlockSIMDAsm
+
+post_encodeFastBlockSIMDAsm:
+	CMP   R2, R3
+	BGE   exit0_0_1_encodeFastBlockSIMDAsm
+	SUB   $2, R3, R1
+	MOVD  (R0)(R1), R7
+	MUL   R6, R7, R7
+	LSR   $0x33, R7, R7
+	MOVD  (R0)(R3), R9
+	MOVD  R9, R10
+	MUL   R6, R10, R10
+	LSR   $0x33, R10, R10
+	MOVWU (R5)(R10<<2), R8
+	MOVW  R1, (R5)(R7<<2)
+	MOVW  R3, (R5)(R10<<2)
+	MOVD  (R0)(R8), R16
+	CMP   R9, R16
+	BNE   post_none_encodeFastBlockSIMDAsm
+	MOVD  R3, R1
+	MOVD  R3, R7
+	SUB   R8, R7, R7
+	ADD   $0x08, R3, R3
+	ADD   $0x08, R8, R8
+	JMP   ext_check_14_encodeFastBlockSIMDAsm
+	PCALIGN $0x20
+
+ext_loop_13_encodeFastBlockSIMDAsm:
+	ADD $0x08, R3, R3
+	ADD $0x08, R8, R8
+
+ext_check_14_encodeFastBlockSIMDAsm:
+	CMP  R2, R3
+	BGT  ext_end_15_encodeFastBlockSIMDAsm
+	MOVD (R0)(R3), R9
+	MOVD (R0)(R8), R16
+	SUBS R16, R9, R9
+	BEQ  ext_loop_13_encodeFastBlockSIMDAsm
+	RBIT R9, R9
+	CLZ  R9, R9
+	LSR  $0x03, R9, R9
+	ADD  R9, R3, R3
+
+ext_end_15_encodeFastBlockSIMDAsm:
+	MOVD R3, R8
+	SUB  R1, R8, R8
+	CMP  $0x20, R8
+	BLS  one_op_17_encodeFastBlockSIMDAsm
+	CMP  $0x00000120, R8
+	BHI  split_18_encodeFastBlockSIMDAsm
+	CMP  $0x20, R7
+	BLO  split_18_encodeFastBlockSIMDAsm
+
+one_op_17_encodeFastBlockSIMDAsm:
+	LSR  $0x03, R7, R1
+	ORR  $0x01, R1, R1
+	CLZ  R1, R16
+	MOVD $63, R1
+	SUB  R16, R1, R1
+	LSR  R1, R7, R9
+	ADD  R1<<3, R9, R10
+	MOVB R10, (R25)
+	ADD  $1, R25, R25
+	LSL  R1, R9, R9
+	MOVD R7, R10
+	SUB  R9, R10, R10
+	MOVD R21, R9
+	ADD  R1, R9, R9
+	LSL  R21, R10, R10
+	MOVD 88(RSP), R16
+	ORR  R16, R10, R10
+	MOVW R10, (R26)
+	MOVD R9, R1
+	AND  $0x20, R1, R1
+	LSR  R1, R10, R10
+	MOVD R10, 88(RSP)
+	LSR  $0x03, R1, R1
+	ADD  R1, R26, R26
+	AND  $0x1f, R9, R9
+	MOVD R9, R21
+	MOVD $0, R1
+	ADD  $1, R0, R23
+	SUB  R7, R23, R23
+	CMP  $0x20, R8
+	BHI  match_long_19_encodeFastBlockSIMDAsm
+	ADD  R8<<2, R1, R1
+	CMP  R8, R7
+	CSET LO, R9
+	ORR  R9, R22, R22
+
+match_tok_20_encodeFastBlockSIMDAsm:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_1_10_encodeFastBlockSIMDAsm
+	JMP  post_encodeFastBlockSIMDAsm
+
+post_none_encodeFastBlockSIMDAsm:
+	ADD  $1, R3, R3
+	MOVD (R0)(R3), R1
+	JMP  search_encodeFastBlockSIMDAsm
+
+repeat_encodeFastBlockSIMDAsm:
+	ADD  $1, R3, R1
+	ADD  $1, R0, R7
+	SUB  R23, R7, R7
+	MOVD R1, R9
+	SUB  R7, R9, R9
+
+rep_back_21_encodeFastBlockSIMDAsm:
+	CMP   R20, R1
+	BLE   rep_back_end_22_encodeFastBlockSIMDAsm
+	TST   R9, R9
+	BLE   rep_back_end_22_encodeFastBlockSIMDAsm
+	ADD   R9, R0, R15
+	MOVBU -1(R15), R10
+	ADD   R1, R0, R15
+	MOVBU -1(R15), R11
+	CMP   R11, R10
+	BNE   rep_back_end_22_encodeFastBlockSIMDAsm
+	SUB   $1, R9, R9
+	SUB   $1, R1, R1
+	JMP   rep_back_21_encodeFastBlockSIMDAsm
+
+rep_back_end_22_encodeFastBlockSIMDAsm:
+	ADD  $0x05, R3, R3
+	MOVD R3, R8
+	SUB  R7, R8, R8
+	JMP  ext_check_24_encodeFastBlockSIMDAsm
+	PCALIGN $0x20
+
+ext_loop_23_encodeFastBlockSIMDAsm:
+	ADD $0x08, R3, R3
+	ADD $0x08, R8, R8
+
+ext_check_24_encodeFastBlockSIMDAsm:
+	CMP  R2, R3
+	BGT  ext_end_25_encodeFastBlockSIMDAsm
+	MOVD (R0)(R3), R9
+	MOVD (R0)(R8), R16
+	SUBS R16, R9, R9
+	BEQ  ext_loop_23_encodeFastBlockSIMDAsm
+	RBIT R9, R9
+	CLZ  R9, R9
+	LSR  $0x03, R9, R9
+	ADD  R9, R3, R3
+
+ext_end_25_encodeFastBlockSIMDAsm:
+	MOVD R1, R8
+	SUB  R20, R8, R8
+	CMP  $0x00000120, R8
+	BHI  exit3_0_26_encodeFastBlockSIMDAsm
+	MOVD 8(RSP), R16
+	CMP  R16, R20
+	BGT  exit3_0_26_encodeFastBlockSIMDAsm
+	MOVD R3, R9
+	SUB  R1, R9, R9
+	CMP  $0x20, R9
+	BLS  one_op_27_encodeFastBlockSIMDAsm
+	CMP  $0x00000120, R9
+	BHI  split_28_encodeFastBlockSIMDAsm
+	CMP  $0x20, R7
+	BLO  split_28_encodeFastBlockSIMDAsm
+
+one_op_27_encodeFastBlockSIMDAsm:
+	MOVD  $0x00000021, R1
+	CMP   R1, R8
+	CSEL  LO, R8, R1, R1
+	MOVB  R1, (R24)
+	TST   R8, R8
+	CSET  NE, R1
+	ADD   R1, R24, R24
+	ADD   R0, R20, R20
+	MOVD  R17, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	CMP   $0x20, R8
+	BHI   lits_long_29_encodeFastBlockSIMDAsm
+
+lits_done_30_encodeFastBlockSIMDAsm:
+	ADD  R8, R17, R17
+	ADD  R1, R1, R1
+	ADD  $1, R1, R1
+	CMP  $0x20, R9
+	BHI  match_long_32_encodeFastBlockSIMDAsm
+	ADD  R9<<2, R1, R1
+	CMP  R9, R7
+	CSET LO, R8
+	ORR  R8, R22, R22
+
+match_tok_33_encodeFastBlockSIMDAsm:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_0_31_encodeFastBlockSIMDAsm
+	CMP  R2, R3
+	BGE  exit0_0_1_encodeFastBlockSIMDAsm
+	MOVD (R0)(R3), R1
+	JMP  search_encodeFastBlockSIMDAsm
+
+exit0_0_1_encodeFastBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000000, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeFastBlockSIMDAsm
+
+exit2_1_5_encodeFastBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD R7, 147592(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000002, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeFastBlockSIMDAsm
+
+split_7_encodeFastBlockSIMDAsm:
+	MOVD $0x00004000, R10
+	SUB  R19, R10, R10
+	CMP  $0x20, R7
+	BLO  split_short_34_encodeFastBlockSIMDAsm
+	ADD  R10<<3, R10, R10
+
+split_short_34_encodeFastBlockSIMDAsm:
+	LSL $0x05, R10, R10
+	CMP R10, R9
+	BHI exit2_1_5_encodeFastBlockSIMDAsm
+	JMP one_op_6_encodeFastBlockSIMDAsm
+
+lits_long_8_encodeFastBlockSIMDAsm:
+	SUB  $33, R8, R12
+	MOVD st+0(FP), R13
+	MOVD 24(R13), R14
+	ADD  R14, R13, R15
+	MOVB R12, 49257(R15)
+	ADD  $1, R14, R14
+	MOVD R14, 24(R13)
+	SUB  $32, R8, R12
+
+lits_loop_35_encodeFastBlockSIMDAsm:
+	ADD   $0x20, R20, R20
+	ADD   $0x20, R11, R11
+	CMP   $0x20, R12
+	BLS   lits_last_36_encodeFastBlockSIMDAsm
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	SUB   $0x20, R12, R12
+	JMP   lits_loop_35_encodeFastBlockSIMDAsm
+
+lits_last_36_encodeFastBlockSIMDAsm:
+	ADD   R12, R20, R20
+	SUB   $32, R20, R20
+	ADD   R12, R11, R11
+	SUB   $32, R11, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	JMP   lits_done_9_encodeFastBlockSIMDAsm
+
+exit1_1_10_encodeFastBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD $0x00000001, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeFastBlockSIMDAsm
+
+match_long_11_encodeFastBlockSIMDAsm:
+	CMP $0x20, R7
+	BLO match_short_38_encodeFastBlockSIMDAsm
+	CMP $0x00000120, R9
+	BHI match_big_39_encodeFastBlockSIMDAsm
+
+match_esc_37_encodeFastBlockSIMDAsm:
+	SUB  $33, R9, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_12_encodeFastBlockSIMDAsm
+
+match_big_39_encodeFastBlockSIMDAsm:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R10
+	ADD  R10, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R8)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R9, R9
+	CMP  $0x00000120, R9
+	BHI  match_big_39_encodeFastBlockSIMDAsm
+	CMP  $0x20, R9
+	BHI  match_esc_37_encodeFastBlockSIMDAsm
+	JMP  match_rest_40_encodeFastBlockSIMDAsm
+
+match_short_38_encodeFastBlockSIMDAsm:
+	ORR $0x01, R22, R22
+
+match_short_loop_41_encodeFastBlockSIMDAsm:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R9, R9
+	CMP  $0x20, R9
+	BHI  match_short_loop_41_encodeFastBlockSIMDAsm
+
+match_rest_40_encodeFastBlockSIMDAsm:
+	ADD R9<<2, R1, R1
+	JMP match_tok_12_encodeFastBlockSIMDAsm
+
+exit2_1_16_encodeFastBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD R7, 147592(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000002, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeFastBlockSIMDAsm
+
+split_18_encodeFastBlockSIMDAsm:
+	MOVD $0x00004000, R9
+	SUB  R19, R9, R9
+	CMP  $0x20, R7
+	BLO  split_short_42_encodeFastBlockSIMDAsm
+	ADD  R9<<3, R9, R9
+
+split_short_42_encodeFastBlockSIMDAsm:
+	LSL $0x05, R9, R9
+	CMP R9, R8
+	BHI exit2_1_16_encodeFastBlockSIMDAsm
+	JMP one_op_17_encodeFastBlockSIMDAsm
+
+match_long_19_encodeFastBlockSIMDAsm:
+	CMP $0x20, R7
+	BLO match_short_44_encodeFastBlockSIMDAsm
+	CMP $0x00000120, R8
+	BHI match_big_45_encodeFastBlockSIMDAsm
+
+match_esc_43_encodeFastBlockSIMDAsm:
+	SUB  $33, R8, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_20_encodeFastBlockSIMDAsm
+
+match_big_45_encodeFastBlockSIMDAsm:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R9
+	MOVD 24(R9), R10
+	ADD  R10, R9, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R9)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R8, R8
+	CMP  $0x00000120, R8
+	BHI  match_big_45_encodeFastBlockSIMDAsm
+	CMP  $0x20, R8
+	BHI  match_esc_43_encodeFastBlockSIMDAsm
+	JMP  match_rest_46_encodeFastBlockSIMDAsm
+
+match_short_44_encodeFastBlockSIMDAsm:
+	ORR $0x01, R22, R22
+
+match_short_loop_47_encodeFastBlockSIMDAsm:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R8, R8
+	CMP  $0x20, R8
+	BHI  match_short_loop_47_encodeFastBlockSIMDAsm
+
+match_rest_46_encodeFastBlockSIMDAsm:
+	ADD R8<<2, R1, R1
+	JMP match_tok_20_encodeFastBlockSIMDAsm
+
+exit3_0_26_encodeFastBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000003, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeFastBlockSIMDAsm
+
+split_28_encodeFastBlockSIMDAsm:
+	MOVD $0x00004000, R10
+	SUB  R19, R10, R10
+	CMP  $0x20, R7
+	BLO  split_short_48_encodeFastBlockSIMDAsm
+	ADD  R10<<3, R10, R10
+
+split_short_48_encodeFastBlockSIMDAsm:
+	LSL $0x05, R10, R10
+	CMP R10, R9
+	BHI exit3_0_26_encodeFastBlockSIMDAsm
+	JMP one_op_27_encodeFastBlockSIMDAsm
+
+lits_long_29_encodeFastBlockSIMDAsm:
+	SUB  $33, R8, R12
+	MOVD st+0(FP), R13
+	MOVD 24(R13), R14
+	ADD  R14, R13, R15
+	MOVB R12, 49257(R15)
+	ADD  $1, R14, R14
+	MOVD R14, 24(R13)
+	SUB  $32, R8, R12
+
+lits_loop_49_encodeFastBlockSIMDAsm:
+	ADD   $0x20, R20, R20
+	ADD   $0x20, R11, R11
+	CMP   $0x20, R12
+	BLS   lits_last_50_encodeFastBlockSIMDAsm
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	SUB   $0x20, R12, R12
+	JMP   lits_loop_49_encodeFastBlockSIMDAsm
+
+lits_last_50_encodeFastBlockSIMDAsm:
+	ADD   R12, R20, R20
+	SUB   $32, R20, R20
+	ADD   R12, R11, R11
+	SUB   $32, R11, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	JMP   lits_done_30_encodeFastBlockSIMDAsm
+
+exit1_0_31_encodeFastBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeFastBlockSIMDAsm
+
+match_long_32_encodeFastBlockSIMDAsm:
+	CMP $0x20, R7
+	BLO match_short_52_encodeFastBlockSIMDAsm
+	CMP $0x00000120, R9
+	BHI match_big_53_encodeFastBlockSIMDAsm
+
+match_esc_51_encodeFastBlockSIMDAsm:
+	SUB  $33, R9, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_33_encodeFastBlockSIMDAsm
+
+match_big_53_encodeFastBlockSIMDAsm:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R10
+	ADD  R10, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R8)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R9, R9
+	CMP  $0x00000120, R9
+	BHI  match_big_53_encodeFastBlockSIMDAsm
+	CMP  $0x20, R9
+	BHI  match_esc_51_encodeFastBlockSIMDAsm
+	JMP  match_rest_54_encodeFastBlockSIMDAsm
+
+match_short_52_encodeFastBlockSIMDAsm:
+	ORR $0x01, R22, R22
+
+match_short_loop_55_encodeFastBlockSIMDAsm:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R9, R9
+	CMP  $0x20, R9
+	BHI  match_short_loop_55_encodeFastBlockSIMDAsm
+
+match_rest_54_encodeFastBlockSIMDAsm:
+	ADD R9<<2, R1, R1
+	JMP match_tok_33_encodeFastBlockSIMDAsm
+
+return_encodeFastBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD R19, (R0)
+	SUB  R0, R24, R24
+	SUB  $0x00004069, R24, R24
+	MOVD R24, 8(R0)
+	SUB  R0, R25, R25
+	SUB  $0x00008069, R25, R25
+	MOVD R25, 16(R0)
+	SUB  R0, R26, R26
+	SUB  $0x00014069, R26, R26
+	MOVD R26, 32(R0)
+	MOVD 88(RSP), R1
+	MOVD R1, 56(R0)
+	MOVD R21, 48(R0)
+	MOVD R20, 64(R0)
+	MOVD src_base+8(FP), R1
+	ADD  $1, R1, R1
+	SUB  R23, R1, R1
+	MOVD R1, 72(R0)
+	MOVD 80(R0), R16
+	SUB  R16, R17, R17
+	MOVD R17, 40(R0)
+	MOVB R22, 104(R0)
+	RET
+
+// func encodeBlockSIMDAsm(st *simdStreams, src []byte, tab *[131072]byte) int
+// Requires: BMI, CMOV, SSE2
+TEXT ·encodeBlockSIMDAsm(SB), $88-48
+	MOVD    st+0(FP), R1
+	MOVD    src_base+8(FP), R0
+	MOVD    (R1), R19
+	MOVD    8(R1), R24
+	ADD     R24, R1, R24
+	ADD     $16489, R24, R24
+	MOVD    16(R1), R25
+	ADD     R25, R1, R25
+	ADD     $32873, R25, R25
+	MOVD    32(R1), R26
+	ADD     R26, R1, R26
+	ADD     $82025, R26, R26
+	MOVD    56(R1), R2
+	MOVD    R2, 88(RSP)
+	MOVD    48(R1), R21
+	MOVD    64(R1), R20
+	ADD     $1, R0, R23
+	MOVD    72(R1), R16
+	SUB     R16, R23, R23
+	MOVD    40(R1), R17
+	MOVD    80(R1), R16
+	ADD     R16, R17, R17
+	MOVBU   104(R1), R22
+	MOVD    src_len+16(FP), R3
+	SUB     $8, R3, R2
+	SUB     $32, R3, R3
+	MOVD    R3, 8(RSP)
+	MOVD    64(R1), R3
+	MOVD    tab+32(FP), R5
+	MOVD    $0x0000cf1bbcdcbf9b, R6
+	MOVD    st+0(FP), R1
+	MOVD    147568(R1), R16
+	CMP     $0x01, R16
+	BEQ     post_encodeBlockSIMDAsm
+	MOVD    $0x00000001, R1
+	CMP     R1, R3
+	CSEL    LT, R1, R3, R3
+	CMP     R2, R3
+	BGE     exit0_0_1_encodeBlockSIMDAsm
+	MOVD    (R0)(R3), R1
+	PCALIGN $0x40
+
+search_encodeBlockSIMDAsm:
+	MOVD  R3, R7
+	SUB   R20, R7, R7
+	LSR   $0x06, R7, R7
+	ADD   R7, R3, R7
+	ADD   $4, R7, R7
+	CMP   R2, R7
+	BGT   exit0_0_1_encodeBlockSIMDAsm
+	LSL   $0x10, R1, R9
+	MUL   R6, R9, R9
+	LSR   $0x31, R9, R9
+	LSR   $0x08, R1, R10
+	LSL   $0x10, R10, R11
+	MUL   R6, R11, R11
+	LSR   $0x31, R11, R11
+	MOVWU (R5)(R9<<2), R8
+	MOVWU (R5)(R11<<2), R12
+	MOVW  R3, (R5)(R9<<2)
+	ADD   $1, R3, R9
+	MOVW  R9, (R5)(R11<<2)
+	LSR   $0x10, R1, R11
+	LSL   $0x10, R11, R13
+	MUL   R6, R13, R13
+	LSR   $0x31, R13, R13
+	MOVWU (R23)(R3), R16
+	CMPW  R10, R16
+	BEQ   repeat_encodeBlockSIMDAsm
+	MOVWU (R0)(R8), R16
+	CMPW  R1, R16
+	BEQ   match_encodeBlockSIMDAsm
+	MOVWU (R5)(R13<<2), R8
+	MOVWU (R0)(R12), R16
+	CMPW  R10, R16
+	BEQ   match1_encodeBlockSIMDAsm
+	ADD   $2, R3, R9
+	MOVW  R9, (R5)(R13<<2)
+	MOVWU (R0)(R8), R16
+	CMPW  R11, R16
+	BEQ   match2_encodeBlockSIMDAsm
+	MOVD  (R0)(R7), R1
+	MOVD  R7, R3
+	JMP   search_encodeBlockSIMDAsm
+
+match1_encodeBlockSIMDAsm:
+	ADD  $2, R3, R9
+	MOVW R9, (R5)(R13<<2)
+	MOVD R12, R8
+	ADD  $1, R3, R3
+	JMP  match_encodeBlockSIMDAsm
+
+match2_encodeBlockSIMDAsm:
+	ADD $0x02, R3, R3
+
+match_encodeBlockSIMDAsm:
+match_back_2_encodeBlockSIMDAsm:
+	TST   R8, R8
+	BLE   match_back_end_3_encodeBlockSIMDAsm
+	CMP   R20, R3
+	BLE   match_back_end_3_encodeBlockSIMDAsm
+	ADD   R8, R0, R15
+	MOVBU -1(R15), R7
+	ADD   R3, R0, R15
+	MOVBU -1(R15), R9
+	CMP   R9, R7
+	BNE   match_back_end_3_encodeBlockSIMDAsm
+	SUB   $1, R8, R8
+	SUB   $1, R3, R3
+	JMP   match_back_2_encodeBlockSIMDAsm
+
+match_back_end_3_encodeBlockSIMDAsm:
+	MOVD R3, R1
+	MOVD R3, R7
+	SUB  R8, R7, R7
+	ADD  $0x04, R3, R3
+	ADD  $0x04, R8, R8
+	JMP  ext_check_5_encodeBlockSIMDAsm
+	PCALIGN $0x20
+
+ext_loop_4_encodeBlockSIMDAsm:
+	ADD $0x08, R3, R3
+	ADD $0x08, R8, R8
+
+ext_check_5_encodeBlockSIMDAsm:
+	CMP  R2, R3
+	BGT  ext_end_6_encodeBlockSIMDAsm
+	MOVD (R0)(R3), R9
+	MOVD (R0)(R8), R16
+	SUBS R16, R9, R9
+	BEQ  ext_loop_4_encodeBlockSIMDAsm
+	RBIT R9, R9
+	CLZ  R9, R9
+	LSR  $0x03, R9, R9
+	ADD  R9, R3, R3
+
+ext_end_6_encodeBlockSIMDAsm:
+	MOVD R1, R8
+	SUB  R20, R8, R8
+	CMP  $0x00000120, R8
+	BHI  exit2_1_7_encodeBlockSIMDAsm
+	MOVD 8(RSP), R16
+	CMP  R16, R20
+	BGT  exit2_1_7_encodeBlockSIMDAsm
+	MOVD R3, R9
+	SUB  R1, R9, R9
+	CMP  $0x20, R9
+	BLS  one_op_8_encodeBlockSIMDAsm
+	CMP  $0x00000120, R9
+	BHI  split_9_encodeBlockSIMDAsm
+	CMP  $0x20, R7
+	BLO  split_9_encodeBlockSIMDAsm
+
+one_op_8_encodeBlockSIMDAsm:
+	LSR   $0x03, R7, R1
+	ORR   $0x01, R1, R1
+	CLZ   R1, R16
+	MOVD  $63, R1
+	SUB   R16, R1, R1
+	LSR   R1, R7, R10
+	ADD   R1<<3, R10, R11
+	MOVB  R11, (R25)
+	ADD   $1, R25, R25
+	LSL   R1, R10, R10
+	MOVD  R7, R11
+	SUB   R10, R11, R11
+	MOVD  R21, R10
+	ADD   R1, R10, R10
+	LSL   R21, R11, R11
+	MOVD  88(RSP), R16
+	ORR   R16, R11, R11
+	MOVW  R11, (R26)
+	MOVD  R10, R1
+	AND   $0x20, R1, R1
+	LSR   R1, R11, R11
+	MOVD  R11, 88(RSP)
+	LSR   $0x03, R1, R1
+	ADD   R1, R26, R26
+	AND   $0x1f, R10, R10
+	MOVD  R10, R21
+	MOVD  $0x00000021, R1
+	CMP   R1, R8
+	CSEL  LO, R8, R1, R1
+	MOVB  R1, (R24)
+	TST   R8, R8
+	CSET  NE, R1
+	ADD   R1, R24, R24
+	ADD   R0, R20, R20
+	MOVD  R17, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	CMP   $0x20, R8
+	BHI   lits_long_10_encodeBlockSIMDAsm
+
+lits_done_11_encodeBlockSIMDAsm:
+	ADD  R8, R17, R17
+	ADD  R1, R1, R1
+	ADD  $1, R0, R23
+	SUB  R7, R23, R23
+	CMP  $0x20, R9
+	BHI  match_long_13_encodeBlockSIMDAsm
+	ADD  R9<<2, R1, R1
+	CMP  R9, R7
+	CSET LO, R8
+	ORR  R8, R22, R22
+
+match_tok_14_encodeBlockSIMDAsm:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_1_12_encodeBlockSIMDAsm
+
+post_encodeBlockSIMDAsm:
+	CMP   R2, R3
+	BGE   exit0_0_1_encodeBlockSIMDAsm
+	SUB   $2, R3, R1
+	MOVD  (R0)(R1), R7
+	LSL   $0x10, R7, R7
+	MUL   R6, R7, R7
+	LSR   $0x31, R7, R7
+	MOVD  (R0)(R3), R9
+	LSL   $0x10, R9, R10
+	MUL   R6, R10, R10
+	LSR   $0x31, R10, R10
+	MOVWU (R5)(R10<<2), R8
+	MOVW  R1, (R5)(R7<<2)
+	MOVW  R3, (R5)(R10<<2)
+	MOVWU (R0)(R8), R16
+	CMPW  R9, R16
+	BNE   post_none_encodeBlockSIMDAsm
+	MOVD  R3, R1
+	MOVD  R3, R7
+	SUB   R8, R7, R7
+	ADD   $0x04, R3, R3
+	ADD   $0x04, R8, R8
+	JMP   ext_check_16_encodeBlockSIMDAsm
+	PCALIGN $0x20
+
+ext_loop_15_encodeBlockSIMDAsm:
+	ADD $0x08, R3, R3
+	ADD $0x08, R8, R8
+
+ext_check_16_encodeBlockSIMDAsm:
+	CMP  R2, R3
+	BGT  ext_end_17_encodeBlockSIMDAsm
+	MOVD (R0)(R3), R9
+	MOVD (R0)(R8), R16
+	SUBS R16, R9, R9
+	BEQ  ext_loop_15_encodeBlockSIMDAsm
+	RBIT R9, R9
+	CLZ  R9, R9
+	LSR  $0x03, R9, R9
+	ADD  R9, R3, R3
+
+ext_end_17_encodeBlockSIMDAsm:
+	MOVD R3, R8
+	SUB  R1, R8, R8
+	CMP  $0x20, R8
+	BLS  one_op_19_encodeBlockSIMDAsm
+	CMP  $0x00000120, R8
+	BHI  split_20_encodeBlockSIMDAsm
+	CMP  $0x20, R7
+	BLO  split_20_encodeBlockSIMDAsm
+
+one_op_19_encodeBlockSIMDAsm:
+	LSR  $0x03, R7, R1
+	ORR  $0x01, R1, R1
+	CLZ  R1, R16
+	MOVD $63, R1
+	SUB  R16, R1, R1
+	LSR  R1, R7, R9
+	ADD  R1<<3, R9, R10
+	MOVB R10, (R25)
+	ADD  $1, R25, R25
+	LSL  R1, R9, R9
+	MOVD R7, R10
+	SUB  R9, R10, R10
+	MOVD R21, R9
+	ADD  R1, R9, R9
+	LSL  R21, R10, R10
+	MOVD 88(RSP), R16
+	ORR  R16, R10, R10
+	MOVW R10, (R26)
+	MOVD R9, R1
+	AND  $0x20, R1, R1
+	LSR  R1, R10, R10
+	MOVD R10, 88(RSP)
+	LSR  $0x03, R1, R1
+	ADD  R1, R26, R26
+	AND  $0x1f, R9, R9
+	MOVD R9, R21
+	MOVD $0, R1
+	ADD  $1, R0, R23
+	SUB  R7, R23, R23
+	CMP  $0x20, R8
+	BHI  match_long_21_encodeBlockSIMDAsm
+	ADD  R8<<2, R1, R1
+	CMP  R8, R7
+	CSET LO, R9
+	ORR  R9, R22, R22
+
+match_tok_22_encodeBlockSIMDAsm:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_1_12_encodeBlockSIMDAsm
+	JMP  post_encodeBlockSIMDAsm
+
+post_none_encodeBlockSIMDAsm:
+	ADD  $1, R3, R3
+	MOVD (R0)(R3), R1
+	JMP  search_encodeBlockSIMDAsm
+
+repeat_encodeBlockSIMDAsm:
+	ADD  $1, R3, R1
+	ADD  $1, R0, R7
+	SUB  R23, R7, R7
+	MOVD R1, R9
+	SUB  R7, R9, R9
+
+rep_back_23_encodeBlockSIMDAsm:
+	CMP   R20, R1
+	BLE   rep_back_end_24_encodeBlockSIMDAsm
+	TST   R9, R9
+	BLE   rep_back_end_24_encodeBlockSIMDAsm
+	ADD   R9, R0, R15
+	MOVBU -1(R15), R10
+	ADD   R1, R0, R15
+	MOVBU -1(R15), R11
+	CMP   R11, R10
+	BNE   rep_back_end_24_encodeBlockSIMDAsm
+	SUB   $1, R9, R9
+	SUB   $1, R1, R1
+	JMP   rep_back_23_encodeBlockSIMDAsm
+
+rep_back_end_24_encodeBlockSIMDAsm:
+	ADD  $0x05, R3, R3
+	MOVD R3, R8
+	SUB  R7, R8, R8
+	JMP  ext_check_26_encodeBlockSIMDAsm
+	PCALIGN $0x20
+
+ext_loop_25_encodeBlockSIMDAsm:
+	ADD $0x08, R3, R3
+	ADD $0x08, R8, R8
+
+ext_check_26_encodeBlockSIMDAsm:
+	CMP  R2, R3
+	BGT  ext_end_27_encodeBlockSIMDAsm
+	MOVD (R0)(R3), R9
+	MOVD (R0)(R8), R16
+	SUBS R16, R9, R9
+	BEQ  ext_loop_25_encodeBlockSIMDAsm
+	RBIT R9, R9
+	CLZ  R9, R9
+	LSR  $0x03, R9, R9
+	ADD  R9, R3, R3
+
+ext_end_27_encodeBlockSIMDAsm:
+	MOVD R1, R8
+	SUB  R20, R8, R8
+	CMP  $0x00000120, R8
+	BHI  exit3_0_28_encodeBlockSIMDAsm
+	MOVD 8(RSP), R16
+	CMP  R16, R20
+	BGT  exit3_0_28_encodeBlockSIMDAsm
+	MOVD R3, R9
+	SUB  R1, R9, R9
+	CMP  $0x20, R9
+	BLS  one_op_29_encodeBlockSIMDAsm
+	CMP  $0x00000120, R9
+	BHI  split_30_encodeBlockSIMDAsm
+	CMP  $0x20, R7
+	BLO  split_30_encodeBlockSIMDAsm
+
+one_op_29_encodeBlockSIMDAsm:
+	MOVD  $0x00000021, R1
+	CMP   R1, R8
+	CSEL  LO, R8, R1, R1
+	MOVB  R1, (R24)
+	TST   R8, R8
+	CSET  NE, R1
+	ADD   R1, R24, R24
+	ADD   R0, R20, R20
+	MOVD  R17, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	CMP   $0x20, R8
+	BHI   lits_long_31_encodeBlockSIMDAsm
+
+lits_done_32_encodeBlockSIMDAsm:
+	ADD  R8, R17, R17
+	ADD  R1, R1, R1
+	ADD  $1, R1, R1
+	CMP  $0x20, R9
+	BHI  match_long_34_encodeBlockSIMDAsm
+	ADD  R9<<2, R1, R1
+	CMP  R9, R7
+	CSET LO, R8
+	ORR  R8, R22, R22
+
+match_tok_35_encodeBlockSIMDAsm:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_0_33_encodeBlockSIMDAsm
+	CMP  R2, R3
+	BGE  exit0_0_1_encodeBlockSIMDAsm
+	MOVD (R0)(R3), R1
+	JMP  search_encodeBlockSIMDAsm
+
+exit0_0_1_encodeBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000000, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeBlockSIMDAsm
+
+exit2_1_7_encodeBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD R7, 147592(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000002, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeBlockSIMDAsm
+
+split_9_encodeBlockSIMDAsm:
+	MOVD $0x00004000, R10
+	SUB  R19, R10, R10
+	CMP  $0x20, R7
+	BLO  split_short_36_encodeBlockSIMDAsm
+	ADD  R10<<3, R10, R10
+
+split_short_36_encodeBlockSIMDAsm:
+	LSL $0x05, R10, R10
+	CMP R10, R9
+	BHI exit2_1_7_encodeBlockSIMDAsm
+	JMP one_op_8_encodeBlockSIMDAsm
+
+lits_long_10_encodeBlockSIMDAsm:
+	SUB  $33, R8, R12
+	MOVD st+0(FP), R13
+	MOVD 24(R13), R14
+	ADD  R14, R13, R15
+	MOVB R12, 49257(R15)
+	ADD  $1, R14, R14
+	MOVD R14, 24(R13)
+	SUB  $32, R8, R12
+
+lits_loop_37_encodeBlockSIMDAsm:
+	ADD   $0x20, R20, R20
+	ADD   $0x20, R11, R11
+	CMP   $0x20, R12
+	BLS   lits_last_38_encodeBlockSIMDAsm
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	SUB   $0x20, R12, R12
+	JMP   lits_loop_37_encodeBlockSIMDAsm
+
+lits_last_38_encodeBlockSIMDAsm:
+	ADD   R12, R20, R20
+	SUB   $32, R20, R20
+	ADD   R12, R11, R11
+	SUB   $32, R11, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	JMP   lits_done_11_encodeBlockSIMDAsm
+
+exit1_1_12_encodeBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD $0x00000001, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeBlockSIMDAsm
+
+match_long_13_encodeBlockSIMDAsm:
+	CMP $0x20, R7
+	BLO match_short_40_encodeBlockSIMDAsm
+	CMP $0x00000120, R9
+	BHI match_big_41_encodeBlockSIMDAsm
+
+match_esc_39_encodeBlockSIMDAsm:
+	SUB  $33, R9, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_14_encodeBlockSIMDAsm
+
+match_big_41_encodeBlockSIMDAsm:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R10
+	ADD  R10, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R8)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R9, R9
+	CMP  $0x00000120, R9
+	BHI  match_big_41_encodeBlockSIMDAsm
+	CMP  $0x20, R9
+	BHI  match_esc_39_encodeBlockSIMDAsm
+	JMP  match_rest_42_encodeBlockSIMDAsm
+
+match_short_40_encodeBlockSIMDAsm:
+	ORR $0x01, R22, R22
+
+match_short_loop_43_encodeBlockSIMDAsm:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R9, R9
+	CMP  $0x20, R9
+	BHI  match_short_loop_43_encodeBlockSIMDAsm
+
+match_rest_42_encodeBlockSIMDAsm:
+	ADD R9<<2, R1, R1
+	JMP match_tok_14_encodeBlockSIMDAsm
+
+exit2_1_18_encodeBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD R7, 147592(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000002, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeBlockSIMDAsm
+
+split_20_encodeBlockSIMDAsm:
+	MOVD $0x00004000, R9
+	SUB  R19, R9, R9
+	CMP  $0x20, R7
+	BLO  split_short_44_encodeBlockSIMDAsm
+	ADD  R9<<3, R9, R9
+
+split_short_44_encodeBlockSIMDAsm:
+	LSL $0x05, R9, R9
+	CMP R9, R8
+	BHI exit2_1_18_encodeBlockSIMDAsm
+	JMP one_op_19_encodeBlockSIMDAsm
+
+match_long_21_encodeBlockSIMDAsm:
+	CMP $0x20, R7
+	BLO match_short_46_encodeBlockSIMDAsm
+	CMP $0x00000120, R8
+	BHI match_big_47_encodeBlockSIMDAsm
+
+match_esc_45_encodeBlockSIMDAsm:
+	SUB  $33, R8, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_22_encodeBlockSIMDAsm
+
+match_big_47_encodeBlockSIMDAsm:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R9
+	MOVD 24(R9), R10
+	ADD  R10, R9, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R9)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R8, R8
+	CMP  $0x00000120, R8
+	BHI  match_big_47_encodeBlockSIMDAsm
+	CMP  $0x20, R8
+	BHI  match_esc_45_encodeBlockSIMDAsm
+	JMP  match_rest_48_encodeBlockSIMDAsm
+
+match_short_46_encodeBlockSIMDAsm:
+	ORR $0x01, R22, R22
+
+match_short_loop_49_encodeBlockSIMDAsm:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R8, R8
+	CMP  $0x20, R8
+	BHI  match_short_loop_49_encodeBlockSIMDAsm
+
+match_rest_48_encodeBlockSIMDAsm:
+	ADD R8<<2, R1, R1
+	JMP match_tok_22_encodeBlockSIMDAsm
+
+exit3_0_28_encodeBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000003, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeBlockSIMDAsm
+
+split_30_encodeBlockSIMDAsm:
+	MOVD $0x00004000, R10
+	SUB  R19, R10, R10
+	CMP  $0x20, R7
+	BLO  split_short_50_encodeBlockSIMDAsm
+	ADD  R10<<3, R10, R10
+
+split_short_50_encodeBlockSIMDAsm:
+	LSL $0x05, R10, R10
+	CMP R10, R9
+	BHI exit3_0_28_encodeBlockSIMDAsm
+	JMP one_op_29_encodeBlockSIMDAsm
+
+lits_long_31_encodeBlockSIMDAsm:
+	SUB  $33, R8, R12
+	MOVD st+0(FP), R13
+	MOVD 24(R13), R14
+	ADD  R14, R13, R15
+	MOVB R12, 49257(R15)
+	ADD  $1, R14, R14
+	MOVD R14, 24(R13)
+	SUB  $32, R8, R12
+
+lits_loop_51_encodeBlockSIMDAsm:
+	ADD   $0x20, R20, R20
+	ADD   $0x20, R11, R11
+	CMP   $0x20, R12
+	BLS   lits_last_52_encodeBlockSIMDAsm
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	SUB   $0x20, R12, R12
+	JMP   lits_loop_51_encodeBlockSIMDAsm
+
+lits_last_52_encodeBlockSIMDAsm:
+	ADD   R12, R20, R20
+	SUB   $32, R20, R20
+	ADD   R12, R11, R11
+	SUB   $32, R11, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	JMP   lits_done_32_encodeBlockSIMDAsm
+
+exit1_0_33_encodeBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeBlockSIMDAsm
+
+match_long_34_encodeBlockSIMDAsm:
+	CMP $0x20, R7
+	BLO match_short_54_encodeBlockSIMDAsm
+	CMP $0x00000120, R9
+	BHI match_big_55_encodeBlockSIMDAsm
+
+match_esc_53_encodeBlockSIMDAsm:
+	SUB  $33, R9, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_35_encodeBlockSIMDAsm
+
+match_big_55_encodeBlockSIMDAsm:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R10
+	ADD  R10, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R8)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R9, R9
+	CMP  $0x00000120, R9
+	BHI  match_big_55_encodeBlockSIMDAsm
+	CMP  $0x20, R9
+	BHI  match_esc_53_encodeBlockSIMDAsm
+	JMP  match_rest_56_encodeBlockSIMDAsm
+
+match_short_54_encodeBlockSIMDAsm:
+	ORR $0x01, R22, R22
+
+match_short_loop_57_encodeBlockSIMDAsm:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R9, R9
+	CMP  $0x20, R9
+	BHI  match_short_loop_57_encodeBlockSIMDAsm
+
+match_rest_56_encodeBlockSIMDAsm:
+	ADD R9<<2, R1, R1
+	JMP match_tok_35_encodeBlockSIMDAsm
+
+return_encodeBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD R19, (R0)
+	SUB  R0, R24, R24
+	SUB  $0x00004069, R24, R24
+	MOVD R24, 8(R0)
+	SUB  R0, R25, R25
+	SUB  $0x00008069, R25, R25
+	MOVD R25, 16(R0)
+	SUB  R0, R26, R26
+	SUB  $0x00014069, R26, R26
+	MOVD R26, 32(R0)
+	MOVD 88(RSP), R1
+	MOVD R1, 56(R0)
+	MOVD R21, 48(R0)
+	MOVD R20, 64(R0)
+	MOVD src_base+8(FP), R1
+	ADD  $1, R1, R1
+	SUB  R23, R1, R1
+	MOVD R1, 72(R0)
+	MOVD 80(R0), R16
+	SUB  R16, R17, R17
+	MOVD R17, 40(R0)
+	MOVB R22, 104(R0)
+	RET
+
+// func encodeBetterBlockSIMDAsm(st *simdStreams, src []byte, tab *[589824]byte, maxOff4 int, maxOff5 int) int
+// Requires: BMI, CMOV, SSE2
+TEXT ·encodeBetterBlockSIMDAsm(SB), $88-64
+	MOVD    st+0(FP), R1
+	MOVD    src_base+8(FP), R0
+	MOVD    (R1), R19
+	MOVD    8(R1), R22
+	ADD     R22, R1, R22
+	ADD     $16489, R22, R22
+	MOVD    16(R1), R26
+	ADD     R26, R1, R26
+	ADD     $32873, R26, R26
+	MOVD    32(R1), R17
+	ADD     R17, R1, R17
+	ADD     $82025, R17, R17
+	MOVD    56(R1), R2
+	MOVD    R2, 88(RSP)
+	MOVD    48(R1), R25
+	MOVD    64(R1), R20
+	ADD     $1, R0, R21
+	MOVD    72(R1), R16
+	SUB     R16, R21, R21
+	MOVD    40(R1), R23
+	MOVD    80(R1), R16
+	ADD     R16, R23, R23
+	MOVBU   104(R1), R24
+	MOVD    src_len+16(FP), R3
+	SUB     $8, R3, R2
+	SUB     $32, R3, R3
+	MOVD    R3, 8(RSP)
+	MOVD    64(R1), R3
+	MOVD    tab+32(FP), R8
+	ADD     $524288, R8, R9
+	MOVD    $0x00cf1bbcdcbfa563, R5
+	MOVD    $0x9e3779b1, R6
+	MOVD    $0x00000001, R1
+	CMP     R1, R3
+	CSEL    LT, R1, R3, R3
+	CMP     R2, R3
+	BGE     exit0_0_1_encodeBetterBlockSIMDAsm
+	MOVD    (R0)(R3), R1
+	PCALIGN $0x40
+
+search_encodeBetterBlockSIMDAsm:
+	MOVD  R3, R11
+	SUB   R20, R11, R11
+	LSR   $0x07, R11, R11
+	MOVD  $0x00000063, R7
+	CMP   R7, R11
+	CSEL  GT, R7, R11, R11
+	ADD   R11, R3, R11
+	ADD   $1, R11, R11
+	CMP   R2, R11
+	BGT   exit0_0_1_encodeBetterBlockSIMDAsm
+	LSL   $0x08, R1, R7
+	MUL   R5, R7, R7
+	LSR   $0x2f, R7, R7
+	LSL   $0x20, R1, R12
+	MUL   R6, R12, R12
+	LSR   $0x32, R12, R12
+	MOVWU (R8)(R7<<2), R10
+	MOVWU (R9)(R12<<2), R13
+	MOVW  R3, (R8)(R7<<2)
+	MOVW  R3, (R9)(R12<<2)
+	MOVD  (R0)(R10), R7
+	CMP   R1, R7
+	BEQ   match_encodeBetterBlockSIMDAsm
+	LSR   $0x08, R1, R12
+	MOVWU (R21)(R3), R16
+	CMPW  R12, R16
+	BEQ   repeat_encodeBetterBlockSIMDAsm
+	CMPW  R1, R7
+	BEQ   match_encodeBetterBlockSIMDAsm
+	MOVWU (R0)(R13), R16
+	CMPW  R1, R16
+	BEQ   short_encodeBetterBlockSIMDAsm
+	MOVD  (R0)(R11), R1
+	MOVD  R11, R3
+	JMP   search_encodeBetterBlockSIMDAsm
+
+short_encodeBetterBlockSIMDAsm:
+	LSL   $0x08, R12, R1
+	MUL   R5, R1, R1
+	LSR   $0x2f, R1, R1
+	MOVWU (R8)(R1<<2), R10
+	ADD   $1, R3, R7
+	MOVW  R7, (R8)(R1<<2)
+	MOVWU (R0)(R10), R16
+	CMPW  R12, R16
+	BNE   short_only_encodeBetterBlockSIMDAsm
+	MOVD  R7, R3
+	JMP   match_encodeBetterBlockSIMDAsm
+
+short_only_encodeBetterBlockSIMDAsm:
+	MOVD R13, R10
+
+match_encodeBetterBlockSIMDAsm:
+match_back_2_encodeBetterBlockSIMDAsm:
+	TST   R10, R10
+	BLE   match_back_end_3_encodeBetterBlockSIMDAsm
+	CMP   R20, R3
+	BLE   match_back_end_3_encodeBetterBlockSIMDAsm
+	ADD   R10, R0, R15
+	MOVBU -1(R15), R7
+	ADD   R3, R0, R15
+	MOVBU -1(R15), R12
+	CMP   R12, R7
+	BNE   match_back_end_3_encodeBetterBlockSIMDAsm
+	SUB   $1, R10, R10
+	SUB   $1, R3, R3
+	JMP   match_back_2_encodeBetterBlockSIMDAsm
+
+match_back_end_3_encodeBetterBlockSIMDAsm:
+	MOVD R3, R1
+	MOVD R3, R7
+	SUB  R10, R7, R7
+	ADD  $0x04, R3, R3
+	ADD  $0x04, R10, R10
+	JMP  ext_check_5_encodeBetterBlockSIMDAsm
+	PCALIGN $0x20
+
+ext_loop_4_encodeBetterBlockSIMDAsm:
+	ADD $0x08, R3, R3
+	ADD $0x08, R10, R10
+
+ext_check_5_encodeBetterBlockSIMDAsm:
+	CMP  R2, R3
+	BGT  ext_tail_7_encodeBetterBlockSIMDAsm
+	MOVD (R0)(R3), R12
+	MOVD (R0)(R10), R16
+	SUBS R16, R12, R12
+	BEQ  ext_loop_4_encodeBetterBlockSIMDAsm
+	RBIT R12, R12
+	CLZ  R12, R12
+	LSR  $0x03, R12, R12
+	ADD  R12, R3, R3
+
+ext_end_6_encodeBetterBlockSIMDAsm:
+	ADD $5, R1, R10
+	CMP R10, R3
+	BLS short_8_encodeBetterBlockSIMDAsm
+
+near_9_encodeBetterBlockSIMDAsm:
+	ADD $33, R1, R10
+	CMP R10, R3
+	BEQ cut_10_encodeBetterBlockSIMDAsm
+
+cut_back_11_encodeBetterBlockSIMDAsm:
+	CMP   R2, R3
+	BGE   indexed_12_encodeBetterBlockSIMDAsm
+	ADD   $1, R1, R10
+	SUB   $2, R3, R11
+	MOVD  (R0)(R10), R12
+	LSL   $0x08, R12, R12
+	MUL   R5, R12, R12
+	LSR   $0x2f, R12, R12
+	MOVW  R10, (R8)(R12<<2)
+	ADD   R10, R0, R15
+	MOVWU 1(R15), R12
+	LSL   $0x20, R12, R12
+	MUL   R6, R12, R12
+	LSR   $0x32, R12, R12
+	ADD   $1, R10, R13
+	MOVW  R13, (R9)(R12<<2)
+	MOVD  (R0)(R11), R12
+	LSL   $0x08, R12, R12
+	MUL   R5, R12, R12
+	LSR   $0x2f, R12, R12
+	MOVW  R11, (R8)(R12<<2)
+	ADD   R11, R0, R15
+	MOVWU 1(R15), R12
+	LSL   $0x20, R12, R12
+	MUL   R6, R12, R12
+	LSR   $0x32, R12, R12
+	ADD   $1, R11, R13
+	MOVW  R13, (R9)(R12<<2)
+	ADD   $1, R10, R10
+	SUB   $1, R11, R11
+	ADD   R11, R10, R9
+	ADD   $1, R9, R9
+	LSR   $0x01, R9, R9
+
+index_loop_13_encodeBetterBlockSIMDAsm:
+	CMP  R11, R9
+	BGE  indexed_12_encodeBetterBlockSIMDAsm
+	MOVD (R0)(R10), R12
+	LSL  $0x08, R12, R12
+	MUL  R5, R12, R12
+	LSR  $0x2f, R12, R12
+	MOVW R10, (R8)(R12<<2)
+	MOVD (R0)(R9), R12
+	LSL  $0x08, R12, R12
+	MUL  R5, R12, R12
+	LSR  $0x2f, R12, R12
+	MOVW R9, (R8)(R12<<2)
+	ADD  $0x02, R10, R10
+	ADD  $0x02, R9, R9
+	JMP  index_loop_13_encodeBetterBlockSIMDAsm
+
+indexed_12_encodeBetterBlockSIMDAsm:
+	MOVD R1, R8
+	SUB  R20, R8, R8
+	CMP  $0x00000120, R8
+	BHI  exit2_0_14_encodeBetterBlockSIMDAsm
+	MOVD 8(RSP), R16
+	CMP  R16, R20
+	BGT  exit2_0_14_encodeBetterBlockSIMDAsm
+	MOVD R3, R9
+	SUB  R1, R9, R9
+	CMP  $0x20, R9
+	BLS  one_op_15_encodeBetterBlockSIMDAsm
+	CMP  $0x00000120, R9
+	BHI  split_16_encodeBetterBlockSIMDAsm
+	CMP  $0x20, R7
+	BLO  split_16_encodeBetterBlockSIMDAsm
+
+one_op_15_encodeBetterBlockSIMDAsm:
+	LSR   $0x03, R7, R1
+	ORR   $0x01, R1, R1
+	CLZ   R1, R16
+	MOVD  $63, R1
+	SUB   R16, R1, R1
+	LSR   R1, R7, R10
+	ADD   R1<<3, R10, R11
+	MOVB  R11, (R26)
+	ADD   $1, R26, R26
+	LSL   R1, R10, R10
+	MOVD  R7, R11
+	SUB   R10, R11, R11
+	MOVD  R25, R10
+	ADD   R1, R10, R10
+	LSL   R25, R11, R11
+	MOVD  88(RSP), R16
+	ORR   R16, R11, R11
+	MOVW  R11, (R17)
+	MOVD  R10, R1
+	AND   $0x20, R1, R1
+	LSR   R1, R11, R11
+	MOVD  R11, 88(RSP)
+	LSR   $0x03, R1, R1
+	ADD   R1, R17, R17
+	AND   $0x1f, R10, R10
+	MOVD  R10, R25
+	MOVD  $0x00000021, R1
+	CMP   R1, R8
+	CSEL  LO, R8, R1, R1
+	MOVB  R1, (R22)
+	TST   R8, R8
+	CSET  NE, R1
+	ADD   R1, R22, R22
+	ADD   R0, R20, R20
+	MOVD  R23, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	CMP   $0x20, R8
+	BHI   lits_long_17_encodeBetterBlockSIMDAsm
+
+lits_done_18_encodeBetterBlockSIMDAsm:
+	ADD  R8, R23, R23
+	ADD  R1, R1, R1
+	ADD  $1, R0, R21
+	SUB  R7, R21, R21
+	CMP  $0x20, R9
+	BHI  match_long_20_encodeBetterBlockSIMDAsm
+	ADD  R9<<2, R1, R1
+	CMP  R9, R7
+	CSET LO, R8
+	ORR  R8, R24, R24
+
+match_tok_21_encodeBetterBlockSIMDAsm:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_0_19_encodeBetterBlockSIMDAsm
+	CMP  R2, R3
+	BGE  exit0_0_1_encodeBetterBlockSIMDAsm
+	MOVD (R0)(R3), R1
+	MOVD tab+32(FP), R8
+	ADD  $524288, R8, R9
+	JMP  search_encodeBetterBlockSIMDAsm
+
+repeat_encodeBetterBlockSIMDAsm:
+	ADD  $1, R3, R1
+	ADD  $1, R0, R7
+	SUB  R21, R7, R7
+	MOVD R1, R11
+	SUB  R7, R11, R11
+
+rep_back_22_encodeBetterBlockSIMDAsm:
+	CMP   R20, R1
+	BLE   rep_back_end_23_encodeBetterBlockSIMDAsm
+	TST   R11, R11
+	BLE   rep_back_end_23_encodeBetterBlockSIMDAsm
+	ADD   R11, R0, R15
+	MOVBU -1(R15), R12
+	ADD   R1, R0, R15
+	MOVBU -1(R15), R13
+	CMP   R13, R12
+	BNE   rep_back_end_23_encodeBetterBlockSIMDAsm
+	SUB   $1, R11, R11
+	SUB   $1, R1, R1
+	JMP   rep_back_22_encodeBetterBlockSIMDAsm
+
+rep_back_end_23_encodeBetterBlockSIMDAsm:
+	ADD  $0x05, R3, R3
+	MOVD R3, R10
+	SUB  R7, R10, R10
+	JMP  ext_check_25_encodeBetterBlockSIMDAsm
+	PCALIGN $0x20
+
+ext_loop_24_encodeBetterBlockSIMDAsm:
+	ADD $0x08, R3, R3
+	ADD $0x08, R10, R10
+
+ext_check_25_encodeBetterBlockSIMDAsm:
+	CMP  R2, R3
+	BGT  ext_tail_27_encodeBetterBlockSIMDAsm
+	MOVD (R0)(R3), R11
+	MOVD (R0)(R10), R16
+	SUBS R16, R11, R11
+	BEQ  ext_loop_24_encodeBetterBlockSIMDAsm
+	RBIT R11, R11
+	CLZ  R11, R11
+	LSR  $0x03, R11, R11
+	ADD  R11, R3, R3
+
+ext_end_26_encodeBetterBlockSIMDAsm:
+	ADD $33, R1, R10
+	CMP R10, R3
+	BEQ cut_28_encodeBetterBlockSIMDAsm
+
+cut_back_29_encodeBetterBlockSIMDAsm:
+	CMP R2, R3
+	BGE indexed_30_encodeBetterBlockSIMDAsm
+	ADD $1, R1, R10
+	SUB $2, R3, R11
+
+index_loop_31_encodeBetterBlockSIMDAsm:
+	CMP   R11, R10
+	BGE   indexed_30_encodeBetterBlockSIMDAsm
+	MOVD  (R0)(R10), R12
+	LSL   $0x08, R12, R12
+	MUL   R5, R12, R12
+	LSR   $0x2f, R12, R12
+	MOVW  R10, (R8)(R12<<2)
+	ADD   R10, R0, R15
+	MOVWU 1(R15), R12
+	LSL   $0x20, R12, R12
+	MUL   R6, R12, R12
+	LSR   $0x32, R12, R12
+	ADD   $1, R10, R13
+	MOVW  R13, (R9)(R12<<2)
+	MOVD  (R0)(R11), R12
+	LSL   $0x08, R12, R12
+	MUL   R5, R12, R12
+	LSR   $0x2f, R12, R12
+	MOVW  R11, (R8)(R12<<2)
+	ADD   R11, R0, R15
+	MOVWU 1(R15), R12
+	LSL   $0x20, R12, R12
+	MUL   R6, R12, R12
+	LSR   $0x32, R12, R12
+	ADD   $1, R11, R13
+	MOVW  R13, (R9)(R12<<2)
+	ADD   $0x02, R10, R10
+	SUB   $0x02, R11, R11
+	JMP   index_loop_31_encodeBetterBlockSIMDAsm
+
+indexed_30_encodeBetterBlockSIMDAsm:
+	MOVD R1, R8
+	SUB  R20, R8, R8
+	CMP  $0x00000120, R8
+	BHI  exit3_0_32_encodeBetterBlockSIMDAsm
+	MOVD 8(RSP), R16
+	CMP  R16, R20
+	BGT  exit3_0_32_encodeBetterBlockSIMDAsm
+	MOVD R3, R9
+	SUB  R1, R9, R9
+	CMP  $0x20, R9
+	BLS  one_op_33_encodeBetterBlockSIMDAsm
+	CMP  $0x00000120, R9
+	BHI  split_34_encodeBetterBlockSIMDAsm
+	CMP  $0x20, R7
+	BLO  split_34_encodeBetterBlockSIMDAsm
+
+one_op_33_encodeBetterBlockSIMDAsm:
+	MOVD  $0x00000021, R1
+	CMP   R1, R8
+	CSEL  LO, R8, R1, R1
+	MOVB  R1, (R22)
+	TST   R8, R8
+	CSET  NE, R1
+	ADD   R1, R22, R22
+	ADD   R0, R20, R20
+	MOVD  R23, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	CMP   $0x20, R8
+	BHI   lits_long_35_encodeBetterBlockSIMDAsm
+
+lits_done_36_encodeBetterBlockSIMDAsm:
+	ADD  R8, R23, R23
+	ADD  R1, R1, R1
+	ADD  $1, R1, R1
+	CMP  $0x20, R9
+	BHI  match_long_37_encodeBetterBlockSIMDAsm
+	ADD  R9<<2, R1, R1
+	CMP  R9, R7
+	CSET LO, R8
+	ORR  R8, R24, R24
+
+match_tok_38_encodeBetterBlockSIMDAsm:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_0_19_encodeBetterBlockSIMDAsm
+	CMP  R2, R3
+	BGE  exit0_0_1_encodeBetterBlockSIMDAsm
+	MOVD (R0)(R3), R1
+	MOVD tab+32(FP), R8
+	ADD  $524288, R8, R9
+	JMP  search_encodeBetterBlockSIMDAsm
+
+exit0_0_1_encodeBetterBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000000, R16
+	MOVD R16, ret+56(FP)
+	JMP  return_encodeBetterBlockSIMDAsm
+
+ext_tail_7_encodeBetterBlockSIMDAsm:
+	MOVD src_len+16(FP), R12
+
+ext_tail_loop_39_encodeBetterBlockSIMDAsm:
+	CMP   R12, R3
+	BGE   ext_end_6_encodeBetterBlockSIMDAsm
+	MOVBU (R0)(R3), R13
+	MOVBU (R0)(R10), R14
+	CMP   R14, R13
+	BNE   ext_end_6_encodeBetterBlockSIMDAsm
+	ADD   $1, R3, R3
+	ADD   $1, R10, R10
+	JMP   ext_tail_loop_39_encodeBetterBlockSIMDAsm
+
+short_8_encodeBetterBlockSIMDAsm:
+	MOVD maxOff5+48(FP), R12
+	CMP  R10, R3
+	BEQ  five_40_encodeBetterBlockSIMDAsm
+	MOVD maxOff4+40(FP), R12
+
+five_40_encodeBetterBlockSIMDAsm:
+	CMP  R12, R7
+	BLS  near_9_encodeBetterBlockSIMDAsm
+	ADD  $1, R0, R10
+	SUB  R21, R10, R10
+	CMP  R7, R10
+	BEQ  near_9_encodeBetterBlockSIMDAsm
+	ADD  $1, R11, R3
+	CMP  R2, R3
+	BGE  exit0_0_1_encodeBetterBlockSIMDAsm
+	MOVD (R0)(R3), R1
+	MOVD tab+32(FP), R8
+	ADD  $524288, R8, R9
+	JMP  search_encodeBetterBlockSIMDAsm
+
+cut_10_encodeBetterBlockSIMDAsm:
+	SUB $1, R3, R3
+	JMP cut_back_11_encodeBetterBlockSIMDAsm
+
+exit2_0_14_encodeBetterBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD R7, 147592(R0)
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000002, R16
+	MOVD R16, ret+56(FP)
+	JMP  return_encodeBetterBlockSIMDAsm
+
+split_16_encodeBetterBlockSIMDAsm:
+	MOVD $0x00004000, R10
+	SUB  R19, R10, R10
+	CMP  $0x20, R7
+	BLO  split_short_41_encodeBetterBlockSIMDAsm
+	ADD  R10<<3, R10, R10
+
+split_short_41_encodeBetterBlockSIMDAsm:
+	LSL $0x05, R10, R10
+	CMP R10, R9
+	BHI exit2_0_14_encodeBetterBlockSIMDAsm
+	JMP one_op_15_encodeBetterBlockSIMDAsm
+
+lits_long_17_encodeBetterBlockSIMDAsm:
+	SUB  $33, R8, R12
+	MOVD st+0(FP), R13
+	MOVD 24(R13), R14
+	ADD  R14, R13, R15
+	MOVB R12, 49257(R15)
+	ADD  $1, R14, R14
+	MOVD R14, 24(R13)
+	SUB  $32, R8, R12
+
+lits_loop_42_encodeBetterBlockSIMDAsm:
+	ADD   $0x20, R20, R20
+	ADD   $0x20, R11, R11
+	CMP   $0x20, R12
+	BLS   lits_last_43_encodeBetterBlockSIMDAsm
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	SUB   $0x20, R12, R12
+	JMP   lits_loop_42_encodeBetterBlockSIMDAsm
+
+lits_last_43_encodeBetterBlockSIMDAsm:
+	ADD   R12, R20, R20
+	SUB   $32, R20, R20
+	ADD   R12, R11, R11
+	SUB   $32, R11, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	JMP   lits_done_18_encodeBetterBlockSIMDAsm
+
+exit1_0_19_encodeBetterBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, ret+56(FP)
+	JMP  return_encodeBetterBlockSIMDAsm
+
+match_long_20_encodeBetterBlockSIMDAsm:
+	CMP $0x20, R7
+	BLO match_short_45_encodeBetterBlockSIMDAsm
+	CMP $0x00000120, R9
+	BHI match_big_46_encodeBetterBlockSIMDAsm
+
+match_esc_44_encodeBetterBlockSIMDAsm:
+	SUB  $33, R9, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_21_encodeBetterBlockSIMDAsm
+
+match_big_46_encodeBetterBlockSIMDAsm:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R10
+	ADD  R10, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R8)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R9, R9
+	CMP  $0x00000120, R9
+	BHI  match_big_46_encodeBetterBlockSIMDAsm
+	CMP  $0x20, R9
+	BHI  match_esc_44_encodeBetterBlockSIMDAsm
+	JMP  match_rest_47_encodeBetterBlockSIMDAsm
+
+match_short_45_encodeBetterBlockSIMDAsm:
+	ORR $0x01, R24, R24
+
+match_short_loop_48_encodeBetterBlockSIMDAsm:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R9, R9
+	CMP  $0x20, R9
+	BHI  match_short_loop_48_encodeBetterBlockSIMDAsm
+
+match_rest_47_encodeBetterBlockSIMDAsm:
+	ADD R9<<2, R1, R1
+	JMP match_tok_21_encodeBetterBlockSIMDAsm
+
+ext_tail_27_encodeBetterBlockSIMDAsm:
+	MOVD src_len+16(FP), R11
+
+ext_tail_loop_49_encodeBetterBlockSIMDAsm:
+	CMP   R11, R3
+	BGE   ext_end_26_encodeBetterBlockSIMDAsm
+	MOVBU (R0)(R3), R12
+	MOVBU (R0)(R10), R13
+	CMP   R13, R12
+	BNE   ext_end_26_encodeBetterBlockSIMDAsm
+	ADD   $1, R3, R3
+	ADD   $1, R10, R10
+	JMP   ext_tail_loop_49_encodeBetterBlockSIMDAsm
+
+cut_28_encodeBetterBlockSIMDAsm:
+	SUB $1, R3, R3
+	JMP cut_back_29_encodeBetterBlockSIMDAsm
+
+exit3_0_32_encodeBetterBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000003, R16
+	MOVD R16, ret+56(FP)
+	JMP  return_encodeBetterBlockSIMDAsm
+
+split_34_encodeBetterBlockSIMDAsm:
+	MOVD $0x00004000, R10
+	SUB  R19, R10, R10
+	CMP  $0x20, R7
+	BLO  split_short_50_encodeBetterBlockSIMDAsm
+	ADD  R10<<3, R10, R10
+
+split_short_50_encodeBetterBlockSIMDAsm:
+	LSL $0x05, R10, R10
+	CMP R10, R9
+	BHI exit3_0_32_encodeBetterBlockSIMDAsm
+	JMP one_op_33_encodeBetterBlockSIMDAsm
+
+lits_long_35_encodeBetterBlockSIMDAsm:
+	SUB  $33, R8, R12
+	MOVD st+0(FP), R13
+	MOVD 24(R13), R14
+	ADD  R14, R13, R15
+	MOVB R12, 49257(R15)
+	ADD  $1, R14, R14
+	MOVD R14, 24(R13)
+	SUB  $32, R8, R12
+
+lits_loop_51_encodeBetterBlockSIMDAsm:
+	ADD   $0x20, R20, R20
+	ADD   $0x20, R11, R11
+	CMP   $0x20, R12
+	BLS   lits_last_52_encodeBetterBlockSIMDAsm
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	SUB   $0x20, R12, R12
+	JMP   lits_loop_51_encodeBetterBlockSIMDAsm
+
+lits_last_52_encodeBetterBlockSIMDAsm:
+	ADD   R12, R20, R20
+	SUB   $32, R20, R20
+	ADD   R12, R11, R11
+	SUB   $32, R11, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	JMP   lits_done_36_encodeBetterBlockSIMDAsm
+
+match_long_37_encodeBetterBlockSIMDAsm:
+	CMP $0x20, R7
+	BLO match_short_54_encodeBetterBlockSIMDAsm
+	CMP $0x00000120, R9
+	BHI match_big_55_encodeBetterBlockSIMDAsm
+
+match_esc_53_encodeBetterBlockSIMDAsm:
+	SUB  $33, R9, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_38_encodeBetterBlockSIMDAsm
+
+match_big_55_encodeBetterBlockSIMDAsm:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R10
+	ADD  R10, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R8)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R9, R9
+	CMP  $0x00000120, R9
+	BHI  match_big_55_encodeBetterBlockSIMDAsm
+	CMP  $0x20, R9
+	BHI  match_esc_53_encodeBetterBlockSIMDAsm
+	JMP  match_rest_56_encodeBetterBlockSIMDAsm
+
+match_short_54_encodeBetterBlockSIMDAsm:
+	ORR $0x01, R24, R24
+
+match_short_loop_57_encodeBetterBlockSIMDAsm:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R9, R9
+	CMP  $0x20, R9
+	BHI  match_short_loop_57_encodeBetterBlockSIMDAsm
+
+match_rest_56_encodeBetterBlockSIMDAsm:
+	ADD R9<<2, R1, R1
+	JMP match_tok_38_encodeBetterBlockSIMDAsm
+
+return_encodeBetterBlockSIMDAsm:
+	MOVD st+0(FP), R0
+	MOVD R19, (R0)
+	SUB  R0, R22, R22
+	SUB  $0x00004069, R22, R22
+	MOVD R22, 8(R0)
+	SUB  R0, R26, R26
+	SUB  $0x00008069, R26, R26
+	MOVD R26, 16(R0)
+	SUB  R0, R17, R17
+	SUB  $0x00014069, R17, R17
+	MOVD R17, 32(R0)
+	MOVD 88(RSP), R1
+	MOVD R1, 56(R0)
+	MOVD R25, 48(R0)
+	MOVD R20, 64(R0)
+	MOVD src_base+8(FP), R1
+	ADD  $1, R1, R1
+	SUB  R21, R1, R1
+	MOVD R1, 72(R0)
+	MOVD 80(R0), R16
+	SUB  R16, R23, R23
+	MOVD R23, 40(R0)
+	MOVB R24, 104(R0)
+	RET
+
+// func encodeFastBlockSIMDAsm64K(st *simdStreams, src []byte, tab *[16384]byte) int
+// Requires: BMI, CMOV, SSE2
+TEXT ·encodeFastBlockSIMDAsm64K(SB), $88-48
+	MOVD    st+0(FP), R1
+	MOVD    src_base+8(FP), R0
+	MOVD    (R1), R19
+	MOVD    8(R1), R24
+	ADD     R24, R1, R24
+	ADD     $16489, R24, R24
+	MOVD    16(R1), R25
+	ADD     R25, R1, R25
+	ADD     $32873, R25, R25
+	MOVD    32(R1), R26
+	ADD     R26, R1, R26
+	ADD     $82025, R26, R26
+	MOVD    56(R1), R2
+	MOVD    R2, 88(RSP)
+	MOVD    48(R1), R21
+	MOVD    64(R1), R20
+	ADD     $1, R0, R23
+	MOVD    72(R1), R16
+	SUB     R16, R23, R23
+	MOVD    40(R1), R17
+	MOVD    80(R1), R16
+	ADD     R16, R17, R17
+	MOVBU   104(R1), R22
+	MOVD    src_len+16(FP), R3
+	SUB     $8, R3, R2
+	SUB     $32, R3, R3
+	MOVD    R3, 8(RSP)
+	MOVD    64(R1), R3
+	MOVD    tab+32(FP), R5
+	MOVD    $0xcf1bbcdcb7a56463, R6
+	MOVD    st+0(FP), R1
+	MOVD    147568(R1), R16
+	CMP     $0x01, R16
+	BEQ     post_encodeFastBlockSIMDAsm64K
+	MOVD    $0x00000001, R1
+	CMP     R1, R3
+	CSEL    LT, R1, R3, R3
+	CMP     R2, R3
+	BGE     exit0_0_1_encodeFastBlockSIMDAsm64K
+	MOVD    (R0)(R3), R1
+	PCALIGN $0x40
+
+search_encodeFastBlockSIMDAsm64K:
+	MOVD  R3, R7
+	SUB   R20, R7, R7
+	LSR   $0x05, R7, R7
+	ADD   R7, R3, R7
+	ADD   $5, R7, R7
+	CMP   R2, R7
+	BGT   exit0_0_1_encodeFastBlockSIMDAsm64K
+	MOVD  R1, R9
+	MUL   R6, R9, R9
+	LSR   $0x33, R9, R9
+	ADD   R3, R0, R15
+	MOVD  1(R15), R10
+	MOVD  R10, R11
+	MUL   R6, R11, R11
+	LSR   $0x33, R11, R11
+	MOVHU (R5)(R9<<1), R8
+	MOVHU (R5)(R11<<1), R12
+	MOVH  R3, (R5)(R9<<1)
+	ADD   $1, R3, R9
+	MOVH  R9, (R5)(R11<<1)
+	ADD   R3, R0, R15
+	MOVD  2(R15), R11
+	MOVD  R11, R13
+	MUL   R6, R13, R13
+	LSR   $0x33, R13, R13
+	MOVWU (R23)(R3), R16
+	CMPW  R10, R16
+	BEQ   repeat_encodeFastBlockSIMDAsm64K
+	MOVD  (R0)(R8), R16
+	CMP   R1, R16
+	BEQ   match_encodeFastBlockSIMDAsm64K
+	MOVHU (R5)(R13<<1), R8
+	MOVD  (R0)(R12), R16
+	CMP   R10, R16
+	BEQ   match1_encodeFastBlockSIMDAsm64K
+	ADD   $2, R3, R9
+	MOVH  R9, (R5)(R13<<1)
+	MOVD  (R0)(R8), R16
+	CMP   R11, R16
+	BEQ   match2_encodeFastBlockSIMDAsm64K
+	MOVD  (R0)(R7), R1
+	MOVD  R7, R3
+	JMP   search_encodeFastBlockSIMDAsm64K
+
+match1_encodeFastBlockSIMDAsm64K:
+	ADD  $2, R3, R9
+	MOVH R9, (R5)(R13<<1)
+	MOVD R12, R8
+	ADD  $1, R3, R3
+	JMP  match_encodeFastBlockSIMDAsm64K
+
+match2_encodeFastBlockSIMDAsm64K:
+	ADD $0x02, R3, R3
+
+match_encodeFastBlockSIMDAsm64K:
+	MOVD R3, R1
+	MOVD R3, R7
+	SUB  R8, R7, R7
+	ADD  $0x08, R3, R3
+	ADD  $0x08, R8, R8
+	JMP  ext_check_3_encodeFastBlockSIMDAsm64K
+	PCALIGN $0x20
+
+ext_loop_2_encodeFastBlockSIMDAsm64K:
+	ADD $0x08, R3, R3
+	ADD $0x08, R8, R8
+
+ext_check_3_encodeFastBlockSIMDAsm64K:
+	CMP  R2, R3
+	BGT  ext_end_4_encodeFastBlockSIMDAsm64K
+	MOVD (R0)(R3), R9
+	MOVD (R0)(R8), R16
+	SUBS R16, R9, R9
+	BEQ  ext_loop_2_encodeFastBlockSIMDAsm64K
+	RBIT R9, R9
+	CLZ  R9, R9
+	LSR  $0x03, R9, R9
+	ADD  R9, R3, R3
+
+ext_end_4_encodeFastBlockSIMDAsm64K:
+	MOVD R1, R8
+	SUB  R20, R8, R8
+	CMP  $0x00000120, R8
+	BHI  exit2_1_5_encodeFastBlockSIMDAsm64K
+	MOVD 8(RSP), R16
+	CMP  R16, R20
+	BGT  exit2_1_5_encodeFastBlockSIMDAsm64K
+	MOVD R3, R9
+	SUB  R1, R9, R9
+	CMP  $0x20, R9
+	BLS  one_op_6_encodeFastBlockSIMDAsm64K
+	CMP  $0x00000120, R9
+	BHI  split_7_encodeFastBlockSIMDAsm64K
+	CMP  $0x20, R7
+	BLO  split_7_encodeFastBlockSIMDAsm64K
+
+one_op_6_encodeFastBlockSIMDAsm64K:
+	LSR   $0x03, R7, R1
+	ORR   $0x01, R1, R1
+	CLZ   R1, R16
+	MOVD  $63, R1
+	SUB   R16, R1, R1
+	LSR   R1, R7, R10
+	ADD   R1<<3, R10, R11
+	MOVB  R11, (R25)
+	ADD   $1, R25, R25
+	LSL   R1, R10, R10
+	MOVD  R7, R11
+	SUB   R10, R11, R11
+	MOVD  R21, R10
+	ADD   R1, R10, R10
+	LSL   R21, R11, R11
+	MOVD  88(RSP), R16
+	ORR   R16, R11, R11
+	MOVW  R11, (R26)
+	MOVD  R10, R1
+	AND   $0x20, R1, R1
+	LSR   R1, R11, R11
+	MOVD  R11, 88(RSP)
+	LSR   $0x03, R1, R1
+	ADD   R1, R26, R26
+	AND   $0x1f, R10, R10
+	MOVD  R10, R21
+	MOVD  $0x00000021, R1
+	CMP   R1, R8
+	CSEL  LO, R8, R1, R1
+	MOVB  R1, (R24)
+	TST   R8, R8
+	CSET  NE, R1
+	ADD   R1, R24, R24
+	ADD   R0, R20, R20
+	MOVD  R17, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	CMP   $0x20, R8
+	BHI   lits_long_8_encodeFastBlockSIMDAsm64K
+
+lits_done_9_encodeFastBlockSIMDAsm64K:
+	ADD  R8, R17, R17
+	ADD  R1, R1, R1
+	ADD  $1, R0, R23
+	SUB  R7, R23, R23
+	CMP  $0x20, R9
+	BHI  match_long_11_encodeFastBlockSIMDAsm64K
+	ADD  R9<<2, R1, R1
+	CMP  R9, R7
+	CSET LO, R8
+	ORR  R8, R22, R22
+
+match_tok_12_encodeFastBlockSIMDAsm64K:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_1_10_encodeFastBlockSIMDAsm64K
+
+post_encodeFastBlockSIMDAsm64K:
+	CMP   R2, R3
+	BGE   exit0_0_1_encodeFastBlockSIMDAsm64K
+	SUB   $2, R3, R1
+	MOVD  (R0)(R1), R7
+	MUL   R6, R7, R7
+	LSR   $0x33, R7, R7
+	MOVD  (R0)(R3), R9
+	MOVD  R9, R10
+	MUL   R6, R10, R10
+	LSR   $0x33, R10, R10
+	MOVHU (R5)(R10<<1), R8
+	MOVH  R1, (R5)(R7<<1)
+	MOVH  R3, (R5)(R10<<1)
+	MOVD  (R0)(R8), R16
+	CMP   R9, R16
+	BNE   post_none_encodeFastBlockSIMDAsm64K
+	MOVD  R3, R1
+	MOVD  R3, R7
+	SUB   R8, R7, R7
+	ADD   $0x08, R3, R3
+	ADD   $0x08, R8, R8
+	JMP   ext_check_14_encodeFastBlockSIMDAsm64K
+	PCALIGN $0x20
+
+ext_loop_13_encodeFastBlockSIMDAsm64K:
+	ADD $0x08, R3, R3
+	ADD $0x08, R8, R8
+
+ext_check_14_encodeFastBlockSIMDAsm64K:
+	CMP  R2, R3
+	BGT  ext_end_15_encodeFastBlockSIMDAsm64K
+	MOVD (R0)(R3), R9
+	MOVD (R0)(R8), R16
+	SUBS R16, R9, R9
+	BEQ  ext_loop_13_encodeFastBlockSIMDAsm64K
+	RBIT R9, R9
+	CLZ  R9, R9
+	LSR  $0x03, R9, R9
+	ADD  R9, R3, R3
+
+ext_end_15_encodeFastBlockSIMDAsm64K:
+	MOVD R3, R8
+	SUB  R1, R8, R8
+	CMP  $0x20, R8
+	BLS  one_op_17_encodeFastBlockSIMDAsm64K
+	CMP  $0x00000120, R8
+	BHI  split_18_encodeFastBlockSIMDAsm64K
+	CMP  $0x20, R7
+	BLO  split_18_encodeFastBlockSIMDAsm64K
+
+one_op_17_encodeFastBlockSIMDAsm64K:
+	LSR  $0x03, R7, R1
+	ORR  $0x01, R1, R1
+	CLZ  R1, R16
+	MOVD $63, R1
+	SUB  R16, R1, R1
+	LSR  R1, R7, R9
+	ADD  R1<<3, R9, R10
+	MOVB R10, (R25)
+	ADD  $1, R25, R25
+	LSL  R1, R9, R9
+	MOVD R7, R10
+	SUB  R9, R10, R10
+	MOVD R21, R9
+	ADD  R1, R9, R9
+	LSL  R21, R10, R10
+	MOVD 88(RSP), R16
+	ORR  R16, R10, R10
+	MOVW R10, (R26)
+	MOVD R9, R1
+	AND  $0x20, R1, R1
+	LSR  R1, R10, R10
+	MOVD R10, 88(RSP)
+	LSR  $0x03, R1, R1
+	ADD  R1, R26, R26
+	AND  $0x1f, R9, R9
+	MOVD R9, R21
+	MOVD $0, R1
+	ADD  $1, R0, R23
+	SUB  R7, R23, R23
+	CMP  $0x20, R8
+	BHI  match_long_19_encodeFastBlockSIMDAsm64K
+	ADD  R8<<2, R1, R1
+	CMP  R8, R7
+	CSET LO, R9
+	ORR  R9, R22, R22
+
+match_tok_20_encodeFastBlockSIMDAsm64K:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_1_10_encodeFastBlockSIMDAsm64K
+	JMP  post_encodeFastBlockSIMDAsm64K
+
+post_none_encodeFastBlockSIMDAsm64K:
+	ADD  $1, R3, R3
+	MOVD (R0)(R3), R1
+	JMP  search_encodeFastBlockSIMDAsm64K
+
+repeat_encodeFastBlockSIMDAsm64K:
+	ADD  $1, R3, R1
+	ADD  $1, R0, R7
+	SUB  R23, R7, R7
+	MOVD R1, R9
+	SUB  R7, R9, R9
+
+rep_back_21_encodeFastBlockSIMDAsm64K:
+	CMP   R20, R1
+	BLE   rep_back_end_22_encodeFastBlockSIMDAsm64K
+	TST   R9, R9
+	BLE   rep_back_end_22_encodeFastBlockSIMDAsm64K
+	ADD   R9, R0, R15
+	MOVBU -1(R15), R10
+	ADD   R1, R0, R15
+	MOVBU -1(R15), R11
+	CMP   R11, R10
+	BNE   rep_back_end_22_encodeFastBlockSIMDAsm64K
+	SUB   $1, R9, R9
+	SUB   $1, R1, R1
+	JMP   rep_back_21_encodeFastBlockSIMDAsm64K
+
+rep_back_end_22_encodeFastBlockSIMDAsm64K:
+	ADD  $0x05, R3, R3
+	MOVD R3, R8
+	SUB  R7, R8, R8
+	JMP  ext_check_24_encodeFastBlockSIMDAsm64K
+	PCALIGN $0x20
+
+ext_loop_23_encodeFastBlockSIMDAsm64K:
+	ADD $0x08, R3, R3
+	ADD $0x08, R8, R8
+
+ext_check_24_encodeFastBlockSIMDAsm64K:
+	CMP  R2, R3
+	BGT  ext_end_25_encodeFastBlockSIMDAsm64K
+	MOVD (R0)(R3), R9
+	MOVD (R0)(R8), R16
+	SUBS R16, R9, R9
+	BEQ  ext_loop_23_encodeFastBlockSIMDAsm64K
+	RBIT R9, R9
+	CLZ  R9, R9
+	LSR  $0x03, R9, R9
+	ADD  R9, R3, R3
+
+ext_end_25_encodeFastBlockSIMDAsm64K:
+	MOVD R1, R8
+	SUB  R20, R8, R8
+	CMP  $0x00000120, R8
+	BHI  exit3_0_26_encodeFastBlockSIMDAsm64K
+	MOVD 8(RSP), R16
+	CMP  R16, R20
+	BGT  exit3_0_26_encodeFastBlockSIMDAsm64K
+	MOVD R3, R9
+	SUB  R1, R9, R9
+	CMP  $0x20, R9
+	BLS  one_op_27_encodeFastBlockSIMDAsm64K
+	CMP  $0x00000120, R9
+	BHI  split_28_encodeFastBlockSIMDAsm64K
+	CMP  $0x20, R7
+	BLO  split_28_encodeFastBlockSIMDAsm64K
+
+one_op_27_encodeFastBlockSIMDAsm64K:
+	MOVD  $0x00000021, R1
+	CMP   R1, R8
+	CSEL  LO, R8, R1, R1
+	MOVB  R1, (R24)
+	TST   R8, R8
+	CSET  NE, R1
+	ADD   R1, R24, R24
+	ADD   R0, R20, R20
+	MOVD  R17, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	CMP   $0x20, R8
+	BHI   lits_long_29_encodeFastBlockSIMDAsm64K
+
+lits_done_30_encodeFastBlockSIMDAsm64K:
+	ADD  R8, R17, R17
+	ADD  R1, R1, R1
+	ADD  $1, R1, R1
+	CMP  $0x20, R9
+	BHI  match_long_32_encodeFastBlockSIMDAsm64K
+	ADD  R9<<2, R1, R1
+	CMP  R9, R7
+	CSET LO, R8
+	ORR  R8, R22, R22
+
+match_tok_33_encodeFastBlockSIMDAsm64K:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_0_31_encodeFastBlockSIMDAsm64K
+	CMP  R2, R3
+	BGE  exit0_0_1_encodeFastBlockSIMDAsm64K
+	MOVD (R0)(R3), R1
+	JMP  search_encodeFastBlockSIMDAsm64K
+
+exit0_0_1_encodeFastBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000000, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeFastBlockSIMDAsm64K
+
+exit2_1_5_encodeFastBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD R7, 147592(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000002, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeFastBlockSIMDAsm64K
+
+split_7_encodeFastBlockSIMDAsm64K:
+	MOVD $0x00004000, R10
+	SUB  R19, R10, R10
+	CMP  $0x20, R7
+	BLO  split_short_34_encodeFastBlockSIMDAsm64K
+	ADD  R10<<3, R10, R10
+
+split_short_34_encodeFastBlockSIMDAsm64K:
+	LSL $0x05, R10, R10
+	CMP R10, R9
+	BHI exit2_1_5_encodeFastBlockSIMDAsm64K
+	JMP one_op_6_encodeFastBlockSIMDAsm64K
+
+lits_long_8_encodeFastBlockSIMDAsm64K:
+	SUB  $33, R8, R12
+	MOVD st+0(FP), R13
+	MOVD 24(R13), R14
+	ADD  R14, R13, R15
+	MOVB R12, 49257(R15)
+	ADD  $1, R14, R14
+	MOVD R14, 24(R13)
+	SUB  $32, R8, R12
+
+lits_loop_35_encodeFastBlockSIMDAsm64K:
+	ADD   $0x20, R20, R20
+	ADD   $0x20, R11, R11
+	CMP   $0x20, R12
+	BLS   lits_last_36_encodeFastBlockSIMDAsm64K
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	SUB   $0x20, R12, R12
+	JMP   lits_loop_35_encodeFastBlockSIMDAsm64K
+
+lits_last_36_encodeFastBlockSIMDAsm64K:
+	ADD   R12, R20, R20
+	SUB   $32, R20, R20
+	ADD   R12, R11, R11
+	SUB   $32, R11, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	JMP   lits_done_9_encodeFastBlockSIMDAsm64K
+
+exit1_1_10_encodeFastBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD $0x00000001, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeFastBlockSIMDAsm64K
+
+match_long_11_encodeFastBlockSIMDAsm64K:
+	CMP $0x20, R7
+	BLO match_short_38_encodeFastBlockSIMDAsm64K
+	CMP $0x00000120, R9
+	BHI match_big_39_encodeFastBlockSIMDAsm64K
+
+match_esc_37_encodeFastBlockSIMDAsm64K:
+	SUB  $33, R9, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_12_encodeFastBlockSIMDAsm64K
+
+match_big_39_encodeFastBlockSIMDAsm64K:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R10
+	ADD  R10, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R8)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R9, R9
+	CMP  $0x00000120, R9
+	BHI  match_big_39_encodeFastBlockSIMDAsm64K
+	CMP  $0x20, R9
+	BHI  match_esc_37_encodeFastBlockSIMDAsm64K
+	JMP  match_rest_40_encodeFastBlockSIMDAsm64K
+
+match_short_38_encodeFastBlockSIMDAsm64K:
+	ORR $0x01, R22, R22
+
+match_short_loop_41_encodeFastBlockSIMDAsm64K:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R9, R9
+	CMP  $0x20, R9
+	BHI  match_short_loop_41_encodeFastBlockSIMDAsm64K
+
+match_rest_40_encodeFastBlockSIMDAsm64K:
+	ADD R9<<2, R1, R1
+	JMP match_tok_12_encodeFastBlockSIMDAsm64K
+
+exit2_1_16_encodeFastBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD R7, 147592(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000002, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeFastBlockSIMDAsm64K
+
+split_18_encodeFastBlockSIMDAsm64K:
+	MOVD $0x00004000, R9
+	SUB  R19, R9, R9
+	CMP  $0x20, R7
+	BLO  split_short_42_encodeFastBlockSIMDAsm64K
+	ADD  R9<<3, R9, R9
+
+split_short_42_encodeFastBlockSIMDAsm64K:
+	LSL $0x05, R9, R9
+	CMP R9, R8
+	BHI exit2_1_16_encodeFastBlockSIMDAsm64K
+	JMP one_op_17_encodeFastBlockSIMDAsm64K
+
+match_long_19_encodeFastBlockSIMDAsm64K:
+	CMP $0x20, R7
+	BLO match_short_44_encodeFastBlockSIMDAsm64K
+	CMP $0x00000120, R8
+	BHI match_big_45_encodeFastBlockSIMDAsm64K
+
+match_esc_43_encodeFastBlockSIMDAsm64K:
+	SUB  $33, R8, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_20_encodeFastBlockSIMDAsm64K
+
+match_big_45_encodeFastBlockSIMDAsm64K:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R9
+	MOVD 24(R9), R10
+	ADD  R10, R9, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R9)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R8, R8
+	CMP  $0x00000120, R8
+	BHI  match_big_45_encodeFastBlockSIMDAsm64K
+	CMP  $0x20, R8
+	BHI  match_esc_43_encodeFastBlockSIMDAsm64K
+	JMP  match_rest_46_encodeFastBlockSIMDAsm64K
+
+match_short_44_encodeFastBlockSIMDAsm64K:
+	ORR $0x01, R22, R22
+
+match_short_loop_47_encodeFastBlockSIMDAsm64K:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R8, R8
+	CMP  $0x20, R8
+	BHI  match_short_loop_47_encodeFastBlockSIMDAsm64K
+
+match_rest_46_encodeFastBlockSIMDAsm64K:
+	ADD R8<<2, R1, R1
+	JMP match_tok_20_encodeFastBlockSIMDAsm64K
+
+exit3_0_26_encodeFastBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000003, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeFastBlockSIMDAsm64K
+
+split_28_encodeFastBlockSIMDAsm64K:
+	MOVD $0x00004000, R10
+	SUB  R19, R10, R10
+	CMP  $0x20, R7
+	BLO  split_short_48_encodeFastBlockSIMDAsm64K
+	ADD  R10<<3, R10, R10
+
+split_short_48_encodeFastBlockSIMDAsm64K:
+	LSL $0x05, R10, R10
+	CMP R10, R9
+	BHI exit3_0_26_encodeFastBlockSIMDAsm64K
+	JMP one_op_27_encodeFastBlockSIMDAsm64K
+
+lits_long_29_encodeFastBlockSIMDAsm64K:
+	SUB  $33, R8, R12
+	MOVD st+0(FP), R13
+	MOVD 24(R13), R14
+	ADD  R14, R13, R15
+	MOVB R12, 49257(R15)
+	ADD  $1, R14, R14
+	MOVD R14, 24(R13)
+	SUB  $32, R8, R12
+
+lits_loop_49_encodeFastBlockSIMDAsm64K:
+	ADD   $0x20, R20, R20
+	ADD   $0x20, R11, R11
+	CMP   $0x20, R12
+	BLS   lits_last_50_encodeFastBlockSIMDAsm64K
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	SUB   $0x20, R12, R12
+	JMP   lits_loop_49_encodeFastBlockSIMDAsm64K
+
+lits_last_50_encodeFastBlockSIMDAsm64K:
+	ADD   R12, R20, R20
+	SUB   $32, R20, R20
+	ADD   R12, R11, R11
+	SUB   $32, R11, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	JMP   lits_done_30_encodeFastBlockSIMDAsm64K
+
+exit1_0_31_encodeFastBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeFastBlockSIMDAsm64K
+
+match_long_32_encodeFastBlockSIMDAsm64K:
+	CMP $0x20, R7
+	BLO match_short_52_encodeFastBlockSIMDAsm64K
+	CMP $0x00000120, R9
+	BHI match_big_53_encodeFastBlockSIMDAsm64K
+
+match_esc_51_encodeFastBlockSIMDAsm64K:
+	SUB  $33, R9, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_33_encodeFastBlockSIMDAsm64K
+
+match_big_53_encodeFastBlockSIMDAsm64K:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R10
+	ADD  R10, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R8)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R9, R9
+	CMP  $0x00000120, R9
+	BHI  match_big_53_encodeFastBlockSIMDAsm64K
+	CMP  $0x20, R9
+	BHI  match_esc_51_encodeFastBlockSIMDAsm64K
+	JMP  match_rest_54_encodeFastBlockSIMDAsm64K
+
+match_short_52_encodeFastBlockSIMDAsm64K:
+	ORR $0x01, R22, R22
+
+match_short_loop_55_encodeFastBlockSIMDAsm64K:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R9, R9
+	CMP  $0x20, R9
+	BHI  match_short_loop_55_encodeFastBlockSIMDAsm64K
+
+match_rest_54_encodeFastBlockSIMDAsm64K:
+	ADD R9<<2, R1, R1
+	JMP match_tok_33_encodeFastBlockSIMDAsm64K
+
+return_encodeFastBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD R19, (R0)
+	SUB  R0, R24, R24
+	SUB  $0x00004069, R24, R24
+	MOVD R24, 8(R0)
+	SUB  R0, R25, R25
+	SUB  $0x00008069, R25, R25
+	MOVD R25, 16(R0)
+	SUB  R0, R26, R26
+	SUB  $0x00014069, R26, R26
+	MOVD R26, 32(R0)
+	MOVD 88(RSP), R1
+	MOVD R1, 56(R0)
+	MOVD R21, 48(R0)
+	MOVD R20, 64(R0)
+	MOVD src_base+8(FP), R1
+	ADD  $1, R1, R1
+	SUB  R23, R1, R1
+	MOVD R1, 72(R0)
+	MOVD 80(R0), R16
+	SUB  R16, R17, R17
+	MOVD R17, 40(R0)
+	MOVB R22, 104(R0)
+	RET
+
+// func encodeBlockSIMDAsm64K(st *simdStreams, src []byte, tab *[32768]byte) int
+// Requires: BMI, CMOV, SSE2
+TEXT ·encodeBlockSIMDAsm64K(SB), $88-48
+	MOVD    st+0(FP), R1
+	MOVD    src_base+8(FP), R0
+	MOVD    (R1), R19
+	MOVD    8(R1), R24
+	ADD     R24, R1, R24
+	ADD     $16489, R24, R24
+	MOVD    16(R1), R25
+	ADD     R25, R1, R25
+	ADD     $32873, R25, R25
+	MOVD    32(R1), R26
+	ADD     R26, R1, R26
+	ADD     $82025, R26, R26
+	MOVD    56(R1), R2
+	MOVD    R2, 88(RSP)
+	MOVD    48(R1), R21
+	MOVD    64(R1), R20
+	ADD     $1, R0, R23
+	MOVD    72(R1), R16
+	SUB     R16, R23, R23
+	MOVD    40(R1), R17
+	MOVD    80(R1), R16
+	ADD     R16, R17, R17
+	MOVBU   104(R1), R22
+	MOVD    src_len+16(FP), R3
+	SUB     $8, R3, R2
+	SUB     $32, R3, R3
+	MOVD    R3, 8(RSP)
+	MOVD    64(R1), R3
+	MOVD    tab+32(FP), R5
+	MOVD    $0x0000cf1bbcdcbf9b, R6
+	MOVD    st+0(FP), R1
+	MOVD    147568(R1), R16
+	CMP     $0x01, R16
+	BEQ     post_encodeBlockSIMDAsm64K
+	MOVD    $0x00000001, R1
+	CMP     R1, R3
+	CSEL    LT, R1, R3, R3
+	CMP     R2, R3
+	BGE     exit0_0_1_encodeBlockSIMDAsm64K
+	MOVD    (R0)(R3), R1
+	PCALIGN $0x40
+
+search_encodeBlockSIMDAsm64K:
+	MOVD  R3, R7
+	SUB   R20, R7, R7
+	LSR   $0x06, R7, R7
+	ADD   R7, R3, R7
+	ADD   $4, R7, R7
+	CMP   R2, R7
+	BGT   exit0_0_1_encodeBlockSIMDAsm64K
+	LSL   $0x10, R1, R9
+	MUL   R6, R9, R9
+	LSR   $0x32, R9, R9
+	LSR   $0x08, R1, R10
+	LSL   $0x10, R10, R11
+	MUL   R6, R11, R11
+	LSR   $0x32, R11, R11
+	MOVHU (R5)(R9<<1), R8
+	MOVHU (R5)(R11<<1), R12
+	MOVH  R3, (R5)(R9<<1)
+	ADD   $1, R3, R9
+	MOVH  R9, (R5)(R11<<1)
+	LSR   $0x10, R1, R11
+	LSL   $0x10, R11, R13
+	MUL   R6, R13, R13
+	LSR   $0x32, R13, R13
+	MOVWU (R23)(R3), R16
+	CMPW  R10, R16
+	BEQ   repeat_encodeBlockSIMDAsm64K
+	MOVWU (R0)(R8), R16
+	CMPW  R1, R16
+	BEQ   match_encodeBlockSIMDAsm64K
+	MOVHU (R5)(R13<<1), R8
+	MOVWU (R0)(R12), R16
+	CMPW  R10, R16
+	BEQ   match1_encodeBlockSIMDAsm64K
+	ADD   $2, R3, R9
+	MOVH  R9, (R5)(R13<<1)
+	MOVWU (R0)(R8), R16
+	CMPW  R11, R16
+	BEQ   match2_encodeBlockSIMDAsm64K
+	MOVD  (R0)(R7), R1
+	MOVD  R7, R3
+	JMP   search_encodeBlockSIMDAsm64K
+
+match1_encodeBlockSIMDAsm64K:
+	ADD  $2, R3, R9
+	MOVH R9, (R5)(R13<<1)
+	MOVD R12, R8
+	ADD  $1, R3, R3
+	JMP  match_encodeBlockSIMDAsm64K
+
+match2_encodeBlockSIMDAsm64K:
+	ADD $0x02, R3, R3
+
+match_encodeBlockSIMDAsm64K:
+match_back_2_encodeBlockSIMDAsm64K:
+	TST   R8, R8
+	BLE   match_back_end_3_encodeBlockSIMDAsm64K
+	CMP   R20, R3
+	BLE   match_back_end_3_encodeBlockSIMDAsm64K
+	ADD   R8, R0, R15
+	MOVBU -1(R15), R7
+	ADD   R3, R0, R15
+	MOVBU -1(R15), R9
+	CMP   R9, R7
+	BNE   match_back_end_3_encodeBlockSIMDAsm64K
+	SUB   $1, R8, R8
+	SUB   $1, R3, R3
+	JMP   match_back_2_encodeBlockSIMDAsm64K
+
+match_back_end_3_encodeBlockSIMDAsm64K:
+	MOVD R3, R1
+	MOVD R3, R7
+	SUB  R8, R7, R7
+	ADD  $0x04, R3, R3
+	ADD  $0x04, R8, R8
+	JMP  ext_check_5_encodeBlockSIMDAsm64K
+	PCALIGN $0x20
+
+ext_loop_4_encodeBlockSIMDAsm64K:
+	ADD $0x08, R3, R3
+	ADD $0x08, R8, R8
+
+ext_check_5_encodeBlockSIMDAsm64K:
+	CMP  R2, R3
+	BGT  ext_end_6_encodeBlockSIMDAsm64K
+	MOVD (R0)(R3), R9
+	MOVD (R0)(R8), R16
+	SUBS R16, R9, R9
+	BEQ  ext_loop_4_encodeBlockSIMDAsm64K
+	RBIT R9, R9
+	CLZ  R9, R9
+	LSR  $0x03, R9, R9
+	ADD  R9, R3, R3
+
+ext_end_6_encodeBlockSIMDAsm64K:
+	MOVD R1, R8
+	SUB  R20, R8, R8
+	CMP  $0x00000120, R8
+	BHI  exit2_1_7_encodeBlockSIMDAsm64K
+	MOVD 8(RSP), R16
+	CMP  R16, R20
+	BGT  exit2_1_7_encodeBlockSIMDAsm64K
+	MOVD R3, R9
+	SUB  R1, R9, R9
+	CMP  $0x20, R9
+	BLS  one_op_8_encodeBlockSIMDAsm64K
+	CMP  $0x00000120, R9
+	BHI  split_9_encodeBlockSIMDAsm64K
+	CMP  $0x20, R7
+	BLO  split_9_encodeBlockSIMDAsm64K
+
+one_op_8_encodeBlockSIMDAsm64K:
+	LSR   $0x03, R7, R1
+	ORR   $0x01, R1, R1
+	CLZ   R1, R16
+	MOVD  $63, R1
+	SUB   R16, R1, R1
+	LSR   R1, R7, R10
+	ADD   R1<<3, R10, R11
+	MOVB  R11, (R25)
+	ADD   $1, R25, R25
+	LSL   R1, R10, R10
+	MOVD  R7, R11
+	SUB   R10, R11, R11
+	MOVD  R21, R10
+	ADD   R1, R10, R10
+	LSL   R21, R11, R11
+	MOVD  88(RSP), R16
+	ORR   R16, R11, R11
+	MOVW  R11, (R26)
+	MOVD  R10, R1
+	AND   $0x20, R1, R1
+	LSR   R1, R11, R11
+	MOVD  R11, 88(RSP)
+	LSR   $0x03, R1, R1
+	ADD   R1, R26, R26
+	AND   $0x1f, R10, R10
+	MOVD  R10, R21
+	MOVD  $0x00000021, R1
+	CMP   R1, R8
+	CSEL  LO, R8, R1, R1
+	MOVB  R1, (R24)
+	TST   R8, R8
+	CSET  NE, R1
+	ADD   R1, R24, R24
+	ADD   R0, R20, R20
+	MOVD  R17, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	CMP   $0x20, R8
+	BHI   lits_long_10_encodeBlockSIMDAsm64K
+
+lits_done_11_encodeBlockSIMDAsm64K:
+	ADD  R8, R17, R17
+	ADD  R1, R1, R1
+	ADD  $1, R0, R23
+	SUB  R7, R23, R23
+	CMP  $0x20, R9
+	BHI  match_long_13_encodeBlockSIMDAsm64K
+	ADD  R9<<2, R1, R1
+	CMP  R9, R7
+	CSET LO, R8
+	ORR  R8, R22, R22
+
+match_tok_14_encodeBlockSIMDAsm64K:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_1_12_encodeBlockSIMDAsm64K
+
+post_encodeBlockSIMDAsm64K:
+	CMP   R2, R3
+	BGE   exit0_0_1_encodeBlockSIMDAsm64K
+	SUB   $2, R3, R1
+	MOVD  (R0)(R1), R7
+	LSL   $0x10, R7, R7
+	MUL   R6, R7, R7
+	LSR   $0x32, R7, R7
+	MOVD  (R0)(R3), R9
+	LSL   $0x10, R9, R10
+	MUL   R6, R10, R10
+	LSR   $0x32, R10, R10
+	MOVHU (R5)(R10<<1), R8
+	MOVH  R1, (R5)(R7<<1)
+	MOVH  R3, (R5)(R10<<1)
+	MOVWU (R0)(R8), R16
+	CMPW  R9, R16
+	BNE   post_none_encodeBlockSIMDAsm64K
+	MOVD  R3, R1
+	MOVD  R3, R7
+	SUB   R8, R7, R7
+	ADD   $0x04, R3, R3
+	ADD   $0x04, R8, R8
+	JMP   ext_check_16_encodeBlockSIMDAsm64K
+	PCALIGN $0x20
+
+ext_loop_15_encodeBlockSIMDAsm64K:
+	ADD $0x08, R3, R3
+	ADD $0x08, R8, R8
+
+ext_check_16_encodeBlockSIMDAsm64K:
+	CMP  R2, R3
+	BGT  ext_end_17_encodeBlockSIMDAsm64K
+	MOVD (R0)(R3), R9
+	MOVD (R0)(R8), R16
+	SUBS R16, R9, R9
+	BEQ  ext_loop_15_encodeBlockSIMDAsm64K
+	RBIT R9, R9
+	CLZ  R9, R9
+	LSR  $0x03, R9, R9
+	ADD  R9, R3, R3
+
+ext_end_17_encodeBlockSIMDAsm64K:
+	MOVD R3, R8
+	SUB  R1, R8, R8
+	CMP  $0x20, R8
+	BLS  one_op_19_encodeBlockSIMDAsm64K
+	CMP  $0x00000120, R8
+	BHI  split_20_encodeBlockSIMDAsm64K
+	CMP  $0x20, R7
+	BLO  split_20_encodeBlockSIMDAsm64K
+
+one_op_19_encodeBlockSIMDAsm64K:
+	LSR  $0x03, R7, R1
+	ORR  $0x01, R1, R1
+	CLZ  R1, R16
+	MOVD $63, R1
+	SUB  R16, R1, R1
+	LSR  R1, R7, R9
+	ADD  R1<<3, R9, R10
+	MOVB R10, (R25)
+	ADD  $1, R25, R25
+	LSL  R1, R9, R9
+	MOVD R7, R10
+	SUB  R9, R10, R10
+	MOVD R21, R9
+	ADD  R1, R9, R9
+	LSL  R21, R10, R10
+	MOVD 88(RSP), R16
+	ORR  R16, R10, R10
+	MOVW R10, (R26)
+	MOVD R9, R1
+	AND  $0x20, R1, R1
+	LSR  R1, R10, R10
+	MOVD R10, 88(RSP)
+	LSR  $0x03, R1, R1
+	ADD  R1, R26, R26
+	AND  $0x1f, R9, R9
+	MOVD R9, R21
+	MOVD $0, R1
+	ADD  $1, R0, R23
+	SUB  R7, R23, R23
+	CMP  $0x20, R8
+	BHI  match_long_21_encodeBlockSIMDAsm64K
+	ADD  R8<<2, R1, R1
+	CMP  R8, R7
+	CSET LO, R9
+	ORR  R9, R22, R22
+
+match_tok_22_encodeBlockSIMDAsm64K:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_1_12_encodeBlockSIMDAsm64K
+	JMP  post_encodeBlockSIMDAsm64K
+
+post_none_encodeBlockSIMDAsm64K:
+	ADD  $1, R3, R3
+	MOVD (R0)(R3), R1
+	JMP  search_encodeBlockSIMDAsm64K
+
+repeat_encodeBlockSIMDAsm64K:
+	ADD  $1, R3, R1
+	ADD  $1, R0, R7
+	SUB  R23, R7, R7
+	MOVD R1, R9
+	SUB  R7, R9, R9
+
+rep_back_23_encodeBlockSIMDAsm64K:
+	CMP   R20, R1
+	BLE   rep_back_end_24_encodeBlockSIMDAsm64K
+	TST   R9, R9
+	BLE   rep_back_end_24_encodeBlockSIMDAsm64K
+	ADD   R9, R0, R15
+	MOVBU -1(R15), R10
+	ADD   R1, R0, R15
+	MOVBU -1(R15), R11
+	CMP   R11, R10
+	BNE   rep_back_end_24_encodeBlockSIMDAsm64K
+	SUB   $1, R9, R9
+	SUB   $1, R1, R1
+	JMP   rep_back_23_encodeBlockSIMDAsm64K
+
+rep_back_end_24_encodeBlockSIMDAsm64K:
+	ADD  $0x05, R3, R3
+	MOVD R3, R8
+	SUB  R7, R8, R8
+	JMP  ext_check_26_encodeBlockSIMDAsm64K
+	PCALIGN $0x20
+
+ext_loop_25_encodeBlockSIMDAsm64K:
+	ADD $0x08, R3, R3
+	ADD $0x08, R8, R8
+
+ext_check_26_encodeBlockSIMDAsm64K:
+	CMP  R2, R3
+	BGT  ext_end_27_encodeBlockSIMDAsm64K
+	MOVD (R0)(R3), R9
+	MOVD (R0)(R8), R16
+	SUBS R16, R9, R9
+	BEQ  ext_loop_25_encodeBlockSIMDAsm64K
+	RBIT R9, R9
+	CLZ  R9, R9
+	LSR  $0x03, R9, R9
+	ADD  R9, R3, R3
+
+ext_end_27_encodeBlockSIMDAsm64K:
+	MOVD R1, R8
+	SUB  R20, R8, R8
+	CMP  $0x00000120, R8
+	BHI  exit3_0_28_encodeBlockSIMDAsm64K
+	MOVD 8(RSP), R16
+	CMP  R16, R20
+	BGT  exit3_0_28_encodeBlockSIMDAsm64K
+	MOVD R3, R9
+	SUB  R1, R9, R9
+	CMP  $0x20, R9
+	BLS  one_op_29_encodeBlockSIMDAsm64K
+	CMP  $0x00000120, R9
+	BHI  split_30_encodeBlockSIMDAsm64K
+	CMP  $0x20, R7
+	BLO  split_30_encodeBlockSIMDAsm64K
+
+one_op_29_encodeBlockSIMDAsm64K:
+	MOVD  $0x00000021, R1
+	CMP   R1, R8
+	CSEL  LO, R8, R1, R1
+	MOVB  R1, (R24)
+	TST   R8, R8
+	CSET  NE, R1
+	ADD   R1, R24, R24
+	ADD   R0, R20, R20
+	MOVD  R17, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	CMP   $0x20, R8
+	BHI   lits_long_31_encodeBlockSIMDAsm64K
+
+lits_done_32_encodeBlockSIMDAsm64K:
+	ADD  R8, R17, R17
+	ADD  R1, R1, R1
+	ADD  $1, R1, R1
+	CMP  $0x20, R9
+	BHI  match_long_34_encodeBlockSIMDAsm64K
+	ADD  R9<<2, R1, R1
+	CMP  R9, R7
+	CSET LO, R8
+	ORR  R8, R22, R22
+
+match_tok_35_encodeBlockSIMDAsm64K:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_0_33_encodeBlockSIMDAsm64K
+	CMP  R2, R3
+	BGE  exit0_0_1_encodeBlockSIMDAsm64K
+	MOVD (R0)(R3), R1
+	JMP  search_encodeBlockSIMDAsm64K
+
+exit0_0_1_encodeBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000000, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeBlockSIMDAsm64K
+
+exit2_1_7_encodeBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD R7, 147592(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000002, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeBlockSIMDAsm64K
+
+split_9_encodeBlockSIMDAsm64K:
+	MOVD $0x00004000, R10
+	SUB  R19, R10, R10
+	CMP  $0x20, R7
+	BLO  split_short_36_encodeBlockSIMDAsm64K
+	ADD  R10<<3, R10, R10
+
+split_short_36_encodeBlockSIMDAsm64K:
+	LSL $0x05, R10, R10
+	CMP R10, R9
+	BHI exit2_1_7_encodeBlockSIMDAsm64K
+	JMP one_op_8_encodeBlockSIMDAsm64K
+
+lits_long_10_encodeBlockSIMDAsm64K:
+	SUB  $33, R8, R12
+	MOVD st+0(FP), R13
+	MOVD 24(R13), R14
+	ADD  R14, R13, R15
+	MOVB R12, 49257(R15)
+	ADD  $1, R14, R14
+	MOVD R14, 24(R13)
+	SUB  $32, R8, R12
+
+lits_loop_37_encodeBlockSIMDAsm64K:
+	ADD   $0x20, R20, R20
+	ADD   $0x20, R11, R11
+	CMP   $0x20, R12
+	BLS   lits_last_38_encodeBlockSIMDAsm64K
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	SUB   $0x20, R12, R12
+	JMP   lits_loop_37_encodeBlockSIMDAsm64K
+
+lits_last_38_encodeBlockSIMDAsm64K:
+	ADD   R12, R20, R20
+	SUB   $32, R20, R20
+	ADD   R12, R11, R11
+	SUB   $32, R11, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	JMP   lits_done_11_encodeBlockSIMDAsm64K
+
+exit1_1_12_encodeBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD $0x00000001, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeBlockSIMDAsm64K
+
+match_long_13_encodeBlockSIMDAsm64K:
+	CMP $0x20, R7
+	BLO match_short_40_encodeBlockSIMDAsm64K
+	CMP $0x00000120, R9
+	BHI match_big_41_encodeBlockSIMDAsm64K
+
+match_esc_39_encodeBlockSIMDAsm64K:
+	SUB  $33, R9, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_14_encodeBlockSIMDAsm64K
+
+match_big_41_encodeBlockSIMDAsm64K:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R10
+	ADD  R10, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R8)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R9, R9
+	CMP  $0x00000120, R9
+	BHI  match_big_41_encodeBlockSIMDAsm64K
+	CMP  $0x20, R9
+	BHI  match_esc_39_encodeBlockSIMDAsm64K
+	JMP  match_rest_42_encodeBlockSIMDAsm64K
+
+match_short_40_encodeBlockSIMDAsm64K:
+	ORR $0x01, R22, R22
+
+match_short_loop_43_encodeBlockSIMDAsm64K:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R9, R9
+	CMP  $0x20, R9
+	BHI  match_short_loop_43_encodeBlockSIMDAsm64K
+
+match_rest_42_encodeBlockSIMDAsm64K:
+	ADD R9<<2, R1, R1
+	JMP match_tok_14_encodeBlockSIMDAsm64K
+
+exit2_1_18_encodeBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD R7, 147592(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000002, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeBlockSIMDAsm64K
+
+split_20_encodeBlockSIMDAsm64K:
+	MOVD $0x00004000, R9
+	SUB  R19, R9, R9
+	CMP  $0x20, R7
+	BLO  split_short_44_encodeBlockSIMDAsm64K
+	ADD  R9<<3, R9, R9
+
+split_short_44_encodeBlockSIMDAsm64K:
+	LSL $0x05, R9, R9
+	CMP R9, R8
+	BHI exit2_1_18_encodeBlockSIMDAsm64K
+	JMP one_op_19_encodeBlockSIMDAsm64K
+
+match_long_21_encodeBlockSIMDAsm64K:
+	CMP $0x20, R7
+	BLO match_short_46_encodeBlockSIMDAsm64K
+	CMP $0x00000120, R8
+	BHI match_big_47_encodeBlockSIMDAsm64K
+
+match_esc_45_encodeBlockSIMDAsm64K:
+	SUB  $33, R8, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_22_encodeBlockSIMDAsm64K
+
+match_big_47_encodeBlockSIMDAsm64K:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R9
+	MOVD 24(R9), R10
+	ADD  R10, R9, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R9)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R8, R8
+	CMP  $0x00000120, R8
+	BHI  match_big_47_encodeBlockSIMDAsm64K
+	CMP  $0x20, R8
+	BHI  match_esc_45_encodeBlockSIMDAsm64K
+	JMP  match_rest_48_encodeBlockSIMDAsm64K
+
+match_short_46_encodeBlockSIMDAsm64K:
+	ORR $0x01, R22, R22
+
+match_short_loop_49_encodeBlockSIMDAsm64K:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R8, R8
+	CMP  $0x20, R8
+	BHI  match_short_loop_49_encodeBlockSIMDAsm64K
+
+match_rest_48_encodeBlockSIMDAsm64K:
+	ADD R8<<2, R1, R1
+	JMP match_tok_22_encodeBlockSIMDAsm64K
+
+exit3_0_28_encodeBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000003, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeBlockSIMDAsm64K
+
+split_30_encodeBlockSIMDAsm64K:
+	MOVD $0x00004000, R10
+	SUB  R19, R10, R10
+	CMP  $0x20, R7
+	BLO  split_short_50_encodeBlockSIMDAsm64K
+	ADD  R10<<3, R10, R10
+
+split_short_50_encodeBlockSIMDAsm64K:
+	LSL $0x05, R10, R10
+	CMP R10, R9
+	BHI exit3_0_28_encodeBlockSIMDAsm64K
+	JMP one_op_29_encodeBlockSIMDAsm64K
+
+lits_long_31_encodeBlockSIMDAsm64K:
+	SUB  $33, R8, R12
+	MOVD st+0(FP), R13
+	MOVD 24(R13), R14
+	ADD  R14, R13, R15
+	MOVB R12, 49257(R15)
+	ADD  $1, R14, R14
+	MOVD R14, 24(R13)
+	SUB  $32, R8, R12
+
+lits_loop_51_encodeBlockSIMDAsm64K:
+	ADD   $0x20, R20, R20
+	ADD   $0x20, R11, R11
+	CMP   $0x20, R12
+	BLS   lits_last_52_encodeBlockSIMDAsm64K
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	SUB   $0x20, R12, R12
+	JMP   lits_loop_51_encodeBlockSIMDAsm64K
+
+lits_last_52_encodeBlockSIMDAsm64K:
+	ADD   R12, R20, R20
+	SUB   $32, R20, R20
+	ADD   R12, R11, R11
+	SUB   $32, R11, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	JMP   lits_done_32_encodeBlockSIMDAsm64K
+
+exit1_0_33_encodeBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, ret+40(FP)
+	JMP  return_encodeBlockSIMDAsm64K
+
+match_long_34_encodeBlockSIMDAsm64K:
+	CMP $0x20, R7
+	BLO match_short_54_encodeBlockSIMDAsm64K
+	CMP $0x00000120, R9
+	BHI match_big_55_encodeBlockSIMDAsm64K
+
+match_esc_53_encodeBlockSIMDAsm64K:
+	SUB  $33, R9, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_35_encodeBlockSIMDAsm64K
+
+match_big_55_encodeBlockSIMDAsm64K:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R10
+	ADD  R10, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R8)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R9, R9
+	CMP  $0x00000120, R9
+	BHI  match_big_55_encodeBlockSIMDAsm64K
+	CMP  $0x20, R9
+	BHI  match_esc_53_encodeBlockSIMDAsm64K
+	JMP  match_rest_56_encodeBlockSIMDAsm64K
+
+match_short_54_encodeBlockSIMDAsm64K:
+	ORR $0x01, R22, R22
+
+match_short_loop_57_encodeBlockSIMDAsm64K:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R9, R9
+	CMP  $0x20, R9
+	BHI  match_short_loop_57_encodeBlockSIMDAsm64K
+
+match_rest_56_encodeBlockSIMDAsm64K:
+	ADD R9<<2, R1, R1
+	JMP match_tok_35_encodeBlockSIMDAsm64K
+
+return_encodeBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD R19, (R0)
+	SUB  R0, R24, R24
+	SUB  $0x00004069, R24, R24
+	MOVD R24, 8(R0)
+	SUB  R0, R25, R25
+	SUB  $0x00008069, R25, R25
+	MOVD R25, 16(R0)
+	SUB  R0, R26, R26
+	SUB  $0x00014069, R26, R26
+	MOVD R26, 32(R0)
+	MOVD 88(RSP), R1
+	MOVD R1, 56(R0)
+	MOVD R21, 48(R0)
+	MOVD R20, 64(R0)
+	MOVD src_base+8(FP), R1
+	ADD  $1, R1, R1
+	SUB  R23, R1, R1
+	MOVD R1, 72(R0)
+	MOVD 80(R0), R16
+	SUB  R16, R17, R17
+	MOVD R17, 40(R0)
+	MOVB R22, 104(R0)
+	RET
+
+// func encodeBetterBlockSIMDAsm64K(st *simdStreams, src []byte, tab *[147456]byte, maxOff4 int, maxOff5 int) int
+// Requires: BMI, CMOV, SSE2
+TEXT ·encodeBetterBlockSIMDAsm64K(SB), $88-64
+	MOVD    st+0(FP), R1
+	MOVD    src_base+8(FP), R0
+	MOVD    (R1), R19
+	MOVD    8(R1), R22
+	ADD     R22, R1, R22
+	ADD     $16489, R22, R22
+	MOVD    16(R1), R26
+	ADD     R26, R1, R26
+	ADD     $32873, R26, R26
+	MOVD    32(R1), R17
+	ADD     R17, R1, R17
+	ADD     $82025, R17, R17
+	MOVD    56(R1), R2
+	MOVD    R2, 88(RSP)
+	MOVD    48(R1), R25
+	MOVD    64(R1), R20
+	ADD     $1, R0, R21
+	MOVD    72(R1), R16
+	SUB     R16, R21, R21
+	MOVD    40(R1), R23
+	MOVD    80(R1), R16
+	ADD     R16, R23, R23
+	MOVBU   104(R1), R24
+	MOVD    src_len+16(FP), R3
+	SUB     $8, R3, R2
+	SUB     $32, R3, R3
+	MOVD    R3, 8(RSP)
+	MOVD    64(R1), R3
+	MOVD    tab+32(FP), R8
+	ADD     $131072, R8, R9
+	MOVD    $0x00cf1bbcdcbfa563, R5
+	MOVD    $0x9e3779b1, R6
+	MOVD    $0x00000001, R1
+	CMP     R1, R3
+	CSEL    LT, R1, R3, R3
+	CMP     R2, R3
+	BGE     exit0_0_1_encodeBetterBlockSIMDAsm64K
+	MOVD    (R0)(R3), R1
+	PCALIGN $0x40
+
+search_encodeBetterBlockSIMDAsm64K:
+	MOVD  R3, R11
+	SUB   R20, R11, R11
+	LSR   $0x07, R11, R11
+	MOVD  $0x00000063, R7
+	CMP   R7, R11
+	CSEL  GT, R7, R11, R11
+	ADD   R11, R3, R11
+	ADD   $1, R11, R11
+	CMP   R2, R11
+	BGT   exit0_0_1_encodeBetterBlockSIMDAsm64K
+	LSL   $0x08, R1, R7
+	MUL   R5, R7, R7
+	LSR   $0x30, R7, R7
+	LSL   $0x20, R1, R12
+	MUL   R6, R12, R12
+	LSR   $0x33, R12, R12
+	MOVHU (R8)(R7<<1), R10
+	MOVHU (R9)(R12<<1), R13
+	MOVH  R3, (R8)(R7<<1)
+	MOVH  R3, (R9)(R12<<1)
+	MOVD  (R0)(R10), R7
+	CMP   R1, R7
+	BEQ   match_encodeBetterBlockSIMDAsm64K
+	LSR   $0x08, R1, R12
+	MOVWU (R21)(R3), R16
+	CMPW  R12, R16
+	BEQ   repeat_encodeBetterBlockSIMDAsm64K
+	CMPW  R1, R7
+	BEQ   match_encodeBetterBlockSIMDAsm64K
+	MOVWU (R0)(R13), R16
+	CMPW  R1, R16
+	BEQ   short_encodeBetterBlockSIMDAsm64K
+	MOVD  (R0)(R11), R1
+	MOVD  R11, R3
+	JMP   search_encodeBetterBlockSIMDAsm64K
+
+short_encodeBetterBlockSIMDAsm64K:
+	LSL   $0x08, R12, R1
+	MUL   R5, R1, R1
+	LSR   $0x30, R1, R1
+	MOVHU (R8)(R1<<1), R10
+	ADD   $1, R3, R7
+	MOVH  R7, (R8)(R1<<1)
+	MOVWU (R0)(R10), R16
+	CMPW  R12, R16
+	BNE   short_only_encodeBetterBlockSIMDAsm64K
+	MOVD  R7, R3
+	JMP   match_encodeBetterBlockSIMDAsm64K
+
+short_only_encodeBetterBlockSIMDAsm64K:
+	MOVD R13, R10
+
+match_encodeBetterBlockSIMDAsm64K:
+match_back_2_encodeBetterBlockSIMDAsm64K:
+	TST   R10, R10
+	BLE   match_back_end_3_encodeBetterBlockSIMDAsm64K
+	CMP   R20, R3
+	BLE   match_back_end_3_encodeBetterBlockSIMDAsm64K
+	ADD   R10, R0, R15
+	MOVBU -1(R15), R7
+	ADD   R3, R0, R15
+	MOVBU -1(R15), R12
+	CMP   R12, R7
+	BNE   match_back_end_3_encodeBetterBlockSIMDAsm64K
+	SUB   $1, R10, R10
+	SUB   $1, R3, R3
+	JMP   match_back_2_encodeBetterBlockSIMDAsm64K
+
+match_back_end_3_encodeBetterBlockSIMDAsm64K:
+	MOVD R3, R1
+	MOVD R3, R7
+	SUB  R10, R7, R7
+	ADD  $0x04, R3, R3
+	ADD  $0x04, R10, R10
+	JMP  ext_check_5_encodeBetterBlockSIMDAsm64K
+	PCALIGN $0x20
+
+ext_loop_4_encodeBetterBlockSIMDAsm64K:
+	ADD $0x08, R3, R3
+	ADD $0x08, R10, R10
+
+ext_check_5_encodeBetterBlockSIMDAsm64K:
+	CMP  R2, R3
+	BGT  ext_tail_7_encodeBetterBlockSIMDAsm64K
+	MOVD (R0)(R3), R12
+	MOVD (R0)(R10), R16
+	SUBS R16, R12, R12
+	BEQ  ext_loop_4_encodeBetterBlockSIMDAsm64K
+	RBIT R12, R12
+	CLZ  R12, R12
+	LSR  $0x03, R12, R12
+	ADD  R12, R3, R3
+
+ext_end_6_encodeBetterBlockSIMDAsm64K:
+	ADD $5, R1, R10
+	CMP R10, R3
+	BLS short_8_encodeBetterBlockSIMDAsm64K
+
+near_9_encodeBetterBlockSIMDAsm64K:
+	ADD $33, R1, R10
+	CMP R10, R3
+	BEQ cut_10_encodeBetterBlockSIMDAsm64K
+
+cut_back_11_encodeBetterBlockSIMDAsm64K:
+	CMP   R2, R3
+	BGE   indexed_12_encodeBetterBlockSIMDAsm64K
+	ADD   $1, R1, R10
+	SUB   $2, R3, R11
+	MOVD  (R0)(R10), R12
+	LSL   $0x08, R12, R12
+	MUL   R5, R12, R12
+	LSR   $0x30, R12, R12
+	MOVH  R10, (R8)(R12<<1)
+	ADD   R10, R0, R15
+	MOVWU 1(R15), R12
+	LSL   $0x20, R12, R12
+	MUL   R6, R12, R12
+	LSR   $0x33, R12, R12
+	ADD   $1, R10, R13
+	MOVH  R13, (R9)(R12<<1)
+	MOVD  (R0)(R11), R12
+	LSL   $0x08, R12, R12
+	MUL   R5, R12, R12
+	LSR   $0x30, R12, R12
+	MOVH  R11, (R8)(R12<<1)
+	ADD   R11, R0, R15
+	MOVWU 1(R15), R12
+	LSL   $0x20, R12, R12
+	MUL   R6, R12, R12
+	LSR   $0x33, R12, R12
+	ADD   $1, R11, R13
+	MOVH  R13, (R9)(R12<<1)
+	ADD   $1, R10, R10
+	SUB   $1, R11, R11
+	ADD   R11, R10, R9
+	ADD   $1, R9, R9
+	LSR   $0x01, R9, R9
+
+index_loop_13_encodeBetterBlockSIMDAsm64K:
+	CMP  R11, R9
+	BGE  indexed_12_encodeBetterBlockSIMDAsm64K
+	MOVD (R0)(R10), R12
+	LSL  $0x08, R12, R12
+	MUL  R5, R12, R12
+	LSR  $0x30, R12, R12
+	MOVH R10, (R8)(R12<<1)
+	MOVD (R0)(R9), R12
+	LSL  $0x08, R12, R12
+	MUL  R5, R12, R12
+	LSR  $0x30, R12, R12
+	MOVH R9, (R8)(R12<<1)
+	ADD  $0x02, R10, R10
+	ADD  $0x02, R9, R9
+	JMP  index_loop_13_encodeBetterBlockSIMDAsm64K
+
+indexed_12_encodeBetterBlockSIMDAsm64K:
+	MOVD R1, R8
+	SUB  R20, R8, R8
+	CMP  $0x00000120, R8
+	BHI  exit2_0_14_encodeBetterBlockSIMDAsm64K
+	MOVD 8(RSP), R16
+	CMP  R16, R20
+	BGT  exit2_0_14_encodeBetterBlockSIMDAsm64K
+	MOVD R3, R9
+	SUB  R1, R9, R9
+	CMP  $0x20, R9
+	BLS  one_op_15_encodeBetterBlockSIMDAsm64K
+	CMP  $0x00000120, R9
+	BHI  split_16_encodeBetterBlockSIMDAsm64K
+	CMP  $0x20, R7
+	BLO  split_16_encodeBetterBlockSIMDAsm64K
+
+one_op_15_encodeBetterBlockSIMDAsm64K:
+	LSR   $0x03, R7, R1
+	ORR   $0x01, R1, R1
+	CLZ   R1, R16
+	MOVD  $63, R1
+	SUB   R16, R1, R1
+	LSR   R1, R7, R10
+	ADD   R1<<3, R10, R11
+	MOVB  R11, (R26)
+	ADD   $1, R26, R26
+	LSL   R1, R10, R10
+	MOVD  R7, R11
+	SUB   R10, R11, R11
+	MOVD  R25, R10
+	ADD   R1, R10, R10
+	LSL   R25, R11, R11
+	MOVD  88(RSP), R16
+	ORR   R16, R11, R11
+	MOVW  R11, (R17)
+	MOVD  R10, R1
+	AND   $0x20, R1, R1
+	LSR   R1, R11, R11
+	MOVD  R11, 88(RSP)
+	LSR   $0x03, R1, R1
+	ADD   R1, R17, R17
+	AND   $0x1f, R10, R10
+	MOVD  R10, R25
+	MOVD  $0x00000021, R1
+	CMP   R1, R8
+	CSEL  LO, R8, R1, R1
+	MOVB  R1, (R22)
+	TST   R8, R8
+	CSET  NE, R1
+	ADD   R1, R22, R22
+	ADD   R0, R20, R20
+	MOVD  R23, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	CMP   $0x20, R8
+	BHI   lits_long_17_encodeBetterBlockSIMDAsm64K
+
+lits_done_18_encodeBetterBlockSIMDAsm64K:
+	ADD  R8, R23, R23
+	ADD  R1, R1, R1
+	ADD  $1, R0, R21
+	SUB  R7, R21, R21
+	CMP  $0x20, R9
+	BHI  match_long_20_encodeBetterBlockSIMDAsm64K
+	ADD  R9<<2, R1, R1
+	CMP  R9, R7
+	CSET LO, R8
+	ORR  R8, R24, R24
+
+match_tok_21_encodeBetterBlockSIMDAsm64K:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_0_19_encodeBetterBlockSIMDAsm64K
+	CMP  R2, R3
+	BGE  exit0_0_1_encodeBetterBlockSIMDAsm64K
+	MOVD (R0)(R3), R1
+	MOVD tab+32(FP), R8
+	ADD  $131072, R8, R9
+	JMP  search_encodeBetterBlockSIMDAsm64K
+
+repeat_encodeBetterBlockSIMDAsm64K:
+	ADD  $1, R3, R1
+	ADD  $1, R0, R7
+	SUB  R21, R7, R7
+	MOVD R1, R11
+	SUB  R7, R11, R11
+
+rep_back_22_encodeBetterBlockSIMDAsm64K:
+	CMP   R20, R1
+	BLE   rep_back_end_23_encodeBetterBlockSIMDAsm64K
+	TST   R11, R11
+	BLE   rep_back_end_23_encodeBetterBlockSIMDAsm64K
+	ADD   R11, R0, R15
+	MOVBU -1(R15), R12
+	ADD   R1, R0, R15
+	MOVBU -1(R15), R13
+	CMP   R13, R12
+	BNE   rep_back_end_23_encodeBetterBlockSIMDAsm64K
+	SUB   $1, R11, R11
+	SUB   $1, R1, R1
+	JMP   rep_back_22_encodeBetterBlockSIMDAsm64K
+
+rep_back_end_23_encodeBetterBlockSIMDAsm64K:
+	ADD  $0x05, R3, R3
+	MOVD R3, R10
+	SUB  R7, R10, R10
+	JMP  ext_check_25_encodeBetterBlockSIMDAsm64K
+	PCALIGN $0x20
+
+ext_loop_24_encodeBetterBlockSIMDAsm64K:
+	ADD $0x08, R3, R3
+	ADD $0x08, R10, R10
+
+ext_check_25_encodeBetterBlockSIMDAsm64K:
+	CMP  R2, R3
+	BGT  ext_tail_27_encodeBetterBlockSIMDAsm64K
+	MOVD (R0)(R3), R11
+	MOVD (R0)(R10), R16
+	SUBS R16, R11, R11
+	BEQ  ext_loop_24_encodeBetterBlockSIMDAsm64K
+	RBIT R11, R11
+	CLZ  R11, R11
+	LSR  $0x03, R11, R11
+	ADD  R11, R3, R3
+
+ext_end_26_encodeBetterBlockSIMDAsm64K:
+	ADD $33, R1, R10
+	CMP R10, R3
+	BEQ cut_28_encodeBetterBlockSIMDAsm64K
+
+cut_back_29_encodeBetterBlockSIMDAsm64K:
+	CMP R2, R3
+	BGE indexed_30_encodeBetterBlockSIMDAsm64K
+	ADD $1, R1, R10
+	SUB $2, R3, R11
+
+index_loop_31_encodeBetterBlockSIMDAsm64K:
+	CMP   R11, R10
+	BGE   indexed_30_encodeBetterBlockSIMDAsm64K
+	MOVD  (R0)(R10), R12
+	LSL   $0x08, R12, R12
+	MUL   R5, R12, R12
+	LSR   $0x30, R12, R12
+	MOVH  R10, (R8)(R12<<1)
+	ADD   R10, R0, R15
+	MOVWU 1(R15), R12
+	LSL   $0x20, R12, R12
+	MUL   R6, R12, R12
+	LSR   $0x33, R12, R12
+	ADD   $1, R10, R13
+	MOVH  R13, (R9)(R12<<1)
+	MOVD  (R0)(R11), R12
+	LSL   $0x08, R12, R12
+	MUL   R5, R12, R12
+	LSR   $0x30, R12, R12
+	MOVH  R11, (R8)(R12<<1)
+	ADD   R11, R0, R15
+	MOVWU 1(R15), R12
+	LSL   $0x20, R12, R12
+	MUL   R6, R12, R12
+	LSR   $0x33, R12, R12
+	ADD   $1, R11, R13
+	MOVH  R13, (R9)(R12<<1)
+	ADD   $0x02, R10, R10
+	SUB   $0x02, R11, R11
+	JMP   index_loop_31_encodeBetterBlockSIMDAsm64K
+
+indexed_30_encodeBetterBlockSIMDAsm64K:
+	MOVD R1, R8
+	SUB  R20, R8, R8
+	CMP  $0x00000120, R8
+	BHI  exit3_0_32_encodeBetterBlockSIMDAsm64K
+	MOVD 8(RSP), R16
+	CMP  R16, R20
+	BGT  exit3_0_32_encodeBetterBlockSIMDAsm64K
+	MOVD R3, R9
+	SUB  R1, R9, R9
+	CMP  $0x20, R9
+	BLS  one_op_33_encodeBetterBlockSIMDAsm64K
+	CMP  $0x00000120, R9
+	BHI  split_34_encodeBetterBlockSIMDAsm64K
+	CMP  $0x20, R7
+	BLO  split_34_encodeBetterBlockSIMDAsm64K
+
+one_op_33_encodeBetterBlockSIMDAsm64K:
+	MOVD  $0x00000021, R1
+	CMP   R1, R8
+	CSEL  LO, R8, R1, R1
+	MOVB  R1, (R22)
+	TST   R8, R8
+	CSET  NE, R1
+	ADD   R1, R22, R22
+	ADD   R0, R20, R20
+	MOVD  R23, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	CMP   $0x20, R8
+	BHI   lits_long_35_encodeBetterBlockSIMDAsm64K
+
+lits_done_36_encodeBetterBlockSIMDAsm64K:
+	ADD  R8, R23, R23
+	ADD  R1, R1, R1
+	ADD  $1, R1, R1
+	CMP  $0x20, R9
+	BHI  match_long_37_encodeBetterBlockSIMDAsm64K
+	ADD  R9<<2, R1, R1
+	CMP  R9, R7
+	CSET LO, R8
+	ORR  R8, R24, R24
+
+match_tok_38_encodeBetterBlockSIMDAsm64K:
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD R3, R20
+	CMP  $0x00004000, R19
+	BEQ  exit1_0_19_encodeBetterBlockSIMDAsm64K
+	CMP  R2, R3
+	BGE  exit0_0_1_encodeBetterBlockSIMDAsm64K
+	MOVD (R0)(R3), R1
+	MOVD tab+32(FP), R8
+	ADD  $131072, R8, R9
+	JMP  search_encodeBetterBlockSIMDAsm64K
+
+exit0_0_1_encodeBetterBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000000, R16
+	MOVD R16, ret+56(FP)
+	JMP  return_encodeBetterBlockSIMDAsm64K
+
+ext_tail_7_encodeBetterBlockSIMDAsm64K:
+	MOVD src_len+16(FP), R12
+
+ext_tail_loop_39_encodeBetterBlockSIMDAsm64K:
+	CMP   R12, R3
+	BGE   ext_end_6_encodeBetterBlockSIMDAsm64K
+	MOVBU (R0)(R3), R13
+	MOVBU (R0)(R10), R14
+	CMP   R14, R13
+	BNE   ext_end_6_encodeBetterBlockSIMDAsm64K
+	ADD   $1, R3, R3
+	ADD   $1, R10, R10
+	JMP   ext_tail_loop_39_encodeBetterBlockSIMDAsm64K
+
+short_8_encodeBetterBlockSIMDAsm64K:
+	MOVD maxOff5+48(FP), R12
+	CMP  R10, R3
+	BEQ  five_40_encodeBetterBlockSIMDAsm64K
+	MOVD maxOff4+40(FP), R12
+
+five_40_encodeBetterBlockSIMDAsm64K:
+	CMP  R12, R7
+	BLS  near_9_encodeBetterBlockSIMDAsm64K
+	ADD  $1, R0, R10
+	SUB  R21, R10, R10
+	CMP  R7, R10
+	BEQ  near_9_encodeBetterBlockSIMDAsm64K
+	ADD  $1, R11, R3
+	CMP  R2, R3
+	BGE  exit0_0_1_encodeBetterBlockSIMDAsm64K
+	MOVD (R0)(R3), R1
+	MOVD tab+32(FP), R8
+	ADD  $131072, R8, R9
+	JMP  search_encodeBetterBlockSIMDAsm64K
+
+cut_10_encodeBetterBlockSIMDAsm64K:
+	SUB $1, R3, R3
+	JMP cut_back_11_encodeBetterBlockSIMDAsm64K
+
+exit2_0_14_encodeBetterBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD R7, 147592(R0)
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000002, R16
+	MOVD R16, ret+56(FP)
+	JMP  return_encodeBetterBlockSIMDAsm64K
+
+split_16_encodeBetterBlockSIMDAsm64K:
+	MOVD $0x00004000, R10
+	SUB  R19, R10, R10
+	CMP  $0x20, R7
+	BLO  split_short_41_encodeBetterBlockSIMDAsm64K
+	ADD  R10<<3, R10, R10
+
+split_short_41_encodeBetterBlockSIMDAsm64K:
+	LSL $0x05, R10, R10
+	CMP R10, R9
+	BHI exit2_0_14_encodeBetterBlockSIMDAsm64K
+	JMP one_op_15_encodeBetterBlockSIMDAsm64K
+
+lits_long_17_encodeBetterBlockSIMDAsm64K:
+	SUB  $33, R8, R12
+	MOVD st+0(FP), R13
+	MOVD 24(R13), R14
+	ADD  R14, R13, R15
+	MOVB R12, 49257(R15)
+	ADD  $1, R14, R14
+	MOVD R14, 24(R13)
+	SUB  $32, R8, R12
+
+lits_loop_42_encodeBetterBlockSIMDAsm64K:
+	ADD   $0x20, R20, R20
+	ADD   $0x20, R11, R11
+	CMP   $0x20, R12
+	BLS   lits_last_43_encodeBetterBlockSIMDAsm64K
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	SUB   $0x20, R12, R12
+	JMP   lits_loop_42_encodeBetterBlockSIMDAsm64K
+
+lits_last_43_encodeBetterBlockSIMDAsm64K:
+	ADD   R12, R20, R20
+	SUB   $32, R20, R20
+	ADD   R12, R11, R11
+	SUB   $32, R11, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	JMP   lits_done_18_encodeBetterBlockSIMDAsm64K
+
+exit1_0_19_encodeBetterBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000001, R16
+	MOVD R16, ret+56(FP)
+	JMP  return_encodeBetterBlockSIMDAsm64K
+
+match_long_20_encodeBetterBlockSIMDAsm64K:
+	CMP $0x20, R7
+	BLO match_short_45_encodeBetterBlockSIMDAsm64K
+	CMP $0x00000120, R9
+	BHI match_big_46_encodeBetterBlockSIMDAsm64K
+
+match_esc_44_encodeBetterBlockSIMDAsm64K:
+	SUB  $33, R9, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_21_encodeBetterBlockSIMDAsm64K
+
+match_big_46_encodeBetterBlockSIMDAsm64K:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R10
+	ADD  R10, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R8)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R9, R9
+	CMP  $0x00000120, R9
+	BHI  match_big_46_encodeBetterBlockSIMDAsm64K
+	CMP  $0x20, R9
+	BHI  match_esc_44_encodeBetterBlockSIMDAsm64K
+	JMP  match_rest_47_encodeBetterBlockSIMDAsm64K
+
+match_short_45_encodeBetterBlockSIMDAsm64K:
+	ORR $0x01, R24, R24
+
+match_short_loop_48_encodeBetterBlockSIMDAsm64K:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R9, R9
+	CMP  $0x20, R9
+	BHI  match_short_loop_48_encodeBetterBlockSIMDAsm64K
+
+match_rest_47_encodeBetterBlockSIMDAsm64K:
+	ADD R9<<2, R1, R1
+	JMP match_tok_21_encodeBetterBlockSIMDAsm64K
+
+ext_tail_27_encodeBetterBlockSIMDAsm64K:
+	MOVD src_len+16(FP), R11
+
+ext_tail_loop_49_encodeBetterBlockSIMDAsm64K:
+	CMP   R11, R3
+	BGE   ext_end_26_encodeBetterBlockSIMDAsm64K
+	MOVBU (R0)(R3), R12
+	MOVBU (R0)(R10), R13
+	CMP   R13, R12
+	BNE   ext_end_26_encodeBetterBlockSIMDAsm64K
+	ADD   $1, R3, R3
+	ADD   $1, R10, R10
+	JMP   ext_tail_loop_49_encodeBetterBlockSIMDAsm64K
+
+cut_28_encodeBetterBlockSIMDAsm64K:
+	SUB $1, R3, R3
+	JMP cut_back_29_encodeBetterBlockSIMDAsm64K
+
+exit3_0_32_encodeBetterBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD R1, 147576(R0)
+	SUB  R1, R3, R3
+	MOVD R3, 147584(R0)
+	MOVD $0x00000000, R16
+	MOVD R16, 147568(R0)
+	MOVD $0x00000003, R16
+	MOVD R16, ret+56(FP)
+	JMP  return_encodeBetterBlockSIMDAsm64K
+
+split_34_encodeBetterBlockSIMDAsm64K:
+	MOVD $0x00004000, R10
+	SUB  R19, R10, R10
+	CMP  $0x20, R7
+	BLO  split_short_50_encodeBetterBlockSIMDAsm64K
+	ADD  R10<<3, R10, R10
+
+split_short_50_encodeBetterBlockSIMDAsm64K:
+	LSL $0x05, R10, R10
+	CMP R10, R9
+	BHI exit3_0_32_encodeBetterBlockSIMDAsm64K
+	JMP one_op_33_encodeBetterBlockSIMDAsm64K
+
+lits_long_35_encodeBetterBlockSIMDAsm64K:
+	SUB  $33, R8, R12
+	MOVD st+0(FP), R13
+	MOVD 24(R13), R14
+	ADD  R14, R13, R15
+	MOVB R12, 49257(R15)
+	ADD  $1, R14, R14
+	MOVD R14, 24(R13)
+	SUB  $32, R8, R12
+
+lits_loop_51_encodeBetterBlockSIMDAsm64K:
+	ADD   $0x20, R20, R20
+	ADD   $0x20, R11, R11
+	CMP   $0x20, R12
+	BLS   lits_last_52_encodeBetterBlockSIMDAsm64K
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	SUB   $0x20, R12, R12
+	JMP   lits_loop_51_encodeBetterBlockSIMDAsm64K
+
+lits_last_52_encodeBetterBlockSIMDAsm64K:
+	ADD   R12, R20, R20
+	SUB   $32, R20, R20
+	ADD   R12, R11, R11
+	SUB   $32, R11, R11
+	FMOVQ (R20), F0
+	FMOVQ 16(R20), F1
+	FMOVQ F0, (R11)
+	FMOVQ F1, 16(R11)
+	JMP   lits_done_36_encodeBetterBlockSIMDAsm64K
+
+match_long_37_encodeBetterBlockSIMDAsm64K:
+	CMP $0x20, R7
+	BLO match_short_54_encodeBetterBlockSIMDAsm64K
+	CMP $0x00000120, R9
+	BHI match_big_55_encodeBetterBlockSIMDAsm64K
+
+match_esc_53_encodeBetterBlockSIMDAsm64K:
+	SUB  $33, R9, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R9
+	ADD  R9, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R9, R9
+	MOVD R9, 24(R8)
+	ORR  $0x00000084, R1, R1
+	JMP  match_tok_38_encodeBetterBlockSIMDAsm64K
+
+match_big_55_encodeBetterBlockSIMDAsm64K:
+	MOVD $0x000000ff, R7
+	MOVD st+0(FP), R8
+	MOVD 24(R8), R10
+	ADD  R10, R8, R15
+	MOVB R7, 49257(R15)
+	ADD  $1, R10, R10
+	MOVD R10, 24(R8)
+	ORR  $0x00000084, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x00000120, R9, R9
+	CMP  $0x00000120, R9
+	BHI  match_big_55_encodeBetterBlockSIMDAsm64K
+	CMP  $0x20, R9
+	BHI  match_esc_53_encodeBetterBlockSIMDAsm64K
+	JMP  match_rest_56_encodeBetterBlockSIMDAsm64K
+
+match_short_54_encodeBetterBlockSIMDAsm64K:
+	ORR $0x01, R24, R24
+
+match_short_loop_57_encodeBetterBlockSIMDAsm64K:
+	ORR  $0x00000080, R1, R1
+	MOVD st+0(FP), R7
+	ADD  R19, R7, R15
+	MOVB R1, 105(R15)
+	ADD  $1, R19, R19
+	MOVD $0x00000001, R1
+	SUB  $0x20, R9, R9
+	CMP  $0x20, R9
+	BHI  match_short_loop_57_encodeBetterBlockSIMDAsm64K
+
+match_rest_56_encodeBetterBlockSIMDAsm64K:
+	ADD R9<<2, R1, R1
+	JMP match_tok_38_encodeBetterBlockSIMDAsm64K
+
+return_encodeBetterBlockSIMDAsm64K:
+	MOVD st+0(FP), R0
+	MOVD R19, (R0)
+	SUB  R0, R22, R22
+	SUB  $0x00004069, R22, R22
+	MOVD R22, 8(R0)
+	SUB  R0, R26, R26
+	SUB  $0x00008069, R26, R26
+	MOVD R26, 16(R0)
+	SUB  R0, R17, R17
+	SUB  $0x00014069, R17, R17
+	MOVD R17, 32(R0)
+	MOVD 88(RSP), R1
+	MOVD R1, 56(R0)
+	MOVD R25, 48(R0)
+	MOVD R20, 64(R0)
+	MOVD src_base+8(FP), R1
+	ADD  $1, R1, R1
+	SUB  R21, R1, R1
+	MOVD R1, 72(R0)
+	MOVD 80(R0), R16
+	SUB  R16, R23, R23
+	MOVD R23, 40(R0)
+	MOVB R24, 104(R0)
+	RET

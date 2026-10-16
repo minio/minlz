@@ -34,6 +34,7 @@ import (
 	"github.com/minio/minlz"
 	"github.com/minio/minlz/cmd/internal/filepathx"
 	"github.com/minio/minlz/cmd/internal/readahead"
+	"github.com/minio/minlz/internal/reference"
 )
 
 const maxBlockSize = 8 << 20
@@ -679,6 +680,38 @@ func decodedLen(src []byte) (blockLen, headerLen int, err error) {
 // The dst and src must not overlap. It is valid to pass a nil dst.
 func DecodeDebug(dst, src []byte) (ok bool) {
 	fmt.Println("")
+	if len(src) > 1 && src[0] == 0 {
+		if v, n := binary.Uvarint(src[1:]); n > 0 && v>>24 != 0 {
+			if v>>24 != 1 {
+				fmt.Printf("Block type %d (reserved)\n", v>>24)
+				return false
+			}
+			fmt.Printf("Block type %d (SIMD): %d -> %d bytes\n", v>>24, len(src), v&(1<<24-1))
+			d := 0
+			out, err := reference.WalkSIMDBlock(src, &reference.SIMDWalker{
+				Entry: func(stream, mode, values, data, table int) {
+					fmt.Printf("[ENTRY ] %s: %s, %d values, %d bytes, table %d bytes\n", simdStreamNames[stream], simdModeNames[mode], values, data, table)
+				},
+				Chunk: func(flags byte, ops int) {
+					fmt.Printf("[CHUNK ] %d operations, flags %#x\n", ops, flags)
+				},
+				Op: func(lits, ml, offset int, repeat bool) {
+					fmt.Printf("%08d\t[OP    ] literals: %d, match: %d, offset: %d", d, lits, ml, offset)
+					if repeat && ml > 0 {
+						fmt.Print(" [REPEAT]")
+					}
+					fmt.Println()
+					d += lits + ml
+				},
+			})
+			if err != nil {
+				fmt.Println("ERROR:", err)
+				return false
+			}
+			fmt.Printf("%08d\t[LITS  ] - length: %d\n", d, len(out)-d)
+			return true
+		}
+	}
 	isMLZ, lits, block, dLen, err := isMinLZ(src)
 	if err != nil {
 		return false

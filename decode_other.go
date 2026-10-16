@@ -24,3 +24,14 @@ package minlz
 func minLZDecode(dst, src []byte) int {
 	return minLZDecodeGo(dst, src)
 }
+
+// simdExec runs the first n operations of c. See simdExecGo.
+func simdExec(dst, lits []byte, c *simdChunk, n int, st *[4]int) {
+	simdExecGo(dst, lits, c, n, st)
+}
+
+func simdTokStatsAsm(tok []byte) (out, nLit, nRep, nEsc, n int, ok bool) { return 0, 0, 0, 0, 0, true }
+
+func simdLLStatsAsm(ll []byte) (sum, nEsc, n int, ok bool) { return 0, 0, 0, true }
+
+func simdOffStatsAsm(offc []byte) (bits, n int, ok bool) { return 0, 0, true }

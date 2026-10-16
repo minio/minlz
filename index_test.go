@@ -16,6 +16,7 @@ package minlz_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -25,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/minio/minlz"
+	"github.com/minio/minlz/internal/reference"
 )
 
 func ExampleIndex_Load() {
@@ -268,6 +270,30 @@ func TestSeeking(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestIndexMaxEntries checks that an index with 65536 entries, the maximum, loads, and one with more doesn't.
+func TestIndexMaxEntries(t *testing.T) {
+	const est = 1 << 20
+	index := func(n int) []byte {
+		b := binary.AppendVarint(nil, int64(n)*est)
+		b = binary.AppendVarint(b, -1)
+		b = binary.AppendVarint(b, est)
+		b = binary.AppendVarint(b, int64(n))
+		// No uncompressed offsets, and compressed offsets as zero deltas from the estimate.
+		return minlz.RestoreIndexHeaders(append(b, make([]byte, 1+n)...))
+	}
+	for _, n := range []int{1 << 16, 1<<16 + 1} {
+		ok := n <= 1<<16
+		var i minlz.Index
+		if _, err := i.Load(index(n)); (err == nil) != ok || ok && len(i.Offsets) != n {
+			t.Errorf("%d entries: got %d offsets, error %v", n, len(i.Offsets), err)
+		}
+		ref, err := reference.LoadIndex(index(n))
+		if (err == nil) != ok || ok && len(ref.Blocks) != n {
+			t.Errorf("reference, %d entries: error %v", n, err)
+		}
+	}
 }
 
 func TestSeekingStreamIndex(t *testing.T) {
