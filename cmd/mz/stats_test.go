@@ -20,7 +20,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/minio/minlz"
@@ -123,6 +125,37 @@ func TestStatsEmptyStream(t *testing.T) {
 		err := analyzeStream(bufio.NewReader(bytes.NewReader(bytes.Join(tt.stream, nil))), &fileReport{}, statsOpts{})
 		if (err == nil) != tt.ok {
 			t.Errorf("%s: got error %v, want ok %v", tt.name, err, tt.ok)
+		}
+	}
+}
+
+// TestStatsSIMD checks that the stats of SIMD blocks add up: the output, and the operations against their streams.
+func TestStatsSIMD(t *testing.T) {
+	rng := rand.New(rand.NewPCG(1, 2))
+	words := strings.Fields("Hello SIMD chunk, hello SIMD stream. The quick brown fox jumps over the lazy dog 0123456789")
+	var data []byte
+	for len(data) < 300<<10 {
+		data = append(data, words[rng.IntN(len(words))]...)
+		data = append(data, byte(' '+rng.IntN(3)))
+	}
+	for _, level := range []int{minlz.LevelSuperFastSIMD, minlz.LevelFastestSIMD | minlz.LevelSIMDDelta, minlz.LevelBalancedSIMD, minlz.LevelSmallestSIMD} {
+		block, err := minlz.Encode(nil, data, level)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rep fileReport
+		if err := analyzeRawBlock(block, &rep, statsOpts{}); err != nil {
+			t.Fatal(level, err)
+		}
+		ss, ops := &rep.SIMD, &rep.OpTotals
+		got := []uint64{rep.TotalOut, rep.TotalEnc, ss.BlockBytes, ss.Streams[5].Values, ss.Operations, ss.Streams[2].Values, ss.Streams[4].Values}
+		want := []uint64{uint64(len(data)), uint64(len(block) - 1), uint64(len(block) - 1), ops[opLiteral].OutBytes, ops[opRepeat].Count + ops[opMatch].Count + ss.NoMatch, ops[opMatch].Count, ops[opMatch].Count}
+		if !slices.Equal(got, want) || ss.Blocks != 1 || ss.otherBytes() == 0 || ss.otherBytes() > 64 {
+			t.Errorf("level %d: got %v, want %v; %d blocks, %d other bytes", level, got, want, ss.Blocks, ss.otherBytes())
+		}
+		// The literals after the last operation are one more Literal op.
+		if n := ops[opLiteral].Count - ss.Streams[1].Values; n > 1 {
+			t.Errorf("level %d: %d literal ops for %d literal lengths", level, ops[opLiteral].Count, ss.Streams[1].Values)
 		}
 	}
 }

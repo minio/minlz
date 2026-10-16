@@ -760,10 +760,20 @@ func (e *simdEncoder) encodeBlockBest(src []byte) {
 		base := s
 		offset := s - best.offset
 		s += best.length
+		n := best.length
+		if offset < simdMaxLen && n > 2*simdMaxLen {
+			n = simdMaxLen
+		}
 		if best.rep {
-			e.emitRepeatLits(src[nextEmit:base], best.length)
+			e.emitRepeatLits(src[nextEmit:base], n)
 		} else {
-			e.emitCopyLits(src[nextEmit:base], offset, best.length)
+			e.emitCopyLits(src[nextEmit:base], offset, n)
+		}
+		if n < best.length {
+			// Matches over 32 bytes need an offset of at least 32. A multiple of a shorter period is one,
+			// so the rest takes operations of up to 288 bytes instead of 32.
+			offset *= (simdMaxLen + offset - 1) / offset
+			e.emitCopy(offset, best.length-n)
 		}
 		repeat = offset
 

@@ -1277,6 +1277,36 @@ func testSIMDEncodeOps(t *testing.T) {
 	}
 }
 
+// TestSIMDEncodeShortPeriod checks that LevelSmallestSIMD continues long matches with an offset below 32
+// at a multiple of the offset, in operations of up to 288 bytes instead of 32.
+func TestSIMDEncodeShortPeriod(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	for _, r := range []int{1, 2, 7, 21, 31} {
+		// A short run, a byte that breaks the period, then a long run whose match is a repeat.
+		src := genEncRandom(rng, 64)
+		for len(src) < 64+50 {
+			src = append(src, src[len(src)-r])
+		}
+		src = append(src, ^src[len(src)-r])
+		for len(src) < 64+50+1+2000 {
+			src = append(src, src[len(src)-r])
+		}
+		src = append(src, genEncRandom(rng, 64)...)
+		enc, err := Encode(nil, src, LevelSmallestSIMD)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := reference.DecodeSIMDBlockStrict(enc); err != nil || !bytes.Equal(got, src) {
+			t.Fatalf("period %d: %v", r, err)
+		}
+		ops := 0
+		reference.WalkSIMDBlock(enc, &reference.SIMDWalker{Op: func(_, _, _ int, _ bool) { ops++ }})
+		if ops > 20 {
+			t.Errorf("period %d: %d operations, want at most 20", r, ops)
+		}
+	}
+}
+
 func TestSIMDEncodeChunkEdge(t *testing.T) {
 	type op struct{ lits, off, ml int }
 	for _, delta := range []int{0, -1, 256} {

@@ -275,22 +275,39 @@ type simdDecoder struct {
 	repeat int
 	ops    int
 	strict bool
+	w      *SIMDWalker
+}
+
+// SIMDWalker receives the contents of a SIMD block from WalkSIMDBlock. Nil functions are not called.
+type SIMDWalker struct {
+	// Entry gets each stream entry in block order: the stream (0 tokens, 1 literal lengths, 2 offset symbols,
+	// 3 escapes, 4 offset bits, 5 literals), its mode, its number of values, and the bytes of its data and new table.
+	Entry func(stream, mode, values, data, table int)
+	// Chunk gets the flags and number of operations of each chunk, after its entries.
+	Chunk func(flags byte, ops int)
+	// Op gets each operation: its number of literals, match length and offset, and whether the offset is repeated.
+	Op func(lits, ml, offset int, repeat bool)
 }
 
 // DecodeSIMDBlock is a reference decoder of SIMD blocks, as specified in SIMD_SPEC.md.
 // src is the block, including its indicator byte.
 // This implementation is not optimized for speed, but for readability.
 func DecodeSIMDBlock(src []byte) ([]byte, error) {
-	return decodeSIMDBlock(src, false)
+	return decodeSIMDBlock(src, false, &SIMDWalker{})
 }
 
 // DecodeSIMDBlockStrict is DecodeSIMDBlock, but also rejects overlapping matches in chunks with
 // the no-overlap flag, which SIMD_SPEC.md doesn't require. It checks encoders.
 func DecodeSIMDBlockStrict(src []byte) ([]byte, error) {
-	return decodeSIMDBlock(src, true)
+	return decodeSIMDBlock(src, true, &SIMDWalker{})
 }
 
-func decodeSIMDBlock(src []byte, strict bool) ([]byte, error) {
+// WalkSIMDBlock is DecodeSIMDBlock, and reports the contents of the block to w.
+func WalkSIMDBlock(src []byte, w *SIMDWalker) ([]byte, error) {
+	return decodeSIMDBlock(src, false, w)
+}
+
+func decodeSIMDBlock(src []byte, strict bool, w *SIMDWalker) ([]byte, error) {
 	if len(src) == 0 || src[0] != 0 {
 		return nil, errors.New("indicator byte is not 0")
 	}
@@ -325,7 +342,7 @@ func decodeSIMDBlock(src []byte, strict bool) ([]byte, error) {
 		return nil, fmt.Errorf("LZ section size %d larger than the block", lzSize)
 	}
 	lz := int(lzSize)
-	d := simdDecoder{size: size, repeat: 1, out: make([]byte, 0, size), strict: strict}
+	d := simdDecoder{size: size, repeat: 1, out: make([]byte, 0, size), strict: strict, w: w}
 	if err := d.literals(body[lz:]); err != nil {
 		return nil, err
 	}
@@ -440,6 +457,7 @@ func (d *simdDecoder) stream(r *entryReader, k, count int) ([]byte, error) {
 	}
 	vals := r.data[:size]
 	r.data = r.data[size:]
+	tab := 0
 	switch {
 	case mode == modeStored:
 	case mode > modeDeltaLengths:
@@ -459,6 +477,7 @@ func (d *simdDecoder) stream(r *entryReader, k, count int) ([]byte, error) {
 		}
 		r.recs = r.recs[tn:]
 		d.tables[k] = t
+		tab = tn
 	}
 	if mode != modeStored {
 		if count < 0 {
@@ -477,6 +496,9 @@ func (d *simdDecoder) stream(r *entryReader, k, count int) ([]byte, error) {
 			return nil, fmt.Errorf("%s: value %d outside the stream's range", s.name, v)
 		}
 	}
+	if d.w.Entry != nil {
+		d.w.Entry(k, mode, len(vals), int(size), tab)
+	}
 	return vals, nil
 }
 
@@ -486,6 +508,9 @@ func (d *simdDecoder) chunk(c [streamOffsetBits + 1][]byte, flags byte, limit in
 	tok, ll, offc, esc, raw := c[streamTokens], c[streamLitLens], c[streamOffsets], c[streamEscapes], c[streamOffsetBits]
 	if len(tok) == 0 || len(tok) > limit {
 		return fmt.Errorf("chunk of %d operations, limit %d", len(tok), limit)
+	}
+	if d.w.Chunk != nil {
+		d.w.Chunk(flags, len(tok))
 	}
 	next := func(s *[]byte, name string) (int, error) {
 		if len(*s) == 0 {
@@ -508,6 +533,7 @@ func (d *simdDecoder) chunk(c [streamOffsetBits + 1][]byte, flags byte, limit in
 		if d.ops == 0 && t&2 == 0 {
 			return errors.New("first operation without literals")
 		}
+		lits := 0
 		if t&2 != 0 {
 			n, err := next(&ll, "literal length")
 			if err == nil {
@@ -530,6 +556,7 @@ func (d *simdDecoder) chunk(c [streamOffsetBits + 1][]byte, flags byte, limit in
 				d.out = append(d.out, b)
 			}
 			d.l += n
+			lits = n
 		}
 		if t&1 == 0 {
 			sym, err := next(&offc, "offset symbol")
@@ -566,6 +593,9 @@ func (d *simdDecoder) chunk(c [streamOffsetBits + 1][]byte, flags byte, limit in
 		}
 		for range ml {
 			d.out = append(d.out, d.out[len(d.out)-r])
+		}
+		if d.w.Op != nil {
+			d.w.Op(lits, ml, r, t&1 != 0)
 		}
 		d.ops++
 	}

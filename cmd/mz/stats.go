@@ -32,6 +32,7 @@ import (
 
 	"github.com/minio/minlz"
 	"github.com/minio/minlz/cmd/internal/filepathx"
+	"github.com/minio/minlz/internal/reference"
 )
 
 // Chunk types (redeclared from minlz package; spec-stable).
@@ -72,10 +73,16 @@ const (
 	opCopy3
 	opCopy3F
 	opFusedLit
+	opMatch // SIMD match with a new offset.
 	numOpTypes
 )
 
-var opNames = [numOpTypes]string{"Literal", "Repeat", "Copy1", "Copy2", "Copy2-F", "Copy3", "Copy3-F", "FusedLit"}
+var opNames = [numOpTypes]string{"Literal", "Repeat", "Copy1", "Copy2", "Copy2-F", "Copy3", "Copy3-F", "FusedLit", "Match"}
+
+var (
+	simdStreamNames = [...]string{"tokens", "literal lengths", "offset symbols", "escapes", "offset bits", "literals"}
+	simdModeNames   = [...]string{"stored", "current", "code lengths", "class lengths", "delta lengths"}
+)
 
 func opTypeName(i int) string {
 	if i < 0 || i >= numOpTypes {
@@ -172,6 +179,40 @@ type blockStats struct {
 	RepeatPrev    [numOpTypes]uint64  `json:"repeatPrev"`
 	LongestCopy   uint32              `json:"longestCopy"`
 	LongestLitRun uint32              `json:"longestLitRun"`
+	SIMDSize      int                 `json:"simdSize,omitempty"` // SIMD block size without chunk framing.
+}
+
+// simdStats holds the contents of SIMD blocks, which entropy code their operations in separate streams.
+type simdStats struct {
+	Blocks          uint64
+	BlockBytes      uint64
+	Chunks          uint64
+	DeltaChunks     uint64
+	NoOverlapChunks uint64
+	Operations      uint64
+	NoMatch         uint64
+	Streams         [len(simdStreamNames)]simdStreamStats
+}
+
+type simdStreamStats struct {
+	Entries, Values, Data, Table uint64
+	Modes                        [len(simdModeNames)]uint64
+}
+
+func (s *simdStreamStats) bitsPerValue() float64 {
+	if s.Values == 0 {
+		return 0
+	}
+	return float64(8*(s.Data+s.Table)) / float64(s.Values)
+}
+
+// otherBytes returns the bytes of headers and entry records.
+func (s *simdStats) otherBytes() uint64 {
+	n := s.BlockBytes
+	for _, st := range s.Streams {
+		n -= st.Data + st.Table
+	}
+	return n
 }
 
 func (b *blockStats) totalOps() uint64 {
@@ -220,6 +261,7 @@ type fileReport struct {
 	LongestCopy      uint32              `json:"longestCopy"`
 	LongestLitRun    uint32              `json:"longestLitRun"`
 	RepeatPrev       [numOpTypes]uint64  `json:"repeatPrev"`
+	SIMD             simdStats           `json:"simd"`
 }
 
 type statsOpts struct {
@@ -395,10 +437,12 @@ func analyzeRawBlock(data []byte, rep *fileReport, opts statsOpts) error {
 	body := data[hdr:]
 	bs := blockStats{Index: 0, ChunkType: 0, CompSize: len(data), UncompSize: int(uncomp)}
 	if uncomp>>24 == 1 {
-		// Operations of SIMD blocks are entropy coded; only sizes are reported.
 		rep.Format = "simd block"
 		bs.ChunkType = chunkMinLZSIMD
 		bs.UncompSize = int(uncomp & (1<<24 - 1))
+		if err := walkSIMDBlock(data, &bs, &rep.SIMD); err != nil {
+			return err
+		}
 	} else if uncomp == 0 {
 		// All literals.
 		bs.Ops[opLiteral].Count = 1
@@ -536,17 +580,23 @@ func analyzeStream(br *bufio.Reader, rep *fileReport, opts statsOpts) error {
 			if _, err := io.ReadFull(br, buf); err != nil {
 				return err
 			}
-			// Skip 8-byte hash. Operations are entropy coded; only sizes are reported.
+			// Skip 8-byte hash.
 			v, n := binary.Uvarint(buf[8:])
 			if n <= 0 || v>>24 != 1 {
 				return fmt.Errorf("corrupt SIMD block header: %w", minlz.ErrCorrupt)
 			}
 			uncomp := v & (1<<24 - 1)
+			bs := blockStats{Index: len(rep.Blocks), ChunkType: ct, CompSize: clen, UncompSize: int(uncomp)}
+			// The chunk has no indicator byte; put it over the last hash byte, which isn't checked.
+			buf[7] = 0
+			if err := walkSIMDBlock(buf[7:], &bs, &rep.SIMD); err != nil {
+				return fmt.Errorf("block %d: %w", bs.Index, err)
+			}
 			rep.Stream.SimdBlocks++
 			rep.Stream.BlockSizeHist[bucket(uint32(clen))]++
 			rep.Stream.UncompSizeHist[bucket(uint32(uncomp))]++
 			rep.Stream.RatioBuckets[ratioBucket(int(uncomp), clen)]++
-			mergeBlockIntoReport(rep, &blockStats{Index: len(rep.Blocks), ChunkType: ct, CompSize: clen, UncompSize: int(uncomp)}, opts)
+			mergeBlockIntoReport(rep, &bs, opts)
 			uncompEmitted += uncomp
 
 		case chunkUncompressed:
@@ -852,6 +902,79 @@ func walkBlock(src []byte, wantSize int, bs *blockStats) error {
 	return nil
 }
 
+// walkSIMDBlock walks a SIMD block, including its indicator byte, with the reference decoder.
+// The literals of each operation count as a Literal op; trailing literals as one more.
+func walkSIMDBlock(block []byte, bs *blockStats, ss *simdStats) error {
+	d, prevOp, offsets := 0, -1, 0
+	var litRun uint32
+	add := func(op int, length, off uint32) {
+		st := &bs.Ops[op]
+		st.Count++
+		st.OutBytes += uint64(length)
+		st.addLen(length)
+		if op == opLiteral {
+			litRun += length
+			bs.LongestLitRun = max(bs.LongestLitRun, litRun)
+		} else {
+			st.addOff(off)
+			bs.LongestCopy = max(bs.LongestCopy, length)
+			if op == opRepeat && prevOp >= 0 {
+				bs.RepeatPrev[prevOp]++
+			}
+			litRun = 0
+		}
+		prevOp = op
+	}
+	w := reference.SIMDWalker{
+		Entry: func(stream, mode, values, data, table int) {
+			// Offset bits count per offset, so bits per value includes the raw bits of all offsets.
+			switch stream {
+			case 2:
+				offsets = values
+			case 4:
+				values = offsets
+			}
+			s := &ss.Streams[stream]
+			s.Entries++
+			s.Modes[mode]++
+			s.Values += uint64(values)
+			s.Data += uint64(data)
+			s.Table += uint64(table)
+		},
+		Chunk: func(flags byte, ops int) {
+			ss.Chunks++
+			ss.DeltaChunks += uint64(flags & 1)
+			ss.NoOverlapChunks += uint64(flags >> 1 & 1)
+			ss.Operations += uint64(ops)
+		},
+		Op: func(lits, ml, offset int, repeat bool) {
+			d += lits + ml
+			if lits > 0 {
+				add(opLiteral, uint32(lits), 0)
+			}
+			switch {
+			case ml == 0:
+				ss.NoMatch++
+			case repeat:
+				add(opRepeat, uint32(ml), uint32(offset))
+			default:
+				add(opMatch, uint32(ml), uint32(offset))
+			}
+		},
+	}
+	out, err := reference.WalkSIMDBlock(block, &w)
+	if err != nil {
+		return err
+	}
+	if len(out) > d {
+		add(opLiteral, uint32(len(out)-d), 0)
+	}
+	ss.Blocks++
+	ss.BlockBytes += uint64(len(block) - 1)
+	bs.SIMDSize = len(block) - 1
+	return nil
+}
+
 func mergeBlockIntoReport(rep *fileReport, bs *blockStats, opts statsOpts) {
 	for i := range bs.Ops {
 		rep.OpTotals[i].merge(&bs.Ops[i])
@@ -863,10 +986,15 @@ func mergeBlockIntoReport(rep *fileReport, bs *blockStats, opts statsOpts) {
 		rep.TotalOut += bs.Ops[i].OutBytes
 		rep.TotalEnc += bs.Ops[i].HeaderBytes
 	}
-	// Literal bodies and fused-lit bytes are in the compressed stream too.
-	rep.TotalEnc += bs.Ops[opLiteral].OutBytes + bs.Ops[opFusedLit].OutBytes
+	if bs.ChunkType == chunkMinLZSIMD {
+		// Literals and operations share entropy coded streams; only the block size is known.
+		rep.TotalEnc += uint64(bs.SIMDSize)
+	} else {
+		// Literal bodies and fused-lit bytes are in the compressed stream too.
+		rep.TotalEnc += bs.Ops[opLiteral].OutBytes + bs.Ops[opFusedLit].OutBytes
+	}
 	rep.TotalLitBytes += bs.Ops[opLiteral].OutBytes + bs.Ops[opFusedLit].OutBytes
-	for _, o := range []int{opCopy1, opCopy2, opCopy2F, opCopy3, opCopy3F} {
+	for _, o := range []int{opCopy1, opCopy2, opCopy2F, opCopy3, opCopy3F, opMatch} {
 		rep.TotalCopyBytes += bs.Ops[o].OutBytes
 	}
 	rep.TotalRepeatBytes += bs.Ops[opRepeat].OutBytes
@@ -973,7 +1101,30 @@ type jsonFile struct {
 	FusedLitBreakdown []jsonFusedBreakdown `json:"fusedLitBreakdown,omitempty"`
 	RepeatLineage     []jsonRepeatLineage  `json:"repeatLineage,omitempty"`
 	Stream            *jsonStream          `json:"stream,omitempty"`
+	SIMD              *jsonSIMD            `json:"simd,omitempty"`
 	Blocks            []jsonBlock          `json:"blocks,omitempty"`
+}
+
+type jsonSIMD struct {
+	Blocks          uint64           `json:"blocks"`
+	BlockBytes      uint64           `json:"blockBytes"`
+	Chunks          uint64           `json:"chunks"`
+	DeltaChunks     uint64           `json:"deltaChunks"`
+	NoOverlapChunks uint64           `json:"noOverlapChunks"`
+	Operations      uint64           `json:"operations"`
+	NoMatch         uint64           `json:"noMatch"`
+	OtherBytes      uint64           `json:"otherBytes"`
+	Streams         []jsonSIMDStream `json:"streams"`
+}
+
+type jsonSIMDStream struct {
+	Name         string            `json:"name"`
+	Entries      uint64            `json:"entries"`
+	Values       uint64            `json:"values"`
+	DataBytes    uint64            `json:"dataBytes"`
+	TableBytes   uint64            `json:"tableBytes"`
+	BitsPerValue float64           `json:"bitsPerValue"`
+	Modes        map[string]uint64 `json:"modes"`
 }
 
 type jsonTotals struct {
@@ -1158,8 +1309,14 @@ func buildJSONFile(rep *fileReport, opts statsOpts) jsonFile {
 		if rep.TotalEnc > 0 {
 			jo.PctEnc = float64(enc) * 100 / float64(rep.TotalEnc)
 		}
+		if rep.SIMD.Blocks > 0 {
+			// Operations of SIMD blocks have no encoding of their own; see the SIMD streams.
+			jo.EncBytes, jo.AvgEnc, jo.PctEnc = 0, 0, 0
+		}
 		if i != opLiteral && i != opFusedLit {
-			jo.Saved = int64(s.OutBytes) - int64(enc)
+			if rep.SIMD.Blocks == 0 {
+				jo.Saved = int64(s.OutBytes) - int64(enc)
+			}
 			jo.MinOff = s.MinOff
 			jo.MaxOff = s.MaxOff
 			if s.SumOff > 0 {
@@ -1266,6 +1423,37 @@ func buildJSONFile(rep *fileReport, opts statsOpts) jsonFile {
 		jf.Stream = js
 	}
 
+	if ss := &rep.SIMD; ss.Blocks > 0 {
+		js := &jsonSIMD{
+			Blocks:          ss.Blocks,
+			BlockBytes:      ss.BlockBytes,
+			Chunks:          ss.Chunks,
+			DeltaChunks:     ss.DeltaChunks,
+			NoOverlapChunks: ss.NoOverlapChunks,
+			Operations:      ss.Operations,
+			NoMatch:         ss.NoMatch,
+			OtherBytes:      ss.otherBytes(),
+		}
+		for i, st := range ss.Streams {
+			jst := jsonSIMDStream{
+				Name:         simdStreamNames[i],
+				Entries:      st.Entries,
+				Values:       st.Values,
+				DataBytes:    st.Data,
+				TableBytes:   st.Table,
+				BitsPerValue: st.bitsPerValue(),
+				Modes:        map[string]uint64{},
+			}
+			for m, n := range st.Modes {
+				if n > 0 {
+					jst.Modes[simdModeNames[m]] = n
+				}
+			}
+			js.Streams = append(js.Streams, jst)
+		}
+		jf.SIMD = js
+	}
+
 	if opts.perBlock {
 		for bi := range rep.Blocks {
 			b := &rep.Blocks[bi]
@@ -1345,12 +1533,15 @@ func renderText(w io.Writer, rep *fileReport, opts statsOpts) {
 	if rep.Format == "stream" {
 		renderStreamSummary(bw, &rep.Stream)
 	}
+	if rep.SIMD.Blocks > 0 {
+		renderSIMD(bw, &rep.SIMD)
+	}
 
 	// Aggregate compression
 	fmt.Fprintln(bw, "\n--- Aggregate ---")
 	fmt.Fprintf(bw, "Total ops:        %d\n", rep.TotalOps)
 	fmt.Fprintf(bw, "Output bytes:     %s (%d)\n", humanSize(int64(rep.TotalOut)), rep.TotalOut)
-	fmt.Fprintf(bw, "Encoding bytes:   %s (%d)  (headers + literal bodies + fused lits)\n", humanSize(int64(rep.TotalEnc)), rep.TotalEnc)
+	fmt.Fprintf(bw, "Encoding bytes:   %s (%d)  (headers + literal bodies + fused lits + SIMD blocks)\n", humanSize(int64(rep.TotalEnc)), rep.TotalEnc)
 	if rep.TotalOut > 0 {
 		fmt.Fprintf(bw, "Bytes/output:     %.4f  (lower = better)\n", float64(rep.TotalEnc)/float64(rep.TotalOut))
 		fmt.Fprintf(bw, "Output/op:        %.2f bytes/op\n", float64(rep.TotalOut)/float64(rep.TotalOps))
@@ -1389,8 +1580,14 @@ func renderText(w io.Writer, rep *fileReport, opts statsOpts) {
 		if i != opFusedLit {
 			pctOpsStr = fmt.Sprintf("%5.1f%% ", float64(s.Count)*100/float64(rep.TotalOps))
 		}
-		fmt.Fprintf(bw, "%-8s %10d %s %12d %5.1f%% %12d %5.1f%% %8.2f %8.2f %12d\n",
-			opNames[i], s.Count, pctOpsStr, s.OutBytes, pctOut, encTotal, pctEnc, avgOut, avgEnc, saved)
+		encStr := fmt.Sprintf("%12d %5.1f%%", encTotal, pctEnc)
+		avgEncStr, savedStr := fmt.Sprintf("%8.2f", avgEnc), strconv.FormatInt(saved, 10)
+		if rep.SIMD.Blocks > 0 {
+			// Operations of SIMD blocks have no encoding of their own; see the SIMD streams.
+			encStr, avgEncStr, savedStr = fmt.Sprintf("%12s %6s", "—", "—"), fmt.Sprintf("%8s", "—"), "—"
+		}
+		fmt.Fprintf(bw, "%-8s %10d %s %12d %5.1f%% %s %8.2f %s %12s\n",
+			opNames[i], s.Count, pctOpsStr, s.OutBytes, pctOut, encStr, avgOut, avgEncStr, savedStr)
 	}
 
 	// Fused stats
@@ -1412,24 +1609,25 @@ func renderText(w io.Writer, rep *fileReport, opts statsOpts) {
 		}
 	}
 
-	// Header-size dist
-	fmt.Fprintln(bw, "\n--- Header-size distribution (bytes/op) ---")
-	fmt.Fprintf(bw, "%-8s", "Type")
-	for n := 1; n <= 7; n++ {
-		fmt.Fprintf(bw, " %8d", n)
-	}
-	fmt.Fprintln(bw)
+	// Header-size dist. FusedLit and SIMD operations have no headers.
+	var withHdr []int
 	for i := range numOpTypes {
-		if i == opFusedLit {
-			continue // FusedLit has no header bytes
+		if sumU64(rep.OpTotals[i].HeaderSizeHist[:]) > 0 {
+			withHdr = append(withHdr, i)
 		}
-		s := &rep.OpTotals[i]
-		if s.Count == 0 {
-			continue
+	}
+	if len(withHdr) > 0 {
+		fmt.Fprintln(bw, "\n--- Header-size distribution (bytes/op) ---")
+		fmt.Fprintf(bw, "%-8s", "Type")
+		for n := 1; n <= 7; n++ {
+			fmt.Fprintf(bw, " %8d", n)
 		}
+		fmt.Fprintln(bw)
+	}
+	for _, i := range withHdr {
 		fmt.Fprintf(bw, "%-8s", opNames[i])
 		for n := 1; n <= 7; n++ {
-			fmt.Fprintf(bw, " %8d", s.HeaderSizeHist[n])
+			fmt.Fprintf(bw, " %8d", rep.OpTotals[i].HeaderSizeHist[n])
 		}
 		fmt.Fprintln(bw)
 	}
@@ -1497,7 +1695,7 @@ func renderText(w io.Writer, rep *fileReport, opts statsOpts) {
 	if opts.perBlock && len(rep.Blocks) > 0 {
 		fmt.Fprintln(bw, "\n--- Per-block summary ---")
 		fmt.Fprintf(bw, "%-6s %-6s %10s %10s %7s %8s   %s\n",
-			"idx", "ct", "comp", "uncomp", "ratio", "ops", "L/R/C1/C2/C2F/C3/C3F/FL")
+			"idx", "ct", "comp", "uncomp", "ratio", "ops", "L/R/C1/C2/C2F/C3/C3F/FL/M")
 		for _, b := range rep.Blocks {
 			ratio := 0.0
 			if b.UncompSize > 0 {
@@ -1521,7 +1719,7 @@ func renderStreamSummary(bw *bufio.Writer, ss *streamStats) {
 	fmt.Fprintf(bw, "MinLZ blocks:            %d  (0x02 CRC-uncomp: %d, 0x03 CRC-comp: %d)\n",
 		ss.MinlzBlocks, ss.CrcMode02, ss.CrcMode03)
 	if ss.SimdBlocks > 0 {
-		fmt.Fprintf(bw, "SIMD blocks:             %d  (operations not analyzed)\n", ss.SimdBlocks)
+		fmt.Fprintf(bw, "SIMD blocks:             %d\n", ss.SimdBlocks)
 	}
 	fmt.Fprintf(bw, "Uncompressed blocks:     %d\n", ss.UncompBlocks)
 	if ss.LegacyBlocks > 0 {
@@ -1542,6 +1740,24 @@ func renderStreamSummary(bw *bufio.Writer, ss *streamStats) {
 	for _, r := range rows {
 		fmt.Fprintf(bw, "  0x%02x %-22s %10d %14d\n", r.id, chunkTypeName(byte(r.id)), r.count, r.bytes)
 	}
+}
+
+func renderSIMD(bw *bufio.Writer, ss *simdStats) {
+	fmt.Fprintln(bw, "\n--- SIMD blocks ---")
+	fmt.Fprintf(bw, "Blocks:      %d, %s (%d bytes)\n", ss.Blocks, humanSize(int64(ss.BlockBytes)), ss.BlockBytes)
+	fmt.Fprintf(bw, "Chunks:      %d (delta literals: %d, no overlap: %d)\n", ss.Chunks, ss.DeltaChunks, ss.NoOverlapChunks)
+	fmt.Fprintf(bw, "Operations:  %d (without a match: %d)\n", ss.Operations, ss.NoMatch)
+	pct := func(n uint64) float64 { return float64(n) * 100 / float64(max(ss.BlockBytes, 1)) }
+	fmt.Fprintf(bw, "\n%-16s %8s %12s %12s %10s %6s %8s   %s\n", "Stream", "Entries", "Values", "DataBytes", "TableBytes", "%Blk", "Bits/val", "Stored/Current/Code/Class/Delta")
+	for i, st := range ss.Streams {
+		modes := make([]string, len(st.Modes))
+		for m, n := range st.Modes {
+			modes[m] = strconv.FormatUint(n, 10)
+		}
+		fmt.Fprintf(bw, "%-16s %8d %12d %12d %10d %5.1f%% %8.3f   %s\n", simdStreamNames[i], st.Entries, st.Values, st.Data, st.Table,
+			pct(st.Data+st.Table), st.bitsPerValue(), strings.Join(modes, "/"))
+	}
+	fmt.Fprintf(bw, "%-16s %8s %12s %12d %10s %5.1f%%\n", "headers/records", "", "", ss.otherBytes(), "", pct(ss.otherBytes()))
 }
 
 func renderHist(bw *bufio.Writer, h []uint64, total uint64) {
@@ -1733,9 +1949,28 @@ func renderCSV(out io.Writer, reps []fileReport, opts statsOpts) error {
 			w.Write(row)
 		}
 
+		if ss := &rep.SIMD; ss.Blocks > 0 {
+			w.Write([]string{"# section", "simd"})
+			w.Write([]string{"blocks", "blockBytes", "chunks", "deltaChunks", "noOverlapChunks", "operations", "noMatch", "otherBytes"})
+			var row []string
+			for _, v := range []uint64{ss.Blocks, ss.BlockBytes, ss.Chunks, ss.DeltaChunks, ss.NoOverlapChunks, ss.Operations, ss.NoMatch, ss.otherBytes()} {
+				row = append(row, strconv.FormatUint(v, 10))
+			}
+			w.Write(row)
+			w.Write([]string{"# section", "simd-streams"})
+			w.Write([]string{"stream", "entries", "values", "dataBytes", "tableBytes", "stored", "current", "codeLengths", "classLengths", "deltaLengths"})
+			for i, st := range ss.Streams {
+				row := []string{simdStreamNames[i]}
+				for _, v := range append([]uint64{st.Entries, st.Values, st.Data, st.Table}, st.Modes[:]...) {
+					row = append(row, strconv.FormatUint(v, 10))
+				}
+				w.Write(row)
+			}
+		}
+
 		if opts.perBlock {
 			w.Write([]string{"# section", "per-block"})
-			w.Write([]string{"index", "chunkType", "compSize", "uncompSize", "ops", "lit", "rep", "c1", "c2", "c2f", "c3", "c3f", "fl"})
+			w.Write([]string{"index", "chunkType", "compSize", "uncompSize", "ops", "lit", "rep", "c1", "c2", "c2f", "c3", "c3f", "fl", "m"})
 			for _, b := range rep.Blocks {
 				row := []string{
 					strconv.Itoa(b.Index),

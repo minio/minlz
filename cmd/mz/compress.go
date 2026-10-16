@@ -44,8 +44,8 @@ func mainCompress(args []string) {
 		faster             = fs.Bool("1", false, "Compress faster, but with a minor compression loss")
 		_                  = fs.Bool("2", true, "Default compression speed")
 		slower             = fs.Bool("3", false, "Compress more, but a lot slower")
-		simd               = fs.Bool("simd", false, "Write SIMD blocks, which need a decoder for MinLZ format specification v1.1. -xfast, -1, -2 and -3 select the SIMD level")
-		simdDelta          = fs.Bool("simd.delta", false, "Requires -simd: store literals as deltas, mainly for binary data. Not with -3, which decides itself")
+		classic            = fs.Bool("classic", false, "Write classic MinLZ blocks, which all MinLZ decoders can read. Without it, SIMD blocks are written, which need a decoder for MinLZ format specification v1.1")
+		simdDelta          = fs.Bool("simd.delta", false, "Store SIMD literals as deltas, mainly for binary data. Not with -classic, -0 or -3, which decides itself")
 		recomp             = fs.Bool("recomp", false, "Recompress MinLZ, Snappy or S2 input")
 		blockSize          = fs.String("bs", "8M", "Max block size. Examples: 64K, 256K, 1M, 8M. Must be power of two and <= 8MB")
 		index              = fs.Bool("index", true, "Add seek index")
@@ -129,7 +129,10 @@ Options:`)
 	if *nocomp {
 		level = minlz.LevelUncompressed
 	}
-	if *simd {
+	if *simdDelta && (*classic || level == minlz.LevelUncompressed || level == minlz.LevelSmallest) {
+		exitErr(errors.New("-simd.delta cannot be used with -classic, -0 or -3"))
+	}
+	if !*classic {
 		switch level {
 		case minlz.LevelSuperFast:
 			level = minlz.LevelSuperFastSIMD
@@ -139,17 +142,10 @@ Options:`)
 			level = minlz.LevelBalancedSIMD
 		case minlz.LevelSmallest:
 			level = minlz.LevelSmallestSIMD
-		default:
-			exitErr(errors.New("-simd cannot be used with -0"))
 		}
 		if *simdDelta {
-			if level == minlz.LevelSmallestSIMD {
-				exitErr(errors.New("-simd.delta cannot be used with -3"))
-			}
 			level |= minlz.LevelSIMDDelta
 		}
-	} else if *simdDelta {
-		exitErr(errors.New("-simd.delta requires -simd"))
 	}
 	opts := []minlz.WriterOption{minlz.WriterBlockSize(blockSizeInt), minlz.WriterConcurrency(*cpu), minlz.WriterPadding(padInt), minlz.WriterLevel(level), minlz.WriterAddIndex(*index)}
 	if *searchTable {
