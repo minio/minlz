@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"math"
 	"runtime"
@@ -205,6 +206,23 @@ func (r *Reader) readFull(p []byte, allowEOF bool) (ok bool) {
 		return false
 	}
 	return true
+}
+
+// readFullCRC reads len(p) bytes as readFull, and returns their checksum, unless CRCs are ignored.
+// It reads in pieces and checksums each while it is in cache, which makes the checksum nearly free.
+func (r *Reader) readFullCRC(p []byte) (c uint32, ok bool) {
+	const piece = 32 << 10
+	for len(p) > 0 {
+		n := min(len(p), piece)
+		if !r.readFull(p[:n], false) {
+			return 0, false
+		}
+		if !r.ignoreCRC {
+			c = crc32.Update(c, crcTable, p[:n])
+		}
+		p = p[n:]
+	}
+	return crcMask(c), true
 }
 
 // streamSize returns the decoded size of the current stream, which an EOF chunk must match.
@@ -494,13 +512,14 @@ func (r *Reader) Read(p []byte) (int, error) {
 			if n > len(r.decoded) {
 				r.decoded = make([]byte, n)
 			}
-			if !r.readFull(r.decoded[:n], false) {
+			c, ok := r.readFullCRC(r.decoded[:n])
+			if !ok {
 				if debug {
 					fmt.Println("Readfull2 failed", r.err)
 				}
 				return 0, r.err
 			}
-			if !r.ignoreCRC && crc(r.decoded[:n]) != checksum {
+			if !r.ignoreCRC && c != checksum {
 				r.err = ErrCRC
 				return 0, r.err
 			}
@@ -628,11 +647,26 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 		concurrent = min(runtime.NumCPU(), runtime.GOMAXPROCS(0), 8)
 	}
 	if concurrent == 1 {
-		if rf, ok := w.(io.ReaderFrom); ok {
-			return rf.ReadFrom(r)
+		// Read with no buffer decodes the next block, which is written from r.decoded without a copy.
+		// io.Copy would call WriteTo, which decodes concurrently.
+		for {
+			if _, err := r.Read(nil); err != nil {
+				if err == io.EOF {
+					err = nil
+				}
+				return written, err
+			}
+			n, err := w.Write(r.decoded[r.i:r.j])
+			written += int64(n)
+			if err == nil && n != r.j-r.i {
+				err = io.ErrShortWrite
+			}
+			r.i = r.j
+			if err != nil {
+				r.err = err
+				return written, err
+			}
 		}
-		buf := make([]byte, 128<<10)
-		return io.CopyBuffer(w, r, buf)
 	}
 
 	const debug = false
@@ -989,14 +1023,20 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 			if !r.readFull(buf, false) {
 				return 0, r.err
 			}
-
-			if !r.ignoreCRC && crc(buf) != checksum {
-				r.err = ErrCRC
-				return 0, r.err
-			}
+			wg.Add(1)
 			entry := <-reUse
 			queue <- entry
-			go writeBuf(buf, entry)
+			// The checksum takes as long as reading the chunk, so it runs with the writer, not here.
+			go func() {
+				defer wg.Done()
+				if !r.ignoreCRC && crc(buf) != checksum {
+					writtenBlocks <- orgBuf
+					setErr(ErrCRC)
+					writeBuf(nil, entry)
+					return
+				}
+				writeBuf(buf, entry)
+			}()
 			continue
 		case chunkTypeEOF:
 			if chunkLen != 0 {

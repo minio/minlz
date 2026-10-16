@@ -142,7 +142,11 @@ var crcTable = crc32.MakeTable(crc32.Castagnoli)
 // crc implements the checksum specified in section 3 of
 // https://github.com/google/snappy/blob/master/framing_format.txt
 func crc(b []byte) uint32 {
-	c := crc32.Update(0, crcTable, b)
+	return crcMask(crc32.Update(0, crcTable, b))
+}
+
+// crcMask masks a CRC-32C as crc does.
+func crcMask(c uint32) uint32 {
 	return c>>15 | c<<17 + 0xa282ead8
 }
 

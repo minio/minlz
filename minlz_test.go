@@ -1157,6 +1157,38 @@ func TestReaderUncompressedDataNoPayload(t *testing.T) {
 	}
 }
 
+// TestDecodeConcurrentUncompressedCRC checks that DecodeConcurrent finds a bad checksum of an uncompressed chunk
+// at every concurrency, as the checksum isn't checked by the reading goroutine.
+func TestDecodeConcurrentUncompressedCRC(t *testing.T) {
+	data := make([]byte, 100<<10)
+	rand.New(rand.NewSource(1)).Read(data)
+	var buf bytes.Buffer
+	w := NewWriter(&buf, WriterBlockSize(16<<10), WriterConcurrency(1))
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	stream := buf.Bytes()
+	chunks, seen := stream[len(magicChunk)+1:], 0
+	for off := 0; seen < 3; off += 4 + (int(chunks[off+1]) | int(chunks[off+2])<<8 | int(chunks[off+3])<<16) {
+		if chunks[off] == chunkTypeUncompressedData {
+			if seen++; seen == 3 {
+				chunks[off+4+checksumSize+10] ^= 1
+			}
+		}
+	}
+	for _, c := range []int{1, 2, 8} {
+		if _, err := NewReader(bytes.NewReader(stream)).DecodeConcurrent(io.Discard, c); err != ErrCRC {
+			t.Errorf("concurrency %d: got %v, want %v", c, err, ErrCRC)
+		}
+		if n, err := NewReader(bytes.NewReader(stream), ReaderIgnoreCRC()).DecodeConcurrent(io.Discard, c); err != nil || n != int64(len(data)) {
+			t.Errorf("concurrency %d, ignoring the checksum: %d bytes, %v", c, n, err)
+		}
+	}
+}
+
 func TestReaderUncompressedDataTooLong(t *testing.T) {
 	// The maximum legal chunk length... is 8MB + 4 bytes checksum.
 	n := maxBlockSize + checksumSize
