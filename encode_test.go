@@ -1686,7 +1686,7 @@ func simdParseRun(e *simdEncoder, src []byte, p simdAsmParser, asm bool) (r simd
 	if e.nTok > 0 {
 		e.endChunk()
 	}
-	r = simdParseResult{pos: e.pos, rep: e.rep, chunks: e.chunks, lits: bytes.Clone(e.lits[:e.nLits]),
+	r = simdParseResult{pos: e.pos, rep: e.rep, chunks: e.chunks, lits: append(bytes.Clone(e.lits[:e.nLits]), e.tail...),
 		out: bytes.Clone(e.out), recs: bytes.Clone(e.chunkRecs)}
 	r.size = e.finish()
 	r.block = bytes.Clone(e.out)

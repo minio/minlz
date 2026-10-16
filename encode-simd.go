@@ -89,6 +89,8 @@ type simdEncoder struct {
 	pv     pivco.Encoder
 	src    []byte
 	chunks int
+	// tail holds the literals after the last operation, which finish adds to lits once the block can fit.
+	tail []byte
 
 	// buf holds lits and dlits, the literals of the block as delta literals. With delta literals only, dlits is lits.
 	buf, dlits []byte
@@ -112,6 +114,7 @@ type simdEncoder struct {
 	have                    [simdLits + 1]bool
 	tmp                     [2]simdTable
 	hist                    [256]uint64
+	sample                  [4096]byte
 }
 
 var simdEncoders sync.Pool
@@ -127,7 +130,7 @@ func encodeBlockSIMD(dst, src []byte, level int) int {
 	e.parse(src, level)
 	n := e.finish()
 	// Don't keep the buffers alive in the pool.
-	e.src, e.out = nil, nil
+	e.src, e.tail, e.out = nil, nil, nil
 	simdEncoders.Put(e)
 	return n
 }
@@ -235,13 +238,13 @@ func (e *simdEncoder) reset(src []byte, deltaDiv, save int) {
 	e.nTok, e.nLL, e.nOffc, e.nEsc, e.nRaw, e.nLits, e.chunks = 0, 0, 0, 0, 0, 0, 0
 	e.opLits, e.chunkLits = 0, 0
 	e.acc, e.nacc, e.overlap = 0, 0, false
-	e.src, e.pos, e.rep, e.deltaDiv, e.limit = src, 0, 1, deltaDiv, n-max(simdMinSaving, save)
+	e.src, e.tail, e.pos, e.rep, e.deltaDiv, e.limit = src, nil, 0, 1, deltaDiv, n-max(simdMinSaving, save)
 	e.have = [len(e.have)]bool{}
 }
 
 // emitLiterals adds the literals after the last operation.
 func (e *simdEncoder) emitLiterals(lits []byte) {
-	e.nLits += copy(e.lits[e.nLits:], lits)
+	e.tail = lits
 	e.pos += len(lits)
 }
 
@@ -530,6 +533,11 @@ func (e *simdEncoder) finish() int {
 	if len(e.out)+len(e.chunkRecs) > e.limit {
 		return 0
 	}
+	// On incompressible data, coding the literals takes most of the time, only to fail the block.
+	if e.deltaDiv <= 0 && !e.litsFit(e.limit-len(e.out)-len(e.chunkRecs)) {
+		return 0
+	}
+	e.nLits += copy(e.lits[e.nLits:], e.tail)
 	if len(e.chunkRecs) > 0 {
 		e.out = appendRvarint(append(e.out, e.chunkRecs...), uint64(len(e.chunkRecs)))
 	}
@@ -564,6 +572,36 @@ func (e *simdEncoder) finish() int {
 		return 0
 	}
 	return len(e.out)
+}
+
+// litsFit reports whether the literals, with the tail, can fit in room bytes.
+func (e *simdEncoder) litsFit(room int) bool {
+	need := e.nLits + len(e.tail) - room
+	return need <= 0 || e.sampleSave(e.tail, e.sampleSave(e.lits[:e.nLits], need)) <= 0
+}
+
+// sampleSave returns need less the bytes that coding lits in blocks of up to pivco.MaxBlockSize saves,
+// estimated from the entropy of 16 samples of 256 bytes spread over each block. It stops when need is met,
+// as no block codes larger than stored. The samples' entropy is lower than the block's on average,
+// so literals that coding would fit rarely fail.
+func (e *simdEncoder) sampleSave(lits []byte, need int) int {
+	const runs, run = 16, len(e.sample) / 16
+	for len(lits) > 0 && need > 0 {
+		v := lits[:min(len(lits), pivco.MaxBlockSize)]
+		lits = lits[len(v):]
+		s := v
+		if len(v) > len(e.sample) {
+			// One histogram of all samples is faster than one per sample.
+			for i := range runs {
+				copy(e.sample[i*run:], v[i*(len(v)-run)/(runs-1):][:run])
+			}
+			s = e.sample[:]
+		}
+		clear(e.hist[:])
+		e.pv.Histogram(&e.hist, s)
+		need -= len(v) - simdEntropyBits(e.hist[:], len(s))*len(v)/len(s)/8
+	}
+	return need
 }
 
 // litBlocks returns the boundaries of the literal blocks of lits.
