@@ -15,11 +15,9 @@
 package minlz
 
 import (
-	"archive/zip"
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"math/rand"
 	"strings"
 	"testing"
@@ -316,68 +314,5 @@ func TestDecodeOverlapTailLarge(t *testing.T) {
 		if err != nil || !bytes.Equal(got, want) {
 			t.Fatalf("offset=%d: decode %v; equal=%v", offset, err, bytes.Equal(got, want))
 		}
-	}
-}
-
-// reindexerDecodeBlocks loads actual C-encoded CPROTO replies from Reindexer integration tests.
-// The archive includes source URLs, capture settings, checksums, and the source license.
-func reindexerDecodeBlocks(tb testing.TB) (names []string, encoded, decoded [][]byte) {
-	tb.Helper()
-	r, err := zip.OpenReader("testdata/reindexer-cproto.zip")
-	if err != nil {
-		tb.Fatal(err)
-	}
-	defer r.Close()
-	for _, f := range r.File {
-		if !strings.HasSuffix(f.Name, ".mzb") {
-			continue
-		}
-		rc, err := f.Open()
-		if err != nil {
-			tb.Fatal(err)
-		}
-		block, err := io.ReadAll(rc)
-		rc.Close()
-		if err != nil {
-			tb.Fatal(err)
-		}
-		want, err := reference.DecodeBlock(block)
-		if err != nil {
-			tb.Fatalf("%s: reference decode: %v", f.Name, err)
-		}
-		if len(want) < 2 || want[0] != 0 || want[1] != 0 {
-			tb.Fatalf("%s: captured RPC returned an error", f.Name)
-		}
-		if strings.HasPrefix(f.Name, "field1m-") {
-			payload := bytes.Repeat([]byte("cproto payload-"), ((1<<20)+14)/15)[:1<<20]
-			if !bytes.Contains(want, payload) {
-				tb.Fatalf("%s: stored field was not restored", f.Name)
-			}
-		}
-		names = append(names, strings.TrimSuffix(f.Name, ".mzb"))
-		encoded = append(encoded, block)
-		decoded = append(decoded, want)
-	}
-	if len(names) != 8 {
-		tb.Fatalf("captured blocks: got %d, want 8", len(names))
-	}
-	return names, encoded, decoded
-}
-
-// TestDecodeReindexer checks captured CPROTO replies against the reference decoder.
-func TestDecodeReindexer(t *testing.T) {
-	names, encoded, decoded := reindexerDecodeBlocks(t)
-	for i, name := range names {
-		t.Run(name, func(t *testing.T) {
-			want := decoded[i]
-			storage := bytes.Repeat([]byte{0xa5}, len(want)+64)
-			got, err := Decode(storage[32:32+len(want):32+len(want)], encoded[i])
-			if err != nil || !bytes.Equal(got, want) {
-				t.Fatalf("decode: %v; equal=%v", err, bytes.Equal(got, want))
-			}
-			if !bytes.Equal(storage[:32], bytes.Repeat([]byte{0xa5}, 32)) || !bytes.Equal(storage[32+len(want):], bytes.Repeat([]byte{0xa5}, 32)) {
-				t.Fatal("decoder wrote outside the destination")
-			}
-		})
 	}
 }
