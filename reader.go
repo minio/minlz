@@ -831,6 +831,10 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 				defer wg.Done()
 				decoded = decoded[:n]
 				ret := minLZDecode(decoded, buf)
+				var actualChecksum uint32
+				if ret == 0 && !r.ignoreCRC && chunkType == chunkTypeMinLZCompressedDataCompCRC {
+					actualChecksum = crc(buf)
+				}
 
 				toRead <- orgBuf
 				if ret != 0 {
@@ -842,11 +846,10 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 					writeBuf(nil, entry)
 					return
 				}
-				toCRC := decoded
-				if chunkType == chunkTypeMinLZCompressedDataCompCRC {
-					toCRC = buf
+				if !r.ignoreCRC && chunkType != chunkTypeMinLZCompressedDataCompCRC {
+					actualChecksum = crc(decoded)
 				}
-				if !r.ignoreCRC && crc(toCRC) != checksum {
+				if !r.ignoreCRC && actualChecksum != checksum {
 					if debug {
 						fmt.Println("ERR: CRC mismatch", crc(decoded), checksum)
 					}
