@@ -18,6 +18,7 @@ package kernel
 
 import (
 	"github.com/klauspost/cpuid/v2"
+	"github.com/minio/minlz/internal/cpu"
 	"github.com/minio/minlz/internal/race"
 )
 
@@ -30,7 +31,7 @@ import (
 const _ uint = RankSlack - 16
 
 func hasAVX2() bool {
-	return cpuid.CPU.Supports(cpuid.AVX2, cpuid.BMI2, cpuid.POPCNT)
+	return cpu.AVX2 && cpuid.CPU.Supports(cpuid.AVX2, cpuid.BMI2, cpuid.POPCNT)
 }
 
 func gatherAVX2(ranks, src []byte, s2r *[256]byte) uint8 {

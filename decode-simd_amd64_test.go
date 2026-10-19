@@ -16,12 +16,16 @@
 
 package minlz
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/minio/minlz/internal/cpu"
+)
 
 // simdTiers runs f as a subtest for each SIMD block tier the CPU supports, with that tier forced.
 func simdTiers(t *testing.T, f func(t *testing.T)) {
-	avx2, avx512 := simdAVX2, simdAVX512
-	defer func() { simdAVX2, simdAVX512 = avx2, avx512 }()
+	avx2, avx512 := cpu.AVX2, cpu.AVX512
+	defer func() { cpu.AVX2, cpu.AVX512 = avx2, avx512 }()
 	for _, tier := range []struct {
 		name         string
 		avx2, avx512 bool
@@ -29,7 +33,7 @@ func simdTiers(t *testing.T, f func(t *testing.T)) {
 		if tier.avx2 && !avx2 || tier.avx512 && !avx512 {
 			continue
 		}
-		simdAVX2, simdAVX512 = tier.avx2, tier.avx512
+		cpu.AVX2, cpu.AVX512 = tier.avx2, tier.avx512
 		t.Run(tier.name, f)
 	}
 }

@@ -16,11 +16,14 @@
 
 package kernel
 
-import "github.com/minio/minlz/internal/race"
+import (
+	"github.com/minio/minlz/internal/cpu"
+	"github.com/minio/minlz/internal/race"
+)
 
 // NEON tier entry points. The kernels in neon_arm64.s are ports of upstream
 // src/pivco_huffman_primitives_neon.h, pivco_huffman_neon_flat.h and pivco_huffman_neon_pack.h;
-// ASIMD is part of ARMv8, so the tier needs no feature check. The encoder kernels run whole
+// ASIMD is part of ARMv8, so the tier is on unless cpu.NEON is cleared. The encoder kernels run whole
 // vector steps and the generic kernels finish the tails; the decoder runs a whole Program in
 // one call. Reads of src, ranks and bitmaps and stores to ranks[:n], outputs and packed
 // regions are exact, the partitions store inside right[:n] and the natural unpack reads In
@@ -33,7 +36,7 @@ const (
 	_ uint = R2SLen - (255 + 64)
 )
 
-func hasNEON() bool { return true }
+func hasNEON() bool { return cpu.NEON }
 
 // execNEONAsm runs p.Ops and returns -1, or the index of the first op that fails its checks.
 //

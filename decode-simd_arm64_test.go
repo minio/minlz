@@ -16,17 +16,21 @@
 
 package minlz
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/minio/minlz/internal/cpu"
+)
 
 // simdTiers runs f as a subtest for each SIMD block tier, with that tier forced.
 func simdTiers(t *testing.T, f func(t *testing.T)) {
-	neon := simdNEON
-	defer func() { simdNEON = neon }()
+	neon := cpu.NEON
+	defer func() { cpu.NEON = neon }()
 	for _, tier := range []struct {
 		name string
 		neon bool
 	}{{"go", false}, {"neon", true}} {
-		simdNEON = tier.neon
+		cpu.NEON = tier.neon
 		t.Run(tier.name, f)
 	}
 }

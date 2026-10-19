@@ -18,6 +18,7 @@ package kernel
 
 import (
 	"github.com/klauspost/cpuid/v2"
+	"github.com/minio/minlz/internal/cpu"
 	"github.com/minio/minlz/internal/race"
 )
 
@@ -40,7 +41,7 @@ const _ uint = HistScratch - (4<<14 + 63)
 // hasAVX512 is the feature set the AVX-512 kernels use; it matches upstream's
 // requirement (pivco_huffman_primitives_avx512.h) plus BMI2/POPCNT for the scalar glue.
 func hasAVX512() bool {
-	return cpuid.CPU.Supports(cpuid.AVX512F, cpuid.AVX512BW, cpuid.AVX512VL, cpuid.AVX512VBMI,
+	return cpu.AVX512 && cpuid.CPU.Supports(cpuid.AVX512F, cpuid.AVX512BW, cpuid.AVX512VL, cpuid.AVX512VBMI,
 		cpuid.AVX512VBMI2, cpuid.AVX512VPOPCNTDQ, cpuid.BMI2, cpuid.POPCNT)
 }
 
