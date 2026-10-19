@@ -36,7 +36,6 @@
 #define LEN R13
 #define OFFTAB R19
 #define PERMTAB R20
-#define ONES R21
 #define LITS R22
 
 // simdPermTab holds 33 rows of 32 TBL indexes, indexed by min(offset, 32).
@@ -92,14 +91,15 @@ GLOBL simdPermTab<>(SB), RODATA|NOPTR, $1056
 	ADD  LITS, R14, LITP             \
 	MOVD 16(ST), LAST                \
 	MOVD ZR, POS                     \
-	MOVD $·simdOffTab(SB), OFFTAB    \
+	MOVD $·simdOffTabNEON(SB), OFFTAB \
 	MOVD $simdPermTab<>(SB), PERMTAB \
-	MOVD $-1, ONES                   \
 	CMP  TOKEND, TOKP                \
 	BHS  done
 
 // OPS_REST runs the rest of an operation, after its first 32 literals are stored.
-// A match is copied from r = min(LAST, d) back. When r is below the match length code,
+// TOK keeps its flag bits; the match length code is TOK>>2, and codes 33 and up (TOK >= 132) are escapes.
+// A match is copied from r = min(LAST, d) back, from R14 = DP - r. r is LAST unless that reaches
+// before dst, which branches to clamp. When r is below the match length code,
 // the match overlaps itself and r selects a simdPermTab row.
 // Matches longer than 32 bytes with r below 32 set the error flag.
 #define OPS_REST \
@@ -113,35 +113,31 @@ GLOBL simdPermTab<>(SB), RODATA|NOPTR, $1056
 	ADD      LEN, DP               \
 	ADD      LEN, LITP             \
 	MOVBU    (OFFP), R14           \
-	MOVWU    (OFFTAB)(R14<<2), R14 \
+	MOVD     (OFFTAB)(R14<<3), R14 \
 	LSR      $3, POS, R15          \
 	MOVD     (RAW)(R15), R15       \
 	AND      $7, POS, R16          \
 	LSR      R16, R15, R15         \
-	LSR      $24, R14, R16         \
-	LSL      R16, ONES, R17        \
-	BIC      R17, R15, R15         \
-	AND      $0xffffff, R14, R14   \
-	ADD      R15, R14              \
+	ANDW     R14, R15, R15         \
+	UBFX     $32, R14, $8, R16     \
+	ADD      R14>>40, R15, R14     \
 	ADD      R16, POS, R15         \
 	TST      $1, TOK               \
 	CSEL     NE, LAST, R14, LAST   \
 	CSEL     NE, POS, R15, POS     \
 	CINC     EQ, OFFP, OFFP        \
-	SUB      DST, DP, R16          \
-	CMP      R16, LAST             \
-	CSEL     LO, LAST, R16, LEN    \
-	SUB      LEN, DP, R14          \
-	LSR      $2, TOK               \
-	CMP      TOK, LEN              \
+	SUBS     LAST, DP, R14         \
+	CCMP     HS, R14, DST, $0      \
+	BLO      clamp                 \
+	CMP      TOK>>2, LAST          \
 	BLO      pattern               \
 	FLDPQ    (R14), (F2, F3)       \
 	FSTPQ    (F2, F3), (DP)        \
 	check:                         \
-	CMP      $33, TOK              \
-	BEQ      long                  \
+	CMP      $132, TOK             \
+	BHS      long                  \
 	next:                          \
-	ADD      TOK, DP               \
+	ADD      TOK>>2, DP            \
 	CMP      TOKEND, TOKP          \
 	BLO      loop                  \
 	done:                          \
@@ -153,11 +149,24 @@ GLOBL simdPermTab<>(SB), RODATA|NOPTR, $1056
 	RET                            \
 	pattern:                                   \
 	FLDPQ     (R14), (F2, F3)                  \
-	ADD       LEN<<5, PERMTAB, R15             \
+	ADD       LAST<<5, PERMTAB, R15            \
 	FLDPQ     (R15), (F4, F5)                  \
 	VTBL      V4.B16, [V2.B16, V3.B16], V6.B16 \
 	VTBL      V5.B16, [V2.B16, V3.B16], V7.B16 \
 	FSTPQ     (F6, F7), (DP)                   \
+	B         check                            \
+	clamp:                                     \
+	MOVD      DST, R14                         \
+	SUB       DST, DP, R16                     \
+	FLDPQ     (R14), (F2, F3)                  \
+	CMP       TOK>>2, R16                      \
+	BHS       clampcopy                        \
+	ADD       R16<<5, PERMTAB, R15             \
+	FLDPQ     (R15), (F4, F5)                  \
+	VTBL      V4.B16, [V2.B16, V3.B16], V2.B16 \
+	VTBL      V5.B16, [V2.B16, V3.B16], V3.B16 \
+	clampcopy:                                 \
+	FSTPQ     (F2, F3), (DP)                   \
 	B         check                            \
 	litlong:                                   \
 	MOVBU.P   1(ESCP), R15                     \
@@ -173,13 +182,15 @@ GLOBL simdPermTab<>(SB), RODATA|NOPTR, $1056
 	BNE       litloop                          \
 	B         litback                          \
 	long:                                      \
-	CMP       $32, LEN                         \
+	SUB       R14, DP, R16                     \
+	CMP       $32, R16                         \
 	BHS       longok                           \
 	MOVD      $1, R15                          \
 	MOVD      R15, 24(ST)                      \
 	longok:                                    \
 	MOVBU.P   1(ESCP), R15                     \
 	ADD       $33, R15, TOK                    \
+	LSL       $2, TOK                          \
 	ADD       $32, R15                         \
 	LSR       $5, R15                          \
 	ADD       $32, R14                         \

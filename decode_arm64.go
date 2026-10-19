@@ -40,6 +40,16 @@ func minLZDecode(dst, src []byte) int {
 	return decodeBlockAsm(dst, src)
 }
 
+// simdOffTabNEON is simdOffTab laid out for simdExecNEON: the mask of the raw bits in the
+// low 32 bits, the number of raw bits in bits 32-39 and the base offset in the top 24 bits.
+var simdOffTabNEON = func() (t [256]uint64) {
+	for s, v := range simdOffTab {
+		nb := uint64(v >> 24)
+		t[s] = 1<<nb - 1 | nb<<32 | uint64(v&0xffffff)<<40
+	}
+	return t
+}()
+
 // simdExec runs the first n operations of c. See simdExecGo.
 func simdExec(dst, lits []byte, c *simdChunk, n int, st *[4]int) {
 	switch {
