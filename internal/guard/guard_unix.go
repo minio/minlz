@@ -14,22 +14,26 @@
 
 //go:build linux || darwin
 
-package minlz
+package guard
 
 import "syscall"
 
-// mapGuarded returns n bytes that end at a PROT_NONE page.
-func mapGuarded(n int) ([]byte, func(), error) {
+const supported = true
+
+// mapPages returns at least size bytes of whole pages between two PROT_NONE pages.
+func mapPages(size int) ([]byte, func(), error) {
 	pg := syscall.Getpagesize()
-	body := max((n+pg-1)/pg, 1) * pg
-	all, err := syscall.Mmap(-1, 0, body+pg, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_ANON|syscall.MAP_PRIVATE)
+	body := max((size+pg-1)/pg, 1) * pg
+	all, err := syscall.Mmap(-1, 0, body+2*pg, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_ANON|syscall.MAP_PRIVATE)
 	if err != nil {
 		return nil, nil, err
 	}
 	free := func() { syscall.Munmap(all) }
-	if err := syscall.Mprotect(all[body:], syscall.PROT_NONE); err != nil {
-		free()
-		return nil, nil, err
+	for _, g := range [][]byte{all[:pg], all[pg+body:]} {
+		if err := syscall.Mprotect(g, syscall.PROT_NONE); err != nil {
+			free()
+			return nil, nil, err
+		}
 	}
-	return all[body-n : body : body], free, nil
+	return all[pg : pg+body : pg+body], free, nil
 }

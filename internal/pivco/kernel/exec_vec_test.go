@@ -22,6 +22,8 @@ import (
 	"slices"
 	"testing"
 	"unsafe"
+
+	"github.com/minio/minlz/internal/guard"
 )
 
 // Tests of the vector executors (_generate/pivco dec_avx512.go, dec_avx2.go; neon_arm64.s)
@@ -261,7 +263,7 @@ func TestExecEmpty(t *testing.T) {
 // them if atEnd, else against the one before. It skips t where that is not supported.
 func pageGuarded(t testing.TB, n int, atEnd bool) []byte {
 	t.Helper()
-	b, free, err := mapGuarded(n, atEnd)
+	b, free, err := guard.Map(n, atEnd)
 	if err != nil {
 		t.Skip("page guards:", err)
 	}

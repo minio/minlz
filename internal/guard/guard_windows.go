@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package minlz
+package guard
 
 import (
 	"fmt"
 	"syscall"
 	"unsafe"
 )
+
+const supported = true
 
 var (
 	kernel32       = syscall.NewLazyDLL("kernel32.dll")
@@ -32,21 +34,24 @@ const (
 	pageNoAccess, pageReadWrite       = 0x01, 0x04
 )
 
-// mapGuarded returns n bytes that end at a PAGE_NOACCESS page.
-func mapGuarded(n int) ([]byte, func(), error) {
+// mapPages returns at least size bytes of whole pages between two PAGE_NOACCESS pages.
+func mapPages(size int) ([]byte, func(), error) {
 	pg := syscall.Getpagesize()
-	body := max((n+pg-1)/pg, 1) * pg
-	addr, _, err := virtualAlloc.Call(0, uintptr(body+pg), memCommit|memReserve, pageReadWrite)
+	body := max((size+pg-1)/pg, 1) * pg
+	total := body + 2*pg
+	addr, _, err := virtualAlloc.Call(0, uintptr(total), memCommit|memReserve, pageReadWrite)
 	if addr == 0 {
 		return nil, nil, fmt.Errorf("VirtualAlloc: %w", err)
 	}
 	free := func() { virtualFree.Call(addr, 0, memRelease) }
 	var old uint32
-	if r, _, err := virtualProtect.Call(addr+uintptr(body), uintptr(pg), pageNoAccess, uintptr(unsafe.Pointer(&old))); r == 0 {
-		free()
-		return nil, nil, fmt.Errorf("VirtualProtect: %w", err)
+	for _, off := range []int{0, pg + body} {
+		if r, _, err := virtualProtect.Call(addr+uintptr(off), uintptr(pg), pageNoAccess, uintptr(unsafe.Pointer(&old))); r == 0 {
+			free()
+			return nil, nil, fmt.Errorf("VirtualProtect: %w", err)
+		}
 	}
 	// Not unsafe.Pointer(addr): vet flags uintptr conversions it cannot prove valid.
-	all := unsafe.Slice((*byte)(*(*unsafe.Pointer)(unsafe.Pointer(&addr))), body)
-	return all[body-n : body : body], free, nil
+	all := unsafe.Slice((*byte)(*(*unsafe.Pointer)(unsafe.Pointer(&addr))), total)
+	return all[pg : pg+body : pg+body], free, nil
 }

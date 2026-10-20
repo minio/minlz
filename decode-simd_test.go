@@ -29,6 +29,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/minio/minlz/internal/guard"
 	"github.com/minio/minlz/internal/pivco"
 	"github.com/minio/minlz/internal/race"
 	"github.com/minio/minlz/internal/reference"
@@ -694,7 +695,7 @@ func TestSIMDExec(t *testing.T) {
 	// Buffers end at an inaccessible page, right after what simdExecGo reads or writes.
 	var guards [7][]byte
 	for i := range guards {
-		g, free, err := mapGuarded(1 << 20)
+		g, free, err := guard.Map(1<<20, true)
 		if errors.Is(err, errors.ErrUnsupported) {
 			g, free, err = make([]byte, 1<<20), func() {}, nil
 		}
@@ -951,7 +952,7 @@ func testSIMDGuardPage(t *testing.T) {
 		}
 	}
 	for i, block := range blocks {
-		buf, free, err := mapGuarded(len(block))
+		buf, free, err := guard.Map(len(block), true)
 		if errors.Is(err, errors.ErrUnsupported) {
 			t.Skip(err)
 		}
@@ -1252,7 +1253,7 @@ func testSIMDValidation(t *testing.T) {
 				block = tc.raw(block)
 			}
 			// Reads past the block fault.
-			if buf, free, err := mapGuarded(len(block)); err == nil {
+			if buf, free, err := guard.Map(len(block), true); err == nil {
 				defer free()
 				block = buf[:copy(buf, block)]
 			}
@@ -1808,7 +1809,7 @@ func simdTestLitDecode(t *testing.T, block []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	lits, free, err := mapGuarded(size + simdPad)
+	lits, free, err := guard.Map(size+simdPad, true)
 	if errors.Is(err, errors.ErrUnsupported) {
 		lits, free, err = make([]byte, size+simdPad), func() {}, nil
 	}

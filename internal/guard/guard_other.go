@@ -14,10 +14,10 @@
 
 //go:build !windows && !linux && !darwin
 
-package minlz
+package guard
 
-import "errors"
+const supported = false
 
-func mapGuarded(n int) ([]byte, func(), error) {
-	return nil, nil, errors.ErrUnsupported
+func mapPages(size int) ([]byte, func(), error) {
+	return make([]byte, size), func() {}, nil
 }
