@@ -52,6 +52,24 @@ func simdExec(dst, lits []byte, c *simdChunk, n int, st *[4]int) {
 	}
 }
 
+// simdExecFlat runs operations k0 to k of c, which has the no-overlap flag, from stream positions cur.
+// See simdExecFlatGo.
+func simdExecFlat(dst, lits []byte, c *simdChunk, k0, k int, cur [4]int, st *[4]int) {
+	tok, ll, offc, esc, n := &c.tok[k0], &c.ll[cur[0]], &c.offc[cur[1]], &c.esc[cur[2]], k-k0
+	switch {
+	case cpu.AVX512 && c.delta:
+		simdExecFlatDeltaAVX512(&dst[0], &lits[0], tok, ll, offc, &c.raw[0], len(c.raw), esc, n, cur[3], st)
+	case cpu.AVX512:
+		simdExecFlatAVX512(&dst[0], &lits[0], tok, ll, offc, &c.raw[0], len(c.raw), esc, n, cur[3], st)
+	case !cpu.AVX2:
+		simdExecFlatGo(dst, lits, c, k0, k, cur, st)
+	case c.delta:
+		simdExecFlatDeltaAVX2(&dst[0], &lits[0], tok, ll, offc, &c.raw[0], esc, n, cur[3], st)
+	default:
+		simdExecFlatAVX2(&dst[0], &lits[0], tok, ll, offc, &c.raw[0], esc, n, cur[3], st)
+	}
+}
+
 // simdTokStatsAsm returns the statistics of a prefix of tok, and its length. See simdTokStats.
 func simdTokStatsAsm(tok []byte) (out, nLit, nRep, nEsc, n int, ok bool) {
 	if cpu.AVX512 && len(tok) > 0 {

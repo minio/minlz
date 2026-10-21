@@ -336,6 +336,7 @@ func (e *simdEncoder) encodeBlockGo(src []byte) {
 					}
 				} else {
 					e.emitRepeatLits(src[nextEmit:base], s-base)
+					repeat = e.rep
 				}
 				nextEmit = s
 				if s >= sLimit {
@@ -388,6 +389,7 @@ func (e *simdEncoder) encodeBlockGo(src []byte) {
 			}
 		} else {
 			e.emitCopyLits(src[nextEmit:base], repeat, s-base)
+			repeat = e.rep
 		}
 
 		for {
@@ -426,6 +428,7 @@ func (e *simdEncoder) encodeBlockGo(src []byte) {
 				}
 			} else {
 				e.emitCopy(repeat, s-base)
+				repeat = e.rep
 			}
 		}
 	}
@@ -489,6 +492,7 @@ func (e *simdEncoder) encodeBlockGo64K(src []byte) {
 					}
 				} else {
 					e.emitRepeatLits(src[nextEmit:base], s-base)
+					repeat = e.rep
 				}
 				nextEmit = s
 				if s >= sLimit {
@@ -541,6 +545,7 @@ func (e *simdEncoder) encodeBlockGo64K(src []byte) {
 			}
 		} else {
 			e.emitCopyLits(src[nextEmit:base], repeat, s-base)
+			repeat = e.rep
 		}
 
 		for {
@@ -579,6 +584,7 @@ func (e *simdEncoder) encodeBlockGo64K(src []byte) {
 				}
 			} else {
 				e.emitCopy(repeat, s-base)
+				repeat = e.rep
 			}
 		}
 	}

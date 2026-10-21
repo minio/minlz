@@ -107,7 +107,9 @@ type simdEncoder struct {
 	fastCode int
 
 	deltaDiv int // delta literals must save 1/deltaDiv of a chunk; 0 disables them, -1 uses only them
-	limit    int // largest size of the encoded block
+	// deltaShort is set when a delta literal of the chunk references an offset that the no-overlap flag would raise.
+	deltaShort bool
+	limit      int // largest size of the encoded block
 
 	out, litRecs, chunkRecs []byte
 	cur                     [simdLits + 1]simdTable
@@ -138,6 +140,10 @@ func encodeBlockSIMD(dst, src []byte, level int) int {
 // simdEncAsm makes blocks without delta literals use the assembly parsers, which parse as the Go parsers.
 var simdEncAsm = hasAsm
 
+// simdNoOverlap makes the parsers split the matches that overlap their output, so every chunk has
+// the no-overlap flag. The assembly parsers don't split this way, or as simdLongRuns, so neither uses them.
+var simdNoOverlap = false
+
 // The assembly parsers, see parseAsm.
 const (
 	simdAsmFast      = iota // encodeFastBlockGo
@@ -154,7 +160,7 @@ func (e *simdEncoder) parse(src []byte, level int) {
 	if level&LevelSIMDDelta != 0 {
 		delta = -1
 	}
-	asm := simdEncAsm && delta == 0
+	asm := simdEncAsm && delta == 0 && !simdNoOverlap && !simdLongRuns
 	e.splitLits = level == LevelSmallestSIMD
 	e.fastCode = 0
 	switch level &^ LevelSIMDDelta {
@@ -237,7 +243,7 @@ func (e *simdEncoder) reset(src []byte, deltaDiv, save int) {
 	e.chunkRecs, e.switches = e.chunkRecs[:0], e.switches[:0]
 	e.nTok, e.nLL, e.nOffc, e.nEsc, e.nRaw, e.nLits, e.chunks = 0, 0, 0, 0, 0, 0, 0
 	e.opLits, e.chunkLits = 0, 0
-	e.acc, e.nacc, e.overlap = 0, 0, false
+	e.acc, e.nacc, e.overlap, e.deltaShort = 0, 0, false, false
 	e.src, e.tail, e.pos, e.rep, e.deltaDiv, e.limit = src, nil, 0, 1, deltaDiv, n-max(simdMinSaving, save)
 	e.have = [len(e.have)]bool{}
 }
@@ -259,7 +265,7 @@ func (e *simdEncoder) fast(src []byte, from, base, s, offset int) bool {
 
 // oneOp reports whether putMatch can add a match of length bytes at offset.
 func oneOp(offset, length int) bool {
-	return length <= simdMaxLen || length <= simdMaxLong && offset >= simdMaxLen
+	return length <= simdMaxLen && (offset >= length || !simdNoOverlap) || length <= simdMaxLong && offset >= simdMaxLen
 }
 
 // matchAt returns how many bytes match at src[a:] and src[b:], with b < a, like matchLen.
@@ -349,7 +355,7 @@ func (e *simdEncoder) emitCopyLits(lits []byte, offset, length int) {
 	prev := e.rep
 	e.rep = offset
 	e.putBits(e.putOffset(offset))
-	if len(lits) > simdMaxLen || length > simdMaxLen {
+	if len(lits) > simdMaxLen || length > simdMaxLen || simdNoOverlap && offset < length {
 		e.emitLong(lits, prev, 0, length)
 		return
 	}
@@ -380,7 +386,7 @@ func (e *simdEncoder) emitRepeatLits(lits []byte, length int) {
 		e.emitLong(lits[:simdMaxLong], e.rep, 1, 0)
 		lits = lits[simdMaxLong:]
 	}
-	if len(lits) > simdMaxLen || length > simdMaxLen {
+	if len(lits) > simdMaxLen || length > simdMaxLen || simdNoOverlap && e.rep < length {
 		e.emitLong(lits, e.rep, 1, length)
 		return
 	}
@@ -436,8 +442,11 @@ func (e *simdEncoder) emitLong(lits []byte, prev int, t byte, length int) {
 		e.pos += len(lits)
 	}
 	step := simdMaxLen
-	if e.rep >= simdMaxLen {
+	switch {
+	case e.rep >= simdMaxLen:
 		step = simdMaxLong
+	case simdNoOverlap:
+		step = e.rep
 	}
 	for {
 		n := min(length, step)
@@ -460,8 +469,31 @@ func (e *simdEncoder) emitLong(lits []byte, prev int, t byte, length int) {
 			return
 		}
 		t = 1
+		switch {
+		case simdNoOverlap && step < simdMaxLen && step < length:
+			// The output repeats every e.rep bytes, and now holds at least twice that, so twice the offset matches too.
+			e.rep *= 2
+			e.putBits(e.putOffset(e.rep))
+			t, step = 0, e.rep
+			if step >= simdMaxLen {
+				step = simdMaxLong
+			}
+		case simdLongRuns && step == simdMaxLen && length > 2*simdMaxLen:
+			// The output now holds 32 bytes of the period, so the first multiple of it from 32 matches too,
+			// in operations of up to 288 bytes.
+			e.rep *= (simdMaxLen + e.rep - 1) / e.rep
+			e.putBits(e.putOffset(e.rep))
+			t, step = 0, simdMaxLong
+		}
 	}
 }
+
+// simdSplitCost makes LevelSmallestSIMD price the splits of simdNoOverlap.
+var simdSplitCost = false
+
+// simdLongRuns makes the parsers continue matches longer than 64 bytes at offsets below 32 at a multiple of the offset,
+// as LevelSmallestSIMD does, instead of in operations of 32 bytes.
+var simdLongRuns = false
 
 // deltaLits adds lits, and their delta literals (SPEC_SIMD.md 4.5), for an operation at e.pos with repeat offset rep.
 func (e *simdEncoder) deltaLits(lits []byte, rep int) {
@@ -472,7 +504,13 @@ func (e *simdEncoder) deltaLits(lits []byte, rep int) {
 	if e.deltaDiv > 0 {
 		copy(dl, lits)
 	}
+	// The no-overlap flag raises the references to 32 (SPEC_SIMD.md 4.5), so a chunk that doesn't can't have it.
 	r := min(rep, e.pos)
+	if raised := min(max(rep, simdMaxLen), e.pos); simdNoOverlap {
+		r = raised
+	} else if r != raised {
+		e.deltaShort = true
+	}
 	if r == 0 {
 		return
 	}
@@ -503,7 +541,7 @@ func (e *simdEncoder) endChunk() {
 	// A block that is already too large fails, so don't code more.
 	if len(e.out)+len(e.chunkRecs) <= e.limit {
 		var flags byte
-		if !e.overlap {
+		if !e.overlap && (e.deltaDiv >= 0 || !e.deltaShort) {
 			flags = 2
 		}
 		if e.deltaDiv < 0 {
@@ -523,9 +561,12 @@ func (e *simdEncoder) endChunk() {
 		}
 		if e.deltaDiv > 0 && e.deltaChunk(len(e.out)+len(e.chunkRecs)-size) {
 			e.chunkRecs[rec] |= 1
+			if e.deltaShort {
+				e.chunkRecs[rec] &^= 2
+			}
 		}
 	}
-	e.nTok, e.nLL, e.nOffc, e.nEsc, e.nRaw, e.overlap = 0, 0, 0, 0, 0, false
+	e.nTok, e.nLL, e.nOffc, e.nEsc, e.nRaw, e.overlap, e.deltaShort = 0, 0, 0, 0, 0, false, false
 }
 
 // finish codes the literals and completes the block. It returns its size, or 0 if it is too large.

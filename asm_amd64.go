@@ -275,6 +275,34 @@ func simdLLStatsAVX512(b *byte, n int) (sum int, esc int, ok bool)
 //go:noescape
 func simdOffStatsAVX512(b *byte, n int) (sum int, zeros int, ok bool)
 
+// simdExecFlatAVX2 runs the first n operations of a chunk with the no-overlap flag, from bit pos of raw.
+// Their operations must start at position 32 or later. st holds the output position,
+// the literal position, the repeat offset and an error flag.
+//
+//go:noescape
+func simdExecFlatAVX2(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, esc *byte, n int, pos int, st *[4]int)
+
+// simdExecFlatDeltaAVX2 runs the first n operations of a chunk with the no-overlap flag, from bit pos of raw.
+// Their operations must start at position 32 or later. st holds the output position,
+// the literal position, the repeat offset and an error flag.
+//
+//go:noescape
+func simdExecFlatDeltaAVX2(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, esc *byte, n int, pos int, st *[4]int)
+
+// simdExecFlatAVX512 runs the first n operations of a chunk with the no-overlap flag, from bit pos of raw.
+// Their operations must start at position 32 or later. st holds the output position,
+// the literal position, the repeat offset and an error flag. nraw is the readable size of raw.
+//
+//go:noescape
+func simdExecFlatAVX512(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, nraw int, esc *byte, n int, pos int, st *[4]int)
+
+// simdExecFlatDeltaAVX512 runs the first n operations of a chunk with the no-overlap flag, from bit pos of raw.
+// Their operations must start at position 32 or later. st holds the output position,
+// the literal position, the repeat offset and an error flag. nraw is the readable size of raw.
+//
+//go:noescape
+func simdExecFlatDeltaAVX512(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, nraw int, esc *byte, n int, pos int, st *[4]int)
+
 // encodeFastBlockSIMDAsm parses src into st until it returns to Go, see parseAsm.
 //
 //go:noescape

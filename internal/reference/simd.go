@@ -296,8 +296,8 @@ func DecodeSIMDBlock(src []byte) ([]byte, error) {
 	return decodeSIMDBlock(src, false, &SIMDWalker{})
 }
 
-// DecodeSIMDBlockStrict is DecodeSIMDBlock, but also rejects overlapping matches in chunks with
-// the no-overlap flag, which SPEC_SIMD.md doesn't require. It checks encoders.
+// DecodeSIMDBlockStrict is DecodeSIMDBlock, but also rejects matches in chunks with the no-overlap flag
+// that rely on their offset being raised, which SPEC_SIMD.md allows. It checks encoders.
 func DecodeSIMDBlockStrict(src []byte) ([]byte, error) {
 	return decodeSIMDBlock(src, true, &SIMDWalker{})
 }
@@ -549,6 +549,10 @@ func (d *simdDecoder) chunk(c [streamOffsetBits + 1][]byte, flags byte, limit in
 				return fmt.Errorf("operation %d: output past the decoded size", d.ops)
 			}
 			p, r := len(d.out), min(d.repeat, len(d.out))
+			if flags&2 != 0 {
+				// The no-overlap flag raises delta references to 32 first.
+				r = min(max(d.repeat, 32), p)
+			}
 			for j, b := range d.lits[d.l : d.l+n] {
 				if delta && j < 32 && r > 0 {
 					b += d.out[p-r+j%r]
@@ -582,11 +586,14 @@ func (d *simdDecoder) chunk(c [streamOffsetBits + 1][]byte, flags byte, limit in
 			return err
 		}
 		r := min(d.repeat, len(d.out))
+		if flags&2 != 0 {
+			if d.strict && r < min(ml, 32) {
+				return fmt.Errorf("operation %d: match of %d bytes at offset %d in a chunk without overlaps", d.ops, ml, r)
+			}
+			r = min(max(d.repeat, min(ml, 32)), len(d.out))
+		}
 		if ml > 32 && r < 32 {
 			return fmt.Errorf("operation %d: match of %d bytes at offset %d", d.ops, ml, r)
-		}
-		if d.strict && flags&2 != 0 && ml <= 32 && ml > r {
-			return fmt.Errorf("operation %d: match of %d bytes at offset %d in a chunk without overlaps", d.ops, ml, r)
 		}
 		if len(d.out)+ml > d.size {
 			return fmt.Errorf("operation %d: output past the decoded size", d.ops)

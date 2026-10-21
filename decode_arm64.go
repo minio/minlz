@@ -62,6 +62,31 @@ func simdExec(dst, lits []byte, c *simdChunk, n int, st *[4]int) {
 	}
 }
 
+// simdExecFlat runs operations k0 to k of c, which has the no-overlap flag, from stream positions cur.
+// See simdExecFlatGo.
+func simdExecFlat(dst, lits []byte, c *simdChunk, k0, k int, cur [4]int, st *[4]int) {
+	tok, ll, offc, esc, n := &c.tok[k0], &c.ll[cur[0]], &c.offc[cur[1]], &c.esc[cur[2]], k-k0
+	switch {
+	case !cpu.NEON:
+		simdExecFlatGo(dst, lits, c, k0, k, cur, st)
+	case c.delta:
+		simdExecFlatDeltaNEON(&dst[0], &lits[0], tok, ll, offc, &c.raw[0], esc, n, cur[3], st)
+	default:
+		simdExecFlatNEON(&dst[0], &lits[0], tok, ll, offc, &c.raw[0], esc, n, cur[3], st)
+	}
+}
+
+// simdExecFlatNEON is simdExecNEON for chunks with the no-overlap flag, from bit pos of raw.
+// Their matches must start at position 32 or later.
+//
+//go:noescape
+func simdExecFlatNEON(dst, lits, tok, ll, offc, raw, esc *byte, n, pos int, st *[4]int)
+
+// simdExecFlatDeltaNEON is simdExecFlatNEON for chunks with delta literals.
+//
+//go:noescape
+func simdExecFlatDeltaNEON(dst, lits, tok, ll, offc, raw, esc *byte, n, pos int, st *[4]int)
+
 // simdExecNEON runs the first n operations of a chunk. st holds the output position,
 // the literal position, the repeat offset and an error flag.
 //

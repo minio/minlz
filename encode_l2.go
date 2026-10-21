@@ -472,7 +472,7 @@ func (e *simdEncoder) encodeBlockBetterGo(src []byte) {
 				e.endChunk()
 			}
 		}
-		repeat = offset
+		repeat = e.rep
 		s = base + length
 		nextEmit = s
 		if s >= sLimit {
@@ -644,7 +644,7 @@ func (e *simdEncoder) encodeBlockBetterGo64K(src []byte) {
 				e.endChunk()
 			}
 		}
-		repeat = offset
+		repeat = e.rep
 		s = base + length
 		nextEmit = s
 		if s >= sLimit {

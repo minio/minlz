@@ -31,8 +31,8 @@ const (
 func genSIMD() {
 	tab := simdPatternTable()
 	otab := NewDataAddr(Symbol{Name: "·simdOffTab"}, 0)
-	genSIMDExec("simdExecAVX2", false, tab, otab)
-	genSIMDExec("simdExecDeltaAVX2", true, tab, otab)
+	genSIMDExec("simdExecAVX2", false, false, tab, otab)
+	genSIMDExec("simdExecDeltaAVX2", true, false, tab, otab)
 	genSIMDStats()
 	ptab := simdPermTable()
 	// VPSHUFB indexes of the low byte of each dword.
@@ -44,9 +44,14 @@ func genSIMD() {
 	for i := 0; i < 16; i += 2 {
 		DATA(4*i, U64(uint64(i+1)<<32|uint64(i)))
 	}
-	genSIMDExec512("simdExecAVX512", false, ptab, lowb, iota)
-	genSIMDExec512("simdExecDeltaAVX512", true, ptab, lowb, iota)
+	genSIMDExec512("simdExecAVX512", false, false, ptab, lowb, iota)
+	genSIMDExec512("simdExecDeltaAVX512", true, false, ptab, lowb, iota)
 	genSIMDStats512()
+	// Last, so the other functions keep their layout.
+	genSIMDExec("simdExecFlatAVX2", false, true, tab, otab)
+	genSIMDExec("simdExecFlatDeltaAVX2", true, true, tab, otab)
+	genSIMDExec512("simdExecFlatAVX512", false, true, ptab, lowb, iota)
+	genSIMDExec512("simdExecFlatDeltaAVX512", true, true, ptab, lowb, iota)
 }
 
 // simdPermTable returns 33 rows of 32 VPERMB indexes, indexed by min(offset, 32).
@@ -124,10 +129,18 @@ func simdOffset(t reg.GPVirtual, ocp, raw reg.Register, pos reg.GPVirtual, otab 
 
 // genSIMDExec generates a loop that runs the first n operations of a chunk, see simdExecGo.
 // With delta, the first 32 literals of each operation are added to their delta references.
-func genSIMDExec(name string, delta bool, tab, otab Mem) {
-	TEXT(name, NOSPLIT, "func(dst, lits, tok, ll, offc, raw, esc *byte, n int, st *[4]int)")
-	Doc(name+" runs the first n operations of a chunk. st holds the output position,",
-		"the literal position, the repeat offset and an error flag.", "")
+// With flat, the chunk has the no-overlap flag, see simdExecFlatGo, and its offset bits start at bit pos.
+func genSIMDExec(name string, delta, flat bool, tab, otab Mem) {
+	if flat {
+		TEXT(name, NOSPLIT, "func(dst, lits, tok, ll, offc, raw, esc *byte, n, pos int, st *[4]int)")
+		Doc(name+" runs the first n operations of a chunk with the no-overlap flag, from bit pos of raw.",
+			"Their operations must start at position 32 or later. st holds the output position,",
+			"the literal position, the repeat offset and an error flag.", "")
+	} else {
+		TEXT(name, NOSPLIT, "func(dst, lits, tok, ll, offc, raw, esc *byte, n int, st *[4]int)")
+		Doc(name+" runs the first n operations of a chunk. st holds the output position,",
+			"the literal position, the repeat offset and an error flag.", "")
+	}
 	Pragma("noescape")
 	dst := Load(Param("dst"), GP64())
 	litp := Load(Param("lits"), GP64())
@@ -143,7 +156,11 @@ func genSIMDExec(name string, delta bool, tab, otab Mem) {
 	ADDQ(Mem{Base: stp, Disp: 8}, litp)
 	MOVQ(Mem{Base: stp, Disp: 16}, last)
 	pos := GP64()
-	XORQ(pos, pos)
+	if flat {
+		Load(Param("pos"), pos)
+	} else {
+		XORQ(pos, pos)
+	}
 	CMPQ(tok, end)
 	JAE(LabelRef(name + "_done"))
 
@@ -160,14 +177,25 @@ func genSIMDExec(name string, delta bool, tab, otab Mem) {
 		// The references use the repeat offset from before this operation, clamped to the position.
 		dr, rs, rv = GP64(), GP64(), YMM()
 		MOVQ(last, dr)
+		if flat {
+			// Raised to 32 first. The position is at least 32, so the references don't repeat.
+			c := GP64()
+			MOVL(U32(simdMaxLen), c.As32())
+			CMPQ(dr, c)
+			CMOVQCS(c, dr)
+		}
 		CMPQ(dr, d)
 		CMOVQHI(d, dr)
 		MOVQ(d, rs)
 		SUBQ(dr, rs)
-		CMPQ(dr, U8(simdMaxLen))
-		JB(LabelRef(name + "_dpattern"))
+		if !flat {
+			CMPQ(dr, U8(simdMaxLen))
+			JB(LabelRef(name + "_dpattern"))
+		}
 		VMOVDQU(Mem{Base: dst, Index: rs, Scale: 1}, rv)
-		Label(name + "_dadd")
+		if !flat {
+			Label(name + "_dadd")
+		}
 		VPADDB(rv, lv, lv)
 	}
 	VMOVDQU(lv, Mem{Base: dst, Index: d, Scale: 1})
@@ -191,16 +219,24 @@ func genSIMDExec(name string, delta bool, tab, otab Mem) {
 	// Matches copy from the repeat offset clamped to the position.
 	r := GP64()
 	MOVQ(last, r)
+	if flat {
+		SHRQ(U8(2), t)
+		CMPQ(r, t)
+		JB(LabelRef(name + "_raise"))
+		Label(name + "_raised")
+	}
 	CMPQ(r, d)
 	CMOVQHI(d, r)
 	src := GP64()
 	MOVQ(d, src)
 	SUBQ(r, src)
-	SHRQ(U8(2), t)
 	srcMem := Mem{Base: dst, Index: src, Scale: 1}
 	dstMem := Mem{Base: dst, Index: d, Scale: 1}
-	CMPQ(r, t)
-	JB(LabelRef(name + "_pattern"))
+	if !flat {
+		SHRQ(U8(2), t)
+		CMPQ(r, t)
+		JB(LabelRef(name + "_pattern"))
+	}
 	mv := YMM()
 	VMOVDQU(srcMem, mv)
 	VMOVDQU(mv, dstMem)
@@ -234,27 +270,47 @@ func genSIMDExec(name string, delta bool, tab, otab Mem) {
 		VPSHUFB(tv, bv, bv)
 		VPBLENDVB(tv, out, bv, out)
 	}
-	// Taken when the clamped offset is below min(ml, 33). Row 32 is a plain copy.
-	Label(name + "_pattern")
-	pv := YMM()
-	pattern(r, srcMem, pv)
-	VMOVDQU(pv, dstMem)
-	JMP(LabelRef(name + "_check"))
+	if !flat {
+		// Taken when the clamped offset is below min(ml, 33). Row 32 is a plain copy.
+		Label(name + "_pattern")
+		pv := YMM()
+		pattern(r, srcMem, pv)
+		VMOVDQU(pv, dstMem)
+		JMP(LabelRef(name + "_check"))
+	}
 
-	if delta {
+	if delta && !flat {
 		Label(name + "_dpattern")
 		pattern(dr, Mem{Base: dst, Index: rs, Scale: 1}, rv)
 		JMP(LabelRef(name + "_dadd"))
 	}
 
-	simdEscapes(name, func(a, b Op) { VMOVDQU(a, b) }, dst, litp, d, llv, src, t)
+	if flat {
+		simdRaise(name, r, t)
+	}
+	simdEscapes(name, func(a, b Op) { VMOVDQU(a, b) }, dst, litp, d, llv, src, t, !flat)
+}
+
+// simdRaise generates the raise of the offset r of a match with length code t, which is above r, to name_raised.
+// Valid blocks never take it. Escaped matches (code 33) only raise r to 32.
+func simdRaise(name string, r, t reg.Register) {
+	Label(name + "_raise")
+	CMPQ(t, U8(simdMaxLen+1))
+	JNE(LabelRef(name + "_raiseml"))
+	CMPQ(r, U8(simdMaxLen))
+	JAE(LabelRef(name + "_raised"))
+	MOVQ(U32(simdMaxLen), r)
+	JMP(LabelRef(name + "_raised"))
+	Label(name + "_raiseml")
+	MOVQ(t, r)
+	JMP(LabelRef(name + "_raised"))
 }
 
 // simdEscapes generates the paths of escaped literal and match lengths of an operation loop.
 // Escaped literal lengths are 33 plus an escape byte, and the first 32 literals are stored.
 // The escape cursor lives in its argument slot: only escapes touch it, and the registers are taken.
-// mov moves 32 bytes.
-func simdEscapes(name string, mov func(src, dst Op), dst, litp, d, llv, src, t reg.Register) {
+// mov moves 32 bytes. check sets the error flag for escaped matches at offsets below 32.
+func simdEscapes(name string, mov func(src, dst Op), dst, litp, d, llv, src, t reg.Register, check bool) {
 	Label(name + "_litlong")
 	{
 		ep := Load(Param("esc"), GP64())
@@ -282,15 +338,17 @@ func simdEscapes(name string, mov func(src, dst Op), dst, litp, d, llv, src, t r
 
 	Label(name + "_long")
 	{
-		// Matches longer than 32 bytes need an offset of at least 32.
-		dist := GP64()
-		MOVQ(d, dist)
-		SUBQ(src, dist)
-		CMPQ(dist, U8(simdMaxLen))
-		JAE(LabelRef(name + "_longok"))
-		sp := Load(Param("st"), GP64())
-		MOVQ(U32(1), Mem{Base: sp, Disp: 24})
-		Label(name + "_longok")
+		if check {
+			// Matches longer than 32 bytes need an offset of at least 32.
+			dist := GP64()
+			MOVQ(d, dist)
+			SUBQ(src, dist)
+			CMPQ(dist, U8(simdMaxLen))
+			JAE(LabelRef(name + "_longok"))
+			sp := Load(Param("st"), GP64())
+			MOVQ(U32(1), Mem{Base: sp, Disp: 24})
+			Label(name + "_longok")
+		}
 		ep := Load(Param("esc"), GP64())
 		cnt := GP64()
 		MOVBQZX(Mem{Base: ep}, cnt)
@@ -326,10 +384,18 @@ func simdConst(c uint32) reg.VecVirtual {
 // Each batch of simdBatch operations is first expanded with AVX-512 into the literal length and
 // the resolved offset of each operation, so the copy loop does no stream bookkeeping.
 // The moves are EVEX encoded, as the constants can push the copy registers above Y15.
-func genSIMDExec512(name string, delta bool, tab, lowbTab, iotaTab Mem) {
-	TEXT(name, NOSPLIT, "func(dst, lits, tok, ll, offc, raw *byte, nraw int, esc *byte, n int, st *[4]int)")
-	Doc(name+" runs the first n operations of a chunk. st holds the output position,",
-		"the literal position, the repeat offset and an error flag. nraw is the readable size of raw.", "")
+// With flat, the chunk has the no-overlap flag, see simdExecFlatGo, and its offset bits start at bit pos.
+func genSIMDExec512(name string, delta, flat bool, tab, lowbTab, iotaTab Mem) {
+	if flat {
+		TEXT(name, NOSPLIT, "func(dst, lits, tok, ll, offc, raw *byte, nraw int, esc *byte, n, pos int, st *[4]int)")
+		Doc(name+" runs the first n operations of a chunk with the no-overlap flag, from bit pos of raw.",
+			"Their operations must start at position 32 or later. st holds the output position,",
+			"the literal position, the repeat offset and an error flag. nraw is the readable size of raw.", "")
+	} else {
+		TEXT(name, NOSPLIT, "func(dst, lits, tok, ll, offc, raw *byte, nraw int, esc *byte, n int, st *[4]int)")
+		Doc(name+" runs the first n operations of a chunk. st holds the output position,",
+			"the literal position, the repeat offset and an error flag. nraw is the readable size of raw.", "")
+	}
 	Pragma("noescape")
 	llx, offx := AllocLocal(simdBatch), AllocLocal(4*simdBatch)
 	sEnd, sPos := AllocLocal(8), AllocLocal(8)
@@ -361,7 +427,11 @@ func genSIMDExec512(name string, delta bool, tab, lowbTab, iotaTab Mem) {
 		ADDQ(tok, e)
 		MOVQ(e, sEnd)
 		p := GP64()
-		XORQ(p, p)
+		if flat {
+			Load(Param("pos"), p)
+		} else {
+			XORQ(p, p)
+		}
 		MOVQ(p, sPos)
 	}
 	zero := ZMM()
@@ -384,6 +454,13 @@ func genSIMDExec512(name string, delta bool, tab, lowbTab, iotaTab Mem) {
 	// Selects the low byte of each dword into all its bytes.
 	lowb := ZMM()
 	VBROADCASTI32X4(lowbTab, lowb)
+
+	// Without delta, the expansion raises the offsets, from the tokens of the batch.
+	raise := flat && !delta
+	var tokv, c32 reg.VecVirtual
+	if raise {
+		tokv, c32 = ZMM(), simdConst(simdMaxLen)
+	}
 
 	// The lanes of the batch's operations with literals and with new offsets.
 	kLit, kNew := K(), K()
@@ -471,7 +548,22 @@ func genSIMDExec512(name string, delta bool, tab, lowbTab, iotaTab Mem) {
 		VPSLLVD(nb, base, base)
 		VPADDD(w, base, w)
 		VPERMI2D(carry, w, from)
-		VMOVDQU32(from, o)
+		if raise {
+			// The copy loop uses the offsets raised to min(ml, 32); the carry stays the repeat offset.
+			x, ml := XMM(), ZMM()
+			if h == 0 {
+				VPMOVZXBD(tokv.AsX(), ml)
+			} else {
+				VEXTRACTI32X4(U8(h), tokv, x)
+				VPMOVZXBD(x, ml)
+			}
+			VPSRLD(U8(2), ml, ml)
+			VPMINUD(c32, ml, ml)
+			VPMAXUD(from, ml, ml)
+			VMOVDQU32(ml, o)
+		} else {
+			VMOVDQU32(from, o)
+		}
 		VPERMD(from, c15, carry)
 	}
 
@@ -491,7 +583,10 @@ func genSIMDExec512(name string, delta bool, tab, lowbTab, iotaTab Mem) {
 		BZHIQ(m, r, r)
 		kv := K()
 		KMOVQ(r, kv)
-		t := ZMM()
+		t := tokv
+		if !raise {
+			t = ZMM()
+		}
 		VMOVDQU8_Z(Mem{Base: tok}, kv, t)
 		VPTESTMB(c2, t, kLit)
 		VPTESTNMB(c1, t, kv, kNew)
@@ -564,14 +659,25 @@ func genSIMDExec512(name string, delta bool, tab, lowbTab, iotaTab Mem) {
 		// The references use the offset from before this operation, clamped to the position.
 		dr, rs, rv = GP64(), GP64(), YMM()
 		MOVQ(last, dr)
+		if flat {
+			// Raised to 32 first. The position is at least 32, so the references don't repeat.
+			c := GP64()
+			MOVL(U32(simdMaxLen), c.As32())
+			CMPQ(dr, c)
+			CMOVQCS(c, dr)
+		}
 		CMPQ(dr, d)
 		CMOVQHI(d, dr)
 		MOVQ(d, rs)
 		SUBQ(dr, rs)
-		CMPQ(dr, U8(simdMaxLen))
-		JB(LabelRef(name + "_dpattern"))
+		if !flat {
+			CMPQ(dr, U8(simdMaxLen))
+			JB(LabelRef(name + "_dpattern"))
+		}
 		VMOVDQU64(Mem{Base: dst, Index: rs, Scale: 1}, rv)
-		Label(name + "_dadd")
+		if !flat {
+			Label(name + "_dadd")
+		}
 		VPADDB(rv, lv, lv)
 	}
 	VMOVDQU64(lv, Mem{Base: dst, Index: d, Scale: 1})
@@ -586,17 +692,28 @@ func genSIMDExec512(name string, delta bool, tab, lowbTab, iotaTab Mem) {
 	if delta {
 		MOVQ(o, last)
 	}
+	if flat && delta {
+		// Without delta, the expansion raised the offset.
+		SHRQ(U8(2), t)
+		CMPQ(o, t)
+		JB(LabelRef(name + "_raise"))
+		Label(name + "_raised")
+	}
 	// Matches copy from the offset clamped to the position.
 	CMPQ(o, d)
 	CMOVQHI(d, o)
 	src := GP64()
 	MOVQ(d, src)
 	SUBQ(o, src)
-	SHRQ(U8(2), t)
+	if !flat || !delta {
+		SHRQ(U8(2), t)
+	}
 	srcMem := Mem{Base: dst, Index: src, Scale: 1}
 	dstMem := Mem{Base: dst, Index: d, Scale: 1}
-	CMPQ(o, t)
-	JB(LabelRef(name + "_pattern"))
+	if !flat {
+		CMPQ(o, t)
+		JB(LabelRef(name + "_pattern"))
+	}
 	mv := YMM()
 	VMOVDQU64(srcMem, mv)
 	VMOVDQU64(mv, dstMem)
@@ -635,20 +752,25 @@ func genSIMDExec512(name string, delta bool, tab, lowbTab, iotaTab Mem) {
 		VMOVDQU64(Mem{Base: tp, Index: row, Scale: 1}, out)
 		VPERMB(m, out, out)
 	}
-	// Taken when the clamped offset is below min(ml, 33). Row 32 is a plain copy.
-	Label(name + "_pattern")
-	pv := YMM()
-	pattern(o, srcMem, pv)
-	VMOVDQU64(pv, dstMem)
-	JMP(LabelRef(name + "_check"))
+	if !flat {
+		// Taken when the clamped offset is below min(ml, 33). Row 32 is a plain copy.
+		Label(name + "_pattern")
+		pv := YMM()
+		pattern(o, srcMem, pv)
+		VMOVDQU64(pv, dstMem)
+		JMP(LabelRef(name + "_check"))
+	}
 
-	if delta {
+	if delta && !flat {
 		Label(name + "_dpattern")
 		pattern(dr, Mem{Base: dst, Index: rs, Scale: 1}, rv)
 		JMP(LabelRef(name + "_dadd"))
 	}
 
-	simdEscapes(name, func(a, b Op) { VMOVDQU64(a, b) }, dst, litp, d, llv, src, t)
+	if flat && delta {
+		simdRaise(name, o, t)
+	}
+	simdEscapes(name, func(a, b Op) { VMOVDQU64(a, b) }, dst, litp, d, llv, src, t, !flat)
 }
 
 // genSIMDStats generates the stream checks of chunks, for multiples of 32 bytes.

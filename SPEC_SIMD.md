@@ -205,11 +205,12 @@ The flags byte:
 | Bits | Meaning                                                                                              |
 |------|------------------------------------------------------------------------------------------------------|
 | 0    | Delta literals: the first 32 literals of each operation of the chunk are stored as differences (4.5) |
-| 1    | No overlap: no match of up to 32 bytes in the chunk is longer than its offset, after clamping (4.3)  |
+| 1    | No overlap: offsets below the match length are raised to it, up to 32, and delta references to 32    |
 | 2-3  | Reserved hints: encoders set them to 0, decoders ignore them                                         |
 | 4-7  | Reserved, must be 0                                                                                  |
 
-The no-overlap flag lets a decoder copy short matches without handling overlap. Decoders need not check it (4.3).
+With the no-overlap flag, matches only overlap their output, and delta references only repeat,
+in operations that start before position 32 (4.3, 4.5), so a decoder can run the others without handling either.
 
 Each entry is an unsigned varint: the stored size of the stream's data in bytes times 8, plus its mode (2.2).
 
@@ -278,7 +279,7 @@ With all streams stored uncompressed (mode 0), the chunk data is:
     escapes                      no values
     offset bits      00          the 1 raw bit, rounded up to a byte
 
-Operation 3 copies 8 bytes from offset 3, so the no-overlap flag is not set. The chunk record is:
+Operation 3 copies 8 bytes from offset 3, so the no-overlap flag is not set: it would raise the offset to 8. The chunk record is:
 
     00 18 10 10 00 08
 
@@ -332,9 +333,11 @@ As in SPEC.md, a match may be longer than its offset.
 An offset larger than the current position is clamped to the current position, so the match copies from position 0.
 Clamping does not change the repeat offset: each use clamps it to the position at that time.
 
+In a chunk with the no-overlap flag, an offset below the match length is raised to the match length, or to 32 for longer matches,
+before it is clamped. Like clamping, this does not change the repeat offset.
+A match then only overlaps its output when clamping makes its offset smaller, which needs a position below 32.
+
 Matches longer than 32 bytes must have an offset of at least 32, after clamping.
-In a chunk with the no-overlap flag, matches of up to 32 bytes are not longer than their offset, after clamping.
-Decoders need not check this. A block that breaks it may be rejected; otherwise its output is undefined.
 
 ### 4.4 Offsets
 
@@ -358,6 +361,7 @@ In a chunk with the delta flag, the first 32 literals of each operation are stor
 
 Literal `j` (0-31) of an operation that starts at position `p` decodes to the stored byte plus the output byte at `p - r + (j mod r)`, modulo 256.
 `r` is the repeat offset before the operation, clamped to `p` (4.3); with `r` = 0 all references are 0.
+In a chunk with the no-overlap flag, a repeat offset below 32 is raised to 32 before it is clamped.
 
 When `r` is 32 or more, the reference is simply the output byte `r` positions before the literal.
 When `r` is smaller, the references repeat the last `r` output bytes.
@@ -381,7 +385,7 @@ and those appended after the last operation.
 
 The output must be exactly the decoded size.
 
-A decoder must report an error for a block that breaks a rule of this document, except the no-overlap flag (4.3).
+A decoder must report an error for a block that breaks a rule of this document.
 Appendix B lists the checks.
 After an error, the output is undefined.
 
@@ -626,7 +630,7 @@ A decoder must report an error for every block listed below. After an error, the
 Whatever the input, a decoder must not read or write outside its buffers.
 
 Offsets larger than the current position are not errors; they are clamped (4.3).
-The no-overlap flag (4.1) need not be checked (4.3).
+Nor are offsets below the match length in chunks with the no-overlap flag; they are raised (4.3).
 
 ## B.1 Header
 
@@ -702,5 +706,8 @@ and 32 bytes after each operation it writes. The last operations of a block can 
   at least 8 bytes of the block follow the last chunk's offset bits.
 * Clamping (4.3) costs nothing extra when the clamped offset, `min(offset, position)`, is used for the source,
   the overlap test and the pattern.
+* In chunks with the no-overlap flag, the offset is `min(max(offset, min(ml, 32)), position)`, and the delta reference offset
+  `min(max(offset, 32), position)`. A decoder can run the operations that start before position 32 like other chunks,
+  and the rest without an overlap test or repeating references.
 * The first operation's delta references are 0 (4.5). Setting the first output byte to 0, and treating offset 0 like offset 1,
   gives that without a special case.

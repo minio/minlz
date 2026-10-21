@@ -7,12 +7,12 @@
 // len(dst) must equal len(src)/8. len(src) must be a multiple of 256.
 // Requires: SSE2
 TEXT ·packBitsSSE2(SB), NOSPLIT, $0-48
-	MOVQ dst_base+0(FP), DI
-	MOVQ src_base+24(FP), SI
-	MOVQ src_len+32(FP), CX
-	SHRQ $8, CX         // CX = len(src) / 256
+	MOVQ  dst_base+0(FP), DI
+	MOVQ  src_base+24(FP), SI
+	MOVQ  src_len+32(FP), CX
+	SHRQ  $8, CX              // CX = len(src) / 256
 	TESTQ CX, CX
-	JZ   sse2done
+	JZ    sse2done
 
 sse2loop:
 	MOVOU 0*16(SI), X0
@@ -82,12 +82,12 @@ sse2done:
 // len(dst) must equal len(src)/8. len(src) must be a multiple of 256.
 // Requires: AVX2
 TEXT ·packBitsAVX2(SB), NOSPLIT, $0-48
-	MOVQ dst_base+0(FP), DI
-	MOVQ src_base+24(FP), SI
-	MOVQ src_len+32(FP), CX
-	SHRQ $8, CX         // CX = len(src) / 256
+	MOVQ  dst_base+0(FP), DI
+	MOVQ  src_base+24(FP), SI
+	MOVQ  src_len+32(FP), CX
+	SHRQ  $8, CX              // CX = len(src) / 256
 	TESTQ CX, CX
-	JZ   done
+	JZ    done
 
 loop:
 	VMOVDQU 0*32(SI), Y0

@@ -227,6 +227,9 @@ type simdChunk struct {
 	tok, ll, offc, esc, raw []byte
 	nLL, nOff, nEsc, bits   int
 	delta                   bool
+	// flat is set for chunks with the no-overlap flag. Their offsets are raised to the match length,
+	// so matches are plain copies.
+	flat bool
 }
 
 // simdReader reads stream entries from recs, and their data from body[pos:end].
@@ -360,7 +363,7 @@ func (s *simdDecoder) ops(dst, body []byte, end, limit int, st *[4]int, lr *simd
 		if flags&0xf0 != 0 || i == simdMaxChunks {
 			return false
 		}
-		c := simdChunk{delta: flags&1 != 0}
+		c := simdChunk{delta: flags&1 != 0, flat: flags&2 != 0}
 		tok, nTok, _, ok := s.stream(&r, simdTok, 1, limit, s.tok[:])
 		if !ok {
 			return false
@@ -635,12 +638,55 @@ func (c *simdChunk) run(dst, lits []byte, out int, st *[4]int) {
 	if end := st[0] + out; end+simdSlack > len(dst) {
 		k, cur = c.split(end, len(dst))
 	}
-	if k > 0 {
-		simdExec(dst, lits, c, k, st)
+	switch {
+	case !c.flat:
+		if k > 0 {
+			simdExec(dst, lits, c, k, st)
+		}
+	case k > 0:
+		// Before position simdMaxLen, clamping can still make a match overlap, or a delta reference repeat.
+		var k0 int
+		var cur0 [4]int
+		if st[0] < simdMaxLen {
+			k0, cur0 = c.head(st[0], k)
+			simdExecExact(dst, lits, c, 0, k0, [4]int{}, st)
+		}
+		if k > k0 {
+			simdExecFlat(dst, lits, c, k0, k, cur0, st)
+		}
 	}
 	if k < len(c.tok) {
-		simdExecExact(dst, lits, c, k, cur, st)
+		simdExecExact(dst, lits, c, k, len(c.tok), cur, st)
 	}
+}
+
+// head returns how many of the first k operations of c start before position simdMaxLen,
+// with the chunk starting at output position d, and the stream positions after them.
+func (c *simdChunk) head(d, k int) (n int, cur [4]int) {
+	li, oi, gi, pos := 0, 0, 0, 0
+	for ; n < k && d < simdMaxLen; n++ {
+		t := c.tok[n]
+		if t&2 != 0 {
+			ll := int(c.ll[li])
+			li++
+			if ll > simdMaxLen {
+				ll += int(c.esc[gi])
+				gi++
+			}
+			d += ll
+		}
+		ml := int(t >> 2)
+		if ml > simdMaxLen {
+			ml += int(c.esc[gi])
+			gi++
+		}
+		if t&1 == 0 {
+			pos += int(simdOffTab[c.offc[oi]] >> 24)
+			oi++
+		}
+		d += ml
+	}
+	return n, [4]int{li, oi, gi, pos}
 }
 
 // split returns how many operations of c end at least simdSlack bytes before limit,
@@ -729,6 +775,57 @@ func simdExecGo(dst, lits []byte, c *simdChunk, n int, st *[4]int) {
 	st[0], st[1], st[2] = d, l, last
 }
 
+// simdExecFlatGo runs operations k0 to k of c, which has the no-overlap flag, from stream positions cur.
+// They must end at least simdSlack bytes before the end of dst, and start at simdMaxLen or later.
+func simdExecFlatGo(dst, lits []byte, c *simdChunk, k0, k int, cur [4]int, st *[4]int) {
+	d, l, last := st[0], st[1], st[2]
+	li, oi, gi, pos := cur[0], cur[1], cur[2], cur[3]
+	for _, t := range c.tok[k0:k] {
+		lit := int(t>>1) & 1
+		nrep := int(t&1) ^ 1
+		ll := int(load8(c.ll, li)) & -lit
+		li += lit
+		ot := simdOffTab[load8(c.offc, oi)]
+		oi += nrep
+		nb := int(ot >> 24)
+		o := int(ot&0xffffff) + int(load64(c.raw, pos>>3)>>(pos&7)&(1<<nb-1))
+		pos += nb & -nrep
+		lv := load256(lits, l)
+		if c.delta {
+			// The references are raised to 32 as well, and d is at least 32, so they don't repeat.
+			ref := load256(dst, d-min(max(last, simdMaxLen), d))
+			for j := range lv {
+				lv[j] += ref[j]
+			}
+		}
+		store256(dst, d, lv)
+		if ll > simdMaxLen {
+			ll += int(c.esc[gi])
+			gi++
+			for j := 32; j < ll; j += 32 {
+				store256(dst, d+j, load256(lits, l+j))
+			}
+		}
+		d += ll
+		l += ll
+		if nrep != 0 {
+			last = o
+		}
+		ml := int(t >> 2)
+		// The raised offset is at least min(ml, 32), as d is.
+		r := min(max(last, min(ml, simdMaxLen)), d)
+		if ml > simdMaxLen {
+			ml += int(c.esc[gi])
+			gi++
+		}
+		for j := 0; j == 0 || j < ml; j += 32 {
+			store256(dst, d+j, load256(dst, d-r+j))
+		}
+		d += ml
+	}
+	st[0], st[1], st[2] = d, l, last
+}
+
 // simdDeltaRef adds the delta references of literals at d to lv, for repeat offset r.
 func simdDeltaRef(lv *[32]byte, dst []byte, d, r int) {
 	if r >= 32 {
@@ -748,12 +845,12 @@ func simdDeltaRef(lv *[32]byte, dst []byte, d, r int) {
 	}
 }
 
-// simdExecExact runs the operations of c from k on, from stream positions cur.
+// simdExecExact runs operations k to end of c, from stream positions cur.
 // It writes nothing past the operations.
-func simdExecExact(dst, lits []byte, c *simdChunk, k int, cur [4]int, st *[4]int) {
+func simdExecExact(dst, lits []byte, c *simdChunk, k, end int, cur [4]int, st *[4]int) {
 	d, l, last := st[0], st[1], st[2]
 	li, oi, gi, pos := cur[0], cur[1], cur[2], cur[3]
-	for _, t := range c.tok[k:] {
+	for _, t := range c.tok[k:end] {
 		if t&2 != 0 {
 			ll := int(c.ll[li])
 			li++
@@ -762,7 +859,11 @@ func simdExecExact(dst, lits []byte, c *simdChunk, k int, cur [4]int, st *[4]int
 				gi++
 			}
 			copy(dst[d:d+ll], lits[l:l+ll])
-			if r := min(last, d); c.delta && r > 0 {
+			r := min(last, d)
+			if c.flat {
+				r = min(max(last, simdMaxLen), d)
+			}
+			if c.delta && r > 0 {
 				for j := range min(ll, 32) {
 					dst[d+j] += dst[d-r+j%r]
 				}
@@ -777,8 +878,11 @@ func simdExecExact(dst, lits []byte, c *simdChunk, k int, cur [4]int, st *[4]int
 			last = int(ot&0xffffff) + int(load64(c.raw, pos>>3)>>(pos&7)&(1<<nb-1))
 			pos += nb
 		}
-		r := min(last, d)
 		ml := int(t >> 2)
+		r := min(last, d)
+		if c.flat {
+			r = min(max(last, min(ml, simdMaxLen)), d)
+		}
 		if ml > simdMaxLen {
 			ml += int(c.esc[gi])
 			gi++

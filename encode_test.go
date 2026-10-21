@@ -1281,6 +1281,61 @@ func testSIMDEncodeOps(t *testing.T) {
 	}
 }
 
+// TestSIMDEncodeNoOverlap checks that with simdNoOverlap, every chunk has the no-overlap flag,
+// and no match relies on it to raise its offset. It also checks simdLongRuns.
+func TestSIMDEncodeNoOverlap(t *testing.T) {
+	defer func(a, b bool) { simdNoOverlap, simdLongRuns = a, b }(simdNoOverlap, simdLongRuns)
+	for _, mode := range [][2]bool{{true, false}, {false, true}, {true, true}} {
+		simdNoOverlap, simdLongRuns = mode[0], mode[1]
+		testSIMDEncodeNoOverlap(t)
+	}
+}
+
+func testSIMDEncodeNoOverlap(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	inputs := [][]byte{
+		make([]byte, 100000),
+		readFile(t, "testdata/Mark.Twain-Tom.Sawyer.txt"),
+		genEncText(rng, 300000),
+		genEncMixed(rng, 300000),
+	}
+	// Runs of every period up to 40, and of several lengths, between random bytes.
+	for p := 1; p <= 40; p++ {
+		var b []byte
+		for _, n := range []int{p, p + 1, 2 * p, 3*p + 1, 33, 64, 100, 289, 1000} {
+			b = append(b, genEncRandom(rng, p)...)
+			for range n {
+				b = append(b, b[len(b)-p])
+			}
+			b = append(b, genEncRandom(rng, 3)...)
+		}
+		inputs = append(inputs, bytes.Repeat(b, 4))
+	}
+	for i, src := range inputs {
+		for _, level := range simdLevels {
+			enc, err := Encode(nil, src, level)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if v, _ := binary.Uvarint(enc[1:]); v>>24 != simdBlockType {
+				continue
+			}
+			got, err := reference.DecodeSIMDBlockStrict(enc)
+			if err != nil || !bytes.Equal(got, src) {
+				t.Fatalf("input %d level %d: %v", i, level, err)
+			}
+			if got, err := Decode(nil, enc); err != nil || !bytes.Equal(got, src) {
+				t.Fatalf("input %d level %d: %v", i, level, err)
+			}
+			reference.WalkSIMDBlock(enc, &reference.SIMDWalker{Chunk: func(flags byte, _ int) {
+				if flags&2 == 0 && simdNoOverlap {
+					t.Fatalf("input %d level %d: chunk without the no-overlap flag", i, level)
+				}
+			}})
+		}
+	}
+}
+
 // TestSIMDEncodeShortPeriod checks that LevelSmallestSIMD continues long matches with an offset below 32
 // at a multiple of the offset, in operations of up to 288 bytes instead of 32.
 func TestSIMDEncodeShortPeriod(t *testing.T) {

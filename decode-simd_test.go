@@ -42,16 +42,20 @@ import (
 type simdTestOp struct{ ll, ml, off int }
 
 // simdTestRun executes ops as specified, and appends the literals left.
-func simdTestRun(ops []simdTestOp, lits []byte) []byte {
+// The operations are in chunks of chunk, and chunk i has the no-overlap flag if bit i%64 of flat is set.
+func simdTestRun(ops []simdTestOp, lits []byte, chunk int, flat uint64) []byte {
 	var out []byte
 	l, last := 0, 1
-	for _, o := range ops {
+	for i, o := range ops {
 		out = append(out, lits[l:l+o.ll]...)
 		l += o.ll
 		if o.off != 0 {
 			last = o.off
 		}
 		r := min(last, len(out))
+		if flat>>(i/chunk&63)&1 != 0 {
+			r = min(max(last, min(o.ml, simdMaxLen)), len(out))
+		}
 		for range o.ml {
 			// Only invalid blocks match at position 0.
 			if r == 0 {
@@ -147,6 +151,7 @@ type simdTestBlock struct {
 	chunk    int    // operations per chunk
 	limit    int    // chunk limit value
 	delta    uint64 // chunk i has delta literals if bit i%64 is set
+	flat     uint64 // chunk i has the no-overlap flag if bit i%64 is set
 	litBlock int    // literals per literal block
 	modes    []int  // entry modes, cycled
 	litModes []int
@@ -310,10 +315,10 @@ func simdTestValues(ops []simdTestOp) (s [5][]byte) {
 // build returns the block parts and the decoded output.
 func (b *simdTestBuilder) build(tb simdTestBlock) (*simdTestEnc, []byte) {
 	b.cur = [len(b.cur)]*pivco.Table{}
-	out := simdTestRun(tb.ops, tb.lits)
 	if tb.chunk == 0 {
 		tb.chunk = 1024 << tb.limit
 	}
+	out := simdTestRun(tb.ops, tb.lits, tb.chunk, tb.flat)
 	if tb.litBlock == 0 {
 		tb.litBlock = pivco.MaxBlockSize
 	}
@@ -330,6 +335,9 @@ func (b *simdTestBuilder) build(tb simdTestBlock) (*simdTestEnc, []byte) {
 		ci := i / tb.chunk
 		if tb.delta>>(ci&63)&1 != 0 {
 			r := min(last, p)
+			if tb.flat>>(ci&63)&1 != 0 {
+				r = min(max(last, simdMaxLen), p)
+			}
 			for j := range min(o.ll, 32) {
 				if r > 0 {
 					e.stored[l+j] -= out[p-r+j%r]
@@ -351,6 +359,9 @@ func (b *simdTestBuilder) build(tb simdTestBlock) (*simdTestEnc, []byte) {
 		ci := len(e.chunks)
 		if tb.delta>>(ci&63)&1 != 0 {
 			c.flags = 1
+		}
+		if tb.flat>>(ci&63)&1 != 0 {
+			c.flags |= 2
 		}
 		c.vals = simdTestValues(c.ops)
 		for k := range 4 {
@@ -616,9 +627,16 @@ func testSIMDDecodeBuilt(t *testing.T) {
 		if i%3 == 1 {
 			tb.delta = rng.Uint64()
 		}
+		if i%4 >= 2 {
+			// Not from rng, which would change the other blocks.
+			tb.flat = uint64(i) * 0x9e3779b97f4a7c15
+		}
 		e, want := simdTestPad(b, &tb)
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			simdTestDecode(t, e.bytes(), want)
+			if ref, err := reference.DecodeSIMDBlock(e.bytes()); err != nil || !bytes.Equal(ref, want) {
+				t.Fatal("reference:", err)
+			}
 		})
 	}
 }
@@ -661,12 +679,35 @@ func TestSIMDDeltaExample(t *testing.T) {
 }
 
 // simdTestExecs are the operation loops to compare. dispatch runs the assembly loops of each tier.
+// The flat loops run chunks with the no-overlap flag.
 var simdTestExecs = []struct {
 	name string
+	flat bool
 	fn   func(dst, lits []byte, c *simdChunk, n int, st *[4]int)
-}{{"go", simdExecGo}, {"dispatch", simdExec}, {"exact", func(dst, lits []byte, c *simdChunk, n int, st *[4]int) {
-	simdExecExact(dst, lits, &simdChunk{tok: c.tok[:n], ll: c.ll, offc: c.offc, esc: c.esc, raw: c.raw, delta: c.delta}, 0, [4]int{}, st)
-}}}
+}{
+	{"go", false, simdExecGo}, {"dispatch", false, simdExec}, {"exact", false, simdTestExact},
+	{"flat-go", true, simdTestFlat(simdExecFlatGo)}, {"flat-dispatch", true, simdTestFlat(simdExecFlat)}, {"flat-exact", true, simdTestExact},
+}
+
+func simdTestExact(dst, lits []byte, c *simdChunk, n int, st *[4]int) {
+	simdExecExact(dst, lits, c, 0, n, [4]int{}, st)
+}
+
+// simdTestFlat returns a loop that runs the first n operations of a chunk with the no-overlap flag as run does,
+// with f after the operations that start their match before simdMaxLen.
+func simdTestFlat(f func(dst, lits []byte, c *simdChunk, k0, k int, cur [4]int, st *[4]int)) func(dst, lits []byte, c *simdChunk, n int, st *[4]int) {
+	return func(dst, lits []byte, c *simdChunk, n int, st *[4]int) {
+		var k0 int
+		var cur [4]int
+		if st[0] < simdMaxLen {
+			k0, cur = c.head(st[0], n)
+			simdExecExact(dst, lits, c, 0, k0, [4]int{}, st)
+		}
+		if n > k0 {
+			f(dst, lits, c, k0, n, cur, st)
+		}
+	}
+}
 
 func TestSIMDExec(t *testing.T) {
 	rng := rand.New(rand.NewSource(2))
@@ -674,7 +715,8 @@ func TestSIMDExec(t *testing.T) {
 	type tcase struct {
 		ops  []simdTestOp
 		lits []byte
-		bad  bool // a match longer than 32 bytes has an offset below 32
+		// A match longer than 32 bytes has an offset below 32, without and with the no-overlap flag.
+		bad, badFlat bool
 	}
 	var cases []tcase
 	for d0 := 1; d0 <= 40; d0 += 3 {
@@ -682,15 +724,16 @@ func TestSIMDExec(t *testing.T) {
 			for ml := 0; ml <= 40; ml += 3 {
 				lits := make([]byte, d0+40)
 				rng.Read(lits)
-				// The second match starts at d0+5.
+				// The second match starts at d0+5. The no-overlap flag raises its offset to 32.
 				bad := ml > simdMaxLen && min(off, d0+5) < simdMaxLen
-				cases = append(cases, tcase{[]simdTestOp{{ll: d0, ml: 3, off: 7}, {ll: 2, ml: ml, off: off}, {ll: 35, ml: 5, off: 0}}, lits, bad})
+				badFlat := ml > simdMaxLen && d0+5 < simdMaxLen
+				cases = append(cases, tcase{[]simdTestOp{{ll: d0, ml: 3, off: 7}, {ll: 2, ml: ml, off: off}, {ll: 35, ml: 5, off: 0}}, lits, bad, badFlat})
 			}
 		}
 	}
 	for range 200 {
 		ops, lits := simdTestOps(rng, 1+rng.Intn(300), "abcab\x00", 288, 1<<rng.Intn(16))
-		cases = append(cases, tcase{ops, lits, false})
+		cases = append(cases, tcase{ops, lits, false, false})
 	}
 	// Buffers end at an inaccessible page, right after what simdExecGo reads or writes.
 	var guards [7][]byte
@@ -719,6 +762,10 @@ func TestSIMDExec(t *testing.T) {
 					if delta {
 						tb.delta = 1
 					}
+					bad := tc.bad
+					if ex.flat {
+						tb.flat, bad = 1, tc.badFlat
+					}
 					e, want := b.build(tb)
 					v := e.chunks[0].vals
 					l := 0
@@ -730,12 +777,12 @@ func TestSIMDExec(t *testing.T) {
 					// ll and offc are read one value ahead, raw 8 bytes at each bit position. simdExec takes &c.esc[0].
 					c := simdChunk{tok: at(0, v[simdTok], len(v[simdTok])), ll: at(1, v[simdLL], len(v[simdLL])+1),
 						offc: at(2, v[simdOffc], len(v[simdOffc])+1), esc: at(3, v[simdEsc], max(len(v[simdEsc]), 1)),
-						raw: at(4, v[4], bits>>3+8), delta: delta}
+						raw: at(4, v[4], bits>>3+8), delta: delta, flat: ex.flat}
 					dst := at(5, nil, d+simdSlack)
 					lits := at(6, e.stored[:l], l+simdSlack)
 					st := [4]int{0, 0, 1, 0}
 					ex.fn(dst, lits, &c, len(c.tok), &st)
-					if tc.bad {
+					if bad {
 						if st[3] == 0 {
 							t.Fatalf("%s case %d delta %v: long match below offset 32 not flagged", ex.name, i, delta)
 						}
@@ -760,7 +807,7 @@ func testSIMDExecEmpty(t *testing.T) {
 	st0 := [4]int{40, 10, 9, 0}
 	for _, ex := range simdTestExecs {
 		for _, delta := range []bool{false, true} {
-			c := simdChunk{tok: s, ll: s, offc: s, esc: s, raw: s, delta: delta}
+			c := simdChunk{tok: s, ll: s, offc: s, esc: s, raw: s, delta: delta, flat: ex.flat}
 			dst := make([]byte, 100)
 			st := st0
 			ex.fn(dst, lits, &c, 0, &st)
@@ -791,6 +838,7 @@ func testSIMDExecRandom(t *testing.T) {
 	for i := range cases {
 		var c simdChunk
 		c.delta = i&1 != 0
+		c.flat = i%5 == 2
 		// Mostly new offsets with 20 raw bits span the most raw bytes per 16 operations.
 		wide := i%3 == 1
 		d0, l0, last := hist, rng.Intn(1000), 1+rng.Intn(hist-1)
@@ -833,7 +881,11 @@ func testSIMDExecRandom(t *testing.T) {
 			}
 			ml := rng.Intn(simdMaxLen + 2)
 			if ml > simdMaxLen {
-				if min(last, d) < simdMaxLen {
+				r := min(last, d)
+				if c.flat {
+					r = min(max(last, simdMaxLen), d)
+				}
+				if r < simdMaxLen {
 					ml = simdMaxLen
 				} else {
 					e := rng.Intn(256)
@@ -849,10 +901,15 @@ func testSIMDExecRandom(t *testing.T) {
 		rng.Read(lits)
 		n := 1 + rng.Intn(len(c.tok))
 		sw, sg := st0, st0
-		simdExecGo(want, lits, &c, n, &sw)
-		simdExec(got, lits, &c, n, &sg)
+		if c.flat {
+			simdTestFlat(simdExecFlatGo)(want, lits, &c, n, &sw)
+			simdTestFlat(simdExecFlat)(got, lits, &c, n, &sg)
+		} else {
+			simdExecGo(want, lits, &c, n, &sw)
+			simdExec(got, lits, &c, n, &sg)
+		}
 		if sw != sg || !bytes.Equal(want[d0:sw[0]], got[d0:sw[0]]) {
-			t.Fatalf("case %d (%d of %d operations, delta %v, start %v): state %v, want %v", i, n, len(c.tok), c.delta, st0, sg, sw)
+			t.Fatalf("case %d (%d of %d operations, delta %v, flat %v, start %v): state %v, want %v", i, n, len(c.tok), c.delta, c.flat, st0, sg, sw)
 		}
 		end := max(sw[0], sg[0]) + simdSlack + 2*simdMaxLen
 		copy(want[d0:end], base[d0:end])
@@ -1124,7 +1181,15 @@ func testSIMDValidation(t *testing.T) {
 		{name: "chunk flag bit 4", change: same(func(e *simdTestEnc) { e.chunks[0].flags |= 1 << 4 })},
 		{name: "chunk flag bit 7", change: same(func(e *simdTestEnc) { e.chunks[0].flags |= 1 << 7 })},
 		{name: "chunk hint bits", ok: true, change: same(func(e *simdTestEnc) { e.chunks[0].flags |= 3 << 2 })},
-		{name: "chunk no-overlap flag", ok: true, change: same(func(e *simdTestEnc) { e.chunks[0].flags |= 2 })},
+		// The flag raises the offsets of the overlapping matches (SPEC_SIMD.md 4.3).
+		{name: "chunk no-overlap flag", ok: true, change: func(e *simdTestEnc, want []byte) []byte {
+			e.chunks[0].flags |= 2
+			out, err := reference.DecodeSIMDBlock(e.bytes())
+			if err != nil || bytes.Equal(out, want) {
+				t.Fatal("reference:", err)
+			}
+			return out
+		}},
 		{name: "literal mode 5", change: same(func(e *simdTestEnc) { e.lits[0].mode = 5 })},
 		{name: "literal mode 7", change: same(func(e *simdTestEnc) { e.lits[0].mode = 7 })},
 		{name: "token mode 6", change: same(func(e *simdTestEnc) { chunk(e, simdTok).mode = 6 })},

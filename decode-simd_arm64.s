@@ -36,6 +36,7 @@
 #define LEN R13
 #define OFFTAB R19
 #define PERMTAB R20
+#define C32 R21
 #define LITS R22
 
 // simdPermTab holds 33 rows of 32 TBL indexes, indexed by min(offset, 32).
@@ -84,16 +85,16 @@ DATA simdPermTab<>+(r*32+24)(SB)/8, d
 GLOBL simdPermTab<>(SB), RODATA|NOPTR, $1056
 
 #define OPS_START \
-	ADD  TOKP, TOKEND                \
-	MOVD (ST), DP                    \
-	ADD  DST, DP                     \
-	MOVD 8(ST), R14                  \
-	ADD  LITS, R14, LITP             \
-	MOVD 16(ST), LAST                \
-	MOVD ZR, POS                     \
+	ADD  TOKP, TOKEND                 \
+	MOVD (ST), DP                     \
+	ADD  DST, DP                      \
+	MOVD 8(ST), R14                   \
+	ADD  LITS, R14, LITP              \
+	MOVD 16(ST), LAST                 \
+	MOVD ZR, POS                      \
 	MOVD $·simdOffTabNEON(SB), OFFTAB \
-	MOVD $simdPermTab<>(SB), PERMTAB \
-	CMP  TOKEND, TOKP                \
+	MOVD $simdPermTab<>(SB), PERMTAB  \
+	CMP  TOKEND, TOKP                 \
 	BHS  done
 
 // OPS_REST runs the rest of an operation, after its first 32 literals are stored.
@@ -147,60 +148,60 @@ GLOBL simdPermTab<>(SB), RODATA|NOPTR, $1056
 	MOVD     LITP, 8(ST)           \
 	MOVD     LAST, 16(ST)          \
 	RET                            \
-	pattern:                                   \
-	FLDPQ     (R14), (F2, F3)                  \
-	ADD       LAST<<5, PERMTAB, R15            \
-	FLDPQ     (R15), (F4, F5)                  \
-	VTBL      V4.B16, [V2.B16, V3.B16], V6.B16 \
-	VTBL      V5.B16, [V2.B16, V3.B16], V7.B16 \
-	FSTPQ     (F6, F7), (DP)                   \
-	B         check                            \
-	clamp:                                     \
-	MOVD      DST, R14                         \
-	SUB       DST, DP, R16                     \
-	FLDPQ     (R14), (F2, F3)                  \
-	CMP       TOK>>2, R16                      \
-	BHS       clampcopy                        \
-	ADD       R16<<5, PERMTAB, R15             \
-	FLDPQ     (R15), (F4, F5)                  \
-	VTBL      V4.B16, [V2.B16, V3.B16], V2.B16 \
-	VTBL      V5.B16, [V2.B16, V3.B16], V3.B16 \
-	clampcopy:                                 \
-	FSTPQ     (F2, F3), (DP)                   \
-	B         check                            \
-	litlong:                                   \
-	MOVBU.P   1(ESCP), R15                     \
-	ADD       $33, R15, LEN                    \
-	ADD       $32, R15                         \
-	LSR       $5, R15                          \
-	ADD       $32, LITP, R14                   \
-	ADD       $32, DP, R16                     \
-	litloop:                                   \
-	FLDPQ.P   32(R14), (F2, F3)                \
-	FSTPQ.P   (F2, F3), 32(R16)                \
-	SUBS      $1, R15                          \
-	BNE       litloop                          \
-	B         litback                          \
-	long:                                      \
-	SUB       R14, DP, R16                     \
-	CMP       $32, R16                         \
-	BHS       longok                           \
-	MOVD      $1, R15                          \
-	MOVD      R15, 24(ST)                      \
-	longok:                                    \
-	MOVBU.P   1(ESCP), R15                     \
-	ADD       $33, R15, TOK                    \
-	LSL       $2, TOK                          \
-	ADD       $32, R15                         \
-	LSR       $5, R15                          \
-	ADD       $32, R14                         \
-	ADD       $32, DP, R16                     \
-	longloop:                                  \
-	FLDPQ.P   32(R14), (F2, F3)                \
-	FSTPQ.P   (F2, F3), 32(R16)                \
-	SUBS      $1, R15                          \
-	BNE       longloop                         \
-	B         next
+	pattern:                                    \
+	FLDPQ      (R14), (F2, F3)                  \
+	ADD        LAST<<5, PERMTAB, R15            \
+	FLDPQ      (R15), (F4, F5)                  \
+	VTBL       V4.B16, [V2.B16, V3.B16], V6.B16 \
+	VTBL       V5.B16, [V2.B16, V3.B16], V7.B16 \
+	FSTPQ      (F6, F7), (DP)                   \
+	B          check                            \
+	clamp:                                      \
+	MOVD       DST, R14                         \
+	SUB        DST, DP, R16                     \
+	FLDPQ      (R14), (F2, F3)                  \
+	CMP        TOK>>2, R16                      \
+	BHS        clampcopy                        \
+	ADD        R16<<5, PERMTAB, R15             \
+	FLDPQ      (R15), (F4, F5)                  \
+	VTBL       V4.B16, [V2.B16, V3.B16], V2.B16 \
+	VTBL       V5.B16, [V2.B16, V3.B16], V3.B16 \
+	clampcopy:                                  \
+	FSTPQ      (F2, F3), (DP)                   \
+	B          check                            \
+	litlong:                                    \
+	MOVBU.P    1(ESCP), R15                     \
+	ADD        $33, R15, LEN                    \
+	ADD        $32, R15                         \
+	LSR        $5, R15                          \
+	ADD        $32, LITP, R14                   \
+	ADD        $32, DP, R16                     \
+	litloop:                                    \
+	FLDPQ.P    32(R14), (F2, F3)                \
+	FSTPQ.P    (F2, F3), 32(R16)                \
+	SUBS       $1, R15                          \
+	BNE        litloop                          \
+	B          litback                          \
+	long:                                       \
+	SUB        R14, DP, R16                     \
+	CMP        $32, R16                         \
+	BHS        longok                           \
+	MOVD       $1, R15                          \
+	MOVD       R15, 24(ST)                      \
+	longok:                                     \
+	MOVBU.P    1(ESCP), R15                     \
+	ADD        $33, R15, TOK                    \
+	LSL        $2, TOK                          \
+	ADD        $32, R15                         \
+	LSR        $5, R15                          \
+	ADD        $32, R14                         \
+	ADD        $32, DP, R16                     \
+	longloop:                                   \
+	FLDPQ.P    32(R14), (F2, F3)                \
+	FSTPQ.P    (F2, F3), 32(R16)                \
+	SUBS       $1, R15                          \
+	BNE        longloop                         \
+	B          next
 
 // func simdExecNEON(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, esc *byte, n int, st *[4]int)
 TEXT ·simdExecNEON(SB), NOSPLIT, $0-72
@@ -262,6 +263,150 @@ dpattern:
 	VADD  V6.B16, V0.B16, V0.B16
 	VADD  V7.B16, V1.B16, V1.B16
 	B     dstore
+
+	// FLAT_REST is OPS_REST for chunks with the no-overlap flag, whose operations start at position 32 or later.
+	// A match is copied from r = min(max(LAST, min(ml, 32)), d) back. When LAST is below the match length code,
+	// raise branches to raise it, so the match never overlaps. Only a larger LAST can reach before dst,
+	// which branches to clamp, and the position, at least 32, is also at least the match length.
+#define FLAT_REST \
+	TST         $2, TOK               \
+	MOVBU       (LLP), LEN            \
+	CSEL        EQ, ZR, LEN, LEN      \
+	CINC        NE, LLP, LLP          \
+	CMP         $33, LEN              \
+	BEQ         litlong               \
+	litback:                          \
+	ADD         LEN, DP               \
+	ADD         LEN, LITP             \
+	MOVBU       (OFFP), R14           \
+	MOVD        (OFFTAB)(R14<<3), R14 \
+	LSR         $3, POS, R15          \
+	MOVD        (RAW)(R15), R15       \
+	AND         $7, POS, R16          \
+	LSR         R16, R15, R15         \
+	ANDW        R14, R15, R15         \
+	UBFX        $32, R14, $8, R16     \
+	ADD         R14>>40, R15, R14     \
+	ADD         R16, POS, R15         \
+	TST         $1, TOK               \
+	CSEL        NE, LAST, R14, LAST   \
+	CSEL        NE, POS, R15, POS     \
+	CINC        EQ, OFFP, OFFP        \
+	CMP         TOK>>2, LAST          \
+	BLO         raise                 \
+	clampcheck:                       \
+	SUBS        LAST, DP, R14         \
+	CCMP        HS, R14, DST, $0      \
+	BLO         clamp                 \
+	copy:                             \
+	FLDPQ       (R14), (F2, F3)       \
+	FSTPQ       (F2, F3), (DP)        \
+	CMP         $132, TOK             \
+	BHS         long                  \
+	next:                             \
+	ADD         TOK>>2, DP            \
+	CMP         TOKEND, TOKP          \
+	BLO         loop                  \
+	done:                             \
+	SUB         DST, DP               \
+	MOVD        DP, (ST)              \
+	SUB         LITS, LITP            \
+	MOVD        LITP, 8(ST)           \
+	MOVD        LAST, 16(ST)          \
+	RET                               \
+	raise:                      \
+	LSR       $2, TOK, R16      \
+	CMP       $33, R16          \
+	BNE       raised            \
+	CMP       $32, LAST         \
+	BHS       clampcheck        \
+	MOVD      $32, R16          \
+	raised:                     \
+	SUB       R16, DP, R14      \
+	B         copy              \
+	clamp:                      \
+	MOVD      DST, R14          \
+	B         copy              \
+	litlong:                    \
+	MOVBU.P   1(ESCP), R15      \
+	ADD       $33, R15, LEN     \
+	ADD       $32, R15          \
+	LSR       $5, R15           \
+	ADD       $32, LITP, R14    \
+	ADD       $32, DP, R16      \
+	litloop:                    \
+	FLDPQ.P   32(R14), (F2, F3) \
+	FSTPQ.P   (F2, F3), 32(R16) \
+	SUBS      $1, R15           \
+	BNE       litloop           \
+	B         litback           \
+	long:                       \
+	MOVBU.P   1(ESCP), R15      \
+	ADD       $33, R15, TOK     \
+	LSL       $2, TOK           \
+	ADD       $32, R15          \
+	LSR       $5, R15           \
+	ADD       $32, R14          \
+	ADD       $32, DP, R16      \
+	longloop:                   \
+	FLDPQ.P   32(R14), (F2, F3) \
+	FSTPQ.P   (F2, F3), 32(R16) \
+	SUBS      $1, R15           \
+	BNE       longloop          \
+	B         next
+
+// func simdExecFlatNEON(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, esc *byte, n int, pos int, st *[4]int)
+TEXT ·simdExecFlatNEON(SB), NOSPLIT, $0-80
+	MOVD    dst+0(FP), DST
+	MOVD    lits+8(FP), LITS
+	MOVD    tok+16(FP), TOKP
+	MOVD    ll+24(FP), LLP
+	MOVD    offc+32(FP), OFFP
+	MOVD    raw+40(FP), RAW
+	MOVD    esc+48(FP), ESCP
+	MOVD    n+56(FP), TOKEND
+	MOVD    st+72(FP), ST
+	OPS_START
+	MOVD    pos+64(FP), POS
+	PCALIGN $64
+
+loop:
+	MOVBU.P 1(TOKP), TOK
+	FLDPQ   (LITP), (F0, F1)
+	FSTPQ   (F0, F1), (DP)
+	FLAT_REST
+
+// func simdExecFlatDeltaNEON(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, esc *byte, n int, pos int, st *[4]int)
+// The delta references are raised to 32 too, and clamped to the position, so they never repeat.
+TEXT ·simdExecFlatDeltaNEON(SB), NOSPLIT, $0-80
+	MOVD    dst+0(FP), DST
+	MOVD    lits+8(FP), LITS
+	MOVD    tok+16(FP), TOKP
+	MOVD    ll+24(FP), LLP
+	MOVD    offc+32(FP), OFFP
+	MOVD    raw+40(FP), RAW
+	MOVD    esc+48(FP), ESCP
+	MOVD    n+56(FP), TOKEND
+	MOVD    st+72(FP), ST
+	OPS_START
+	MOVD    pos+64(FP), POS
+	MOVD    $32, C32
+	PCALIGN $64
+
+loop:
+	MOVBU.P 1(TOKP), TOK
+	FLDPQ   (LITP), (F0, F1)
+	SUB     DST, DP, R16
+	CMP     $32, LAST
+	CSEL    HS, LAST, C32, R15
+	CMP     R16, R15
+	CSEL    HI, R16, R15, R15
+	SUB     R15, DP, R17
+	FLDPQ   (R17), (F2, F3)
+	VADD    V2.B16, V0.B16, V0.B16
+	VADD    V3.B16, V1.B16, V1.B16
+	FSTPQ   (F0, F1), (DP)
+	FLAT_REST
 
 	// The stream checks of chunks take 16 bytes at a time; n is a multiple of 16 above 0.
 	// They keep the largest byte, or byte - 1, in V7, and sum bytes with UADDLV into D lanes.
