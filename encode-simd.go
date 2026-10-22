@@ -107,6 +107,12 @@ type simdEncoder struct {
 	fastCode int
 
 	deltaDiv int // delta literals must save 1/deltaDiv of a chunk; 0 disables them, -1 uses only them
+	// noOverlap splits the matches that overlap their output, so every chunk has the no-overlap flag.
+	// With budget, a chunk stops splitting once that cost it more than simdSplitBudget, and overlaps.
+	// splitCost is what splitting cost the chunk: operations and offsets, against operations of 32 bytes.
+	noOverlap, budget bool
+	splitCost         int
+	chunkPos          int // where the current chunk starts
 	// deltaShort is set when a delta literal of the chunk references an offset that the no-overlap flag would raise.
 	deltaShort bool
 	limit      int // largest size of the encoded block
@@ -140,9 +146,17 @@ func encodeBlockSIMD(dst, src []byte, level int) int {
 // simdEncAsm makes blocks without delta literals use the assembly parsers, which parse as the Go parsers.
 var simdEncAsm = hasAsm
 
-// simdNoOverlap makes the parsers split the matches that overlap their output, so every chunk has
-// the no-overlap flag. The assembly parsers don't split this way, or as simdLongRuns, so neither uses them.
+// simdNoOverlap sets noOverlap, without budget. LevelSuperFastSIMD has it with budget, except with delta literals:
+// the no-overlap flag raises their references, so a chunk can't drop it.
+// The assembly parsers of the other levels don't split this way, or as simdLongRuns, so neither uses them.
 var simdNoOverlap = false
+
+// simdSplitBudget returns the split cost a chunk of n operations allows with budget.
+// Data of short runs can otherwise take several times the operations, and fill more chunks than a block has.
+// Few chunks of real data reach it.
+func simdSplitBudget(n int) int {
+	return 64 + n/32
+}
 
 // The assembly parsers, see parseAsm.
 const (
@@ -163,9 +177,14 @@ func (e *simdEncoder) parse(src []byte, level int) {
 	asm := simdEncAsm && delta == 0 && !simdNoOverlap && !simdLongRuns
 	e.splitLits = level == LevelSmallestSIMD
 	e.fastCode = 0
+	e.noOverlap, e.budget = simdNoOverlap, false
 	switch level &^ LevelSIMDDelta {
 	case LevelSuperFastSIMD:
 		e.fastCode = 1
+		if delta == 0 {
+			// Its assembly parsers leave the matches that overlap to Go, which makes simdLongRuns moot.
+			e.noOverlap, e.budget, asm = true, !simdNoOverlap, simdEncAsm
+		}
 		e.reset(src, delta, len(src)>>3)
 		switch {
 		case asm && len(src) <= 64<<10:
@@ -243,7 +262,7 @@ func (e *simdEncoder) reset(src []byte, deltaDiv, save int) {
 	e.chunkRecs, e.switches = e.chunkRecs[:0], e.switches[:0]
 	e.nTok, e.nLL, e.nOffc, e.nEsc, e.nRaw, e.nLits, e.chunks = 0, 0, 0, 0, 0, 0, 0
 	e.opLits, e.chunkLits = 0, 0
-	e.acc, e.nacc, e.overlap, e.deltaShort = 0, 0, false, false
+	e.acc, e.nacc, e.overlap, e.deltaShort, e.splitCost, e.chunkPos = 0, 0, false, false, 0, 0
 	e.src, e.tail, e.pos, e.rep, e.deltaDiv, e.limit = src, nil, 0, 1, deltaDiv, n-max(simdMinSaving, save)
 	e.have = [len(e.have)]bool{}
 }
@@ -260,12 +279,12 @@ func (e *simdEncoder) emitLiterals(lits []byte) {
 // fast reports whether the plain literals src[from:base], and a match at offset that ends at s, fit putLits and putMatch.
 // Delta literals are rare, so they are left to the emitters.
 func (e *simdEncoder) fast(src []byte, from, base, s, offset int) bool {
-	return e.deltaDiv == 0 && base-from <= simdMaxLong && len(src)-from >= simdMaxLen && oneOp(offset, s-base)
+	return e.deltaDiv == 0 && base-from <= simdMaxLong && len(src)-from >= simdMaxLen && e.oneOp(offset, s-base)
 }
 
 // oneOp reports whether putMatch can add a match of length bytes at offset.
-func oneOp(offset, length int) bool {
-	return length <= simdMaxLen && (offset >= length || !simdNoOverlap) || length <= simdMaxLong && offset >= simdMaxLen
+func (e *simdEncoder) oneOp(offset, length int) bool {
+	return length <= simdMaxLen && (offset >= length || !e.noOverlap) || length <= simdMaxLong && offset >= simdMaxLen
 }
 
 // matchAt returns how many bytes match at src[a:] and src[b:], with b < a, like matchLen.
@@ -355,7 +374,7 @@ func (e *simdEncoder) emitCopyLits(lits []byte, offset, length int) {
 	prev := e.rep
 	e.rep = offset
 	e.putBits(e.putOffset(offset))
-	if len(lits) > simdMaxLen || length > simdMaxLen || simdNoOverlap && offset < length {
+	if len(lits) > simdMaxLen || length > simdMaxLen || e.noOverlap && offset < length {
 		e.emitLong(lits, prev, 0, length)
 		return
 	}
@@ -386,7 +405,7 @@ func (e *simdEncoder) emitRepeatLits(lits []byte, length int) {
 		e.emitLong(lits[:simdMaxLong], e.rep, 1, 0)
 		lits = lits[simdMaxLong:]
 	}
-	if len(lits) > simdMaxLen || length > simdMaxLen || simdNoOverlap && e.rep < length {
+	if len(lits) > simdMaxLen || length > simdMaxLen || e.noOverlap && e.rep < length {
 		e.emitLong(lits, e.rep, 1, length)
 		return
 	}
@@ -441,13 +460,17 @@ func (e *simdEncoder) emitLong(lits []byte, prev int, t byte, length int) {
 		}
 		e.pos += len(lits)
 	}
-	step := simdMaxLen
+	step, split, offset := simdMaxLen, false, e.rep
 	switch {
 	case e.rep >= simdMaxLen:
 		step = simdMaxLong
-	case simdNoOverlap:
-		step = e.rep
+	case !e.noOverlap || length == 0:
+	case e.budget && e.splitCost > simdSplitBudget(e.nTok):
+		e.noOverlap = false
+	default:
+		step, split = e.rep, true
 	}
+	cost := -(length + simdMaxLen - 1) / simdMaxLen
 	for {
 		n := min(length, step)
 		if n > simdMaxLen {
@@ -462,33 +485,52 @@ func (e *simdEncoder) emitLong(lits []byte, prev int, t byte, length int) {
 		e.nTok++
 		e.pos += n
 		length -= n
+		cost++
 		if e.nTok == simdChunkOps {
 			e.endChunk()
 		}
 		if length == 0 {
+			if split {
+				// The parsers continue from the offset of the match as the repeat offset, as without the split:
+				// they find most matches of short runs by it. An operation of no bytes sets it, while the chunk
+				// outputs more bytes than it has operations. Else the parsers take the multiple.
+				if e.rep != offset && e.pos-e.chunkPos > e.nTok {
+					e.putBits(e.putOffset(offset))
+					e.rep = offset
+					e.tok[e.nTok] = 0
+					e.nTok++
+					cost += 2
+					if e.nTok == simdChunkOps {
+						e.endChunk()
+					}
+				}
+				e.splitCost += cost
+			}
 			return
 		}
 		t = 1
 		switch {
-		case simdNoOverlap && step < simdMaxLen && step < length:
+		case split && step < simdMaxLen && step < length:
 			// The output repeats every e.rep bytes, and now holds at least twice that, so twice the offset matches too.
 			e.rep *= 2
 			e.putBits(e.putOffset(e.rep))
 			t, step = 0, e.rep
+			cost++
 			if step >= simdMaxLen {
 				step = simdMaxLong
 			}
-		case simdLongRuns && step == simdMaxLen && length > 2*simdMaxLen:
+		case step == simdMaxLen && (simdLongRuns && length > 2*simdMaxLen || e.noOverlap && e.nTok == 0):
 			// The output now holds 32 bytes of the period, so the first multiple of it from 32 matches too,
-			// in operations of up to 288 bytes.
+			// in operations of up to 288 bytes. A chunk that the budget stopped splitting ended in the match,
+			// and the next continues it so, as it splits.
 			e.rep *= (simdMaxLen + e.rep - 1) / e.rep
 			e.putBits(e.putOffset(e.rep))
-			t, step = 0, simdMaxLong
+			t, step, split = 0, simdMaxLong, e.noOverlap
 		}
 	}
 }
 
-// simdSplitCost makes LevelSmallestSIMD price the splits of simdNoOverlap.
+// simdSplitCost makes LevelSmallestSIMD price the splits of noOverlap.
 var simdSplitCost = false
 
 // simdLongRuns makes the parsers continue matches longer than 64 bytes at offsets below 32 at a multiple of the offset,
@@ -506,7 +548,7 @@ func (e *simdEncoder) deltaLits(lits []byte, rep int) {
 	}
 	// The no-overlap flag raises the references to 32 (SPEC_SIMD.md 4.5), so a chunk that doesn't can't have it.
 	r := min(rep, e.pos)
-	if raised := min(max(rep, simdMaxLen), e.pos); simdNoOverlap {
+	if raised := min(max(rep, simdMaxLen), e.pos); e.noOverlap {
 		r = raised
 	} else if r != raised {
 		e.deltaShort = true
@@ -567,6 +609,7 @@ func (e *simdEncoder) endChunk() {
 		}
 	}
 	e.nTok, e.nLL, e.nOffc, e.nEsc, e.nRaw, e.overlap, e.deltaShort = 0, 0, 0, 0, 0, false, false
+	e.splitCost, e.noOverlap, e.chunkPos = 0, e.noOverlap || e.budget, e.pos
 }
 
 // finish codes the literals and completes the block. It returns its size, or 0 if it is too large.

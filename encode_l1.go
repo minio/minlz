@@ -421,7 +421,7 @@ func (e *simdEncoder) encodeBlockGo(src []byte) {
 				s += 8
 				candidate += 8
 			}
-			if oneOp(repeat, s-base) {
+			if e.oneOp(repeat, s-base) {
 				e.putBits(e.putOffset(repeat))
 				if e.putMatch(0, repeat, s-base) {
 					e.endChunk()
@@ -577,7 +577,7 @@ func (e *simdEncoder) encodeBlockGo64K(src []byte) {
 				s += 8
 				candidate += 8
 			}
-			if oneOp(repeat, s-base) {
+			if e.oneOp(repeat, s-base) {
 				e.putBits(e.putOffset(repeat))
 				if e.putMatch(0, repeat, s-base) {
 					e.endChunk()

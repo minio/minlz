@@ -1281,11 +1281,13 @@ func testSIMDEncodeOps(t *testing.T) {
 	}
 }
 
-// TestSIMDEncodeNoOverlap checks that with simdNoOverlap, every chunk has the no-overlap flag,
+// TestSIMDEncodeNoOverlap checks that with noOverlap, every chunk has the no-overlap flag,
 // and no match relies on it to raise its offset. It also checks simdLongRuns.
-func TestSIMDEncodeNoOverlap(t *testing.T) {
+func TestSIMDEncodeNoOverlap(t *testing.T) { simdEncTiers(t, testSIMDEncodeNoOverlapModes) }
+
+func testSIMDEncodeNoOverlapModes(t *testing.T) {
 	defer func(a, b bool) { simdNoOverlap, simdLongRuns = a, b }(simdNoOverlap, simdLongRuns)
-	for _, mode := range [][2]bool{{true, false}, {false, true}, {true, true}} {
+	for _, mode := range [][2]bool{{false, false}, {true, false}, {false, true}, {true, true}} {
 		simdNoOverlap, simdLongRuns = mode[0], mode[1]
 		testSIMDEncodeNoOverlap(t)
 	}
@@ -1333,6 +1335,131 @@ func testSIMDEncodeNoOverlap(t *testing.T) {
 				}
 			}})
 		}
+	}
+}
+
+// simdRuns returns n bytes of runs of length bytes of one value, which differs from the run before.
+func simdRuns(rng *rand.Rand, length, n int) []byte {
+	b := make([]byte, 0, n+length)
+	for len(b) < n {
+		c := byte(rng.Intn(255))
+		if len(b) > 0 && c >= b[len(b)-1] {
+			c++
+		}
+		for range length {
+			b = append(b, c)
+		}
+	}
+	return b[:n]
+}
+
+// TestSIMDEncodeSplitBudget checks that the split of LevelSuperFastSIMD keeps the parse of its Go parsers, and that
+// its budget keeps short runs within 5% of the size without the split, and lets sparse runs split.
+func TestSIMDEncodeSplitBudget(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	// Gaps of zeros after a random byte.
+	sparse := func(gap, n int) []byte {
+		b := make([]byte, 0, n+gap+1)
+		for len(b) < n {
+			b = append(append(b, byte(1+rng.Intn(255))), make([]byte, gap)...)
+		}
+		return b[:n]
+	}
+	e := new(simdEncoder)
+	for _, p := range simdAsmParsers {
+		if !p.noOverlap {
+			continue
+		}
+		plain, always := p, p
+		plain.noOverlap, plain.budget, always.budget = false, false, false
+		for _, in := range []struct {
+			name      string
+			src       []byte
+			short     bool // the budget stops the split
+			allSplit  bool // every chunk is split
+			sameParse bool // fewer operations than a chunk holds, so no split ends one
+			lastSplit bool // the last chunk is split
+		}{
+			{"runs-6", simdRuns(rng, 6, 1<<20), true, false, false, false},
+			{"runs-9", simdRuns(rng, 9, 1<<20), true, false, false, false},
+			{"runs-9-small", simdRuns(rng, 9, 16<<10), true, false, true, false},
+			{"sparse-24", sparse(24, 1<<20), false, true, false, true},
+			{"text", readFile(t, "testdata/Mark.Twain-Tom.Sawyer.txt"), false, false, true, false},
+			// Chunks that the short runs stop splitting, then one of long runs, whose split saves operations.
+			{"runs-long", append(simdRuns(rng, 9, 256<<10), simdRuns(rng, 2000, 2<<20)...), false, false, false, true},
+		} {
+			src := in.src[:min(len(in.src), p.max)]
+			b, g, a := simdParseRun(e, src, p, false), simdParseRun(e, src, plain, false), simdParseRun(e, src, always, false)
+			if in.sameParse && (!bytes.Equal(b.lits, g.lits) || !bytes.Equal(a.lits, g.lits)) {
+				t.Errorf("%s %s: the split changes the parse", p.name, in.name)
+			}
+			flagged, last := 0, byte(0)
+			reference.WalkSIMDBlock(append([]byte{0}, b.block...), &reference.SIMDWalker{Chunk: func(flags byte, _ int) {
+				flagged += int(flags>>1) & 1
+				last = flags
+			}})
+			if in.short && (b.size > g.size+g.size/20 || 3*b.size > 2*a.size) {
+				t.Errorf("%s %s: %d bytes, %d without the split, %d without the budget", p.name, in.name, b.size, g.size, a.size)
+			}
+			if in.allSplit && flagged != b.chunks || in.lastSplit && b.chunks > 1 && last&2 == 0 {
+				t.Errorf("%s %s: %d of %d chunks split, the last %v", p.name, in.name, flagged, b.chunks, last&2 != 0)
+			}
+		}
+	}
+}
+
+// TestSIMDEncodeSplitChunkEnd checks that a split that ends a chunk before its last operation sets no repeat offset
+// after it: the next chunk would output fewer bytes than it has operations.
+func TestSIMDEncodeSplitChunkEnd(t *testing.T) {
+	src := bytes.Repeat([]byte{'a'}, simdChunkOps+20)
+	e := new(simdEncoder)
+	e.out = make([]byte, 0, 2*len(src)+1<<16)
+	e.reset(src, 0, 0)
+	e.limit, e.noOverlap = math.MaxInt/2, true
+	e.emitCopyLits(src[:1], 1, 1)
+	for range simdChunkOps - 3 {
+		e.emitRepeatLits(nil, 1)
+	}
+	// Operations of 1, 2 and 1 bytes, the chunk ending after the second.
+	e.emitRepeatLits(nil, 4)
+	if e.chunks != 1 || e.nTok != 1 {
+		t.Fatalf("%d chunks, %d operations", e.chunks, e.nTok)
+	}
+	e.emitLiterals(src[e.pos:])
+	e.endChunk()
+	n := e.finish()
+	if got, err := reference.DecodeSIMDBlockStrict(append([]byte{0}, e.out[:n]...)); err != nil || !bytes.Equal(got, src) {
+		t.Fatal(err)
+	}
+}
+
+// TestSIMDEncodeSplitBudgetChunk checks that the budget holds per chunk: a chunk that runs stop splitting
+// doesn't stop the next.
+func TestSIMDEncodeSplitBudgetChunk(t *testing.T) {
+	src := simdRuns(rand.New(rand.NewSource(1)), 9, 1<<20)
+	e := new(simdEncoder)
+	e.out = make([]byte, 0, 2*len(src)+1<<16)
+	e.reset(src, 0, 0)
+	e.limit, e.noOverlap, e.budget = math.MaxInt/2, true, true
+	stopped := false
+	for e.pos+9 <= len(src) && e.chunks == 0 {
+		e.emitCopyLits(src[e.pos:e.pos+1], 1, 8)
+		stopped = stopped || !e.noOverlap
+	}
+	if !stopped || e.chunks != 1 {
+		t.Fatalf("stopped %v, %d chunks", stopped, e.chunks)
+	}
+	e.emitCopyLits(src[e.pos:e.pos+1], 1, 8)
+	if e.overlap {
+		t.Error("the next chunk doesn't split")
+	}
+	// With delta literals, LevelSuperFastSIMD doesn't split: the budget would leave raised references in chunks without the flag.
+	enc, err := Encode(nil, src, LevelSuperFastSIMD|LevelSIMDDelta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := reference.DecodeSIMDBlockStrict(enc); err != nil || !bytes.Equal(got, src) {
+		t.Fatal("delta:", err)
 	}
 }
 
@@ -1705,18 +1832,19 @@ func simdEncTiers(t *testing.T, f func(t *testing.T)) {
 
 // simdAsmParser is a Go parser with an assembly version, for blocks of at most max bytes.
 type simdAsmParser struct {
-	name             string
-	k, fastCode, max int
-	parse            func(e *simdEncoder, src []byte)
+	name              string
+	k, fastCode, max  int
+	noOverlap, budget bool
+	parse             func(e *simdEncoder, src []byte)
 }
 
 var simdAsmParsers = []simdAsmParser{
-	{"SuperFast", simdAsmFast, 1, MaxBlockSize, (*simdEncoder).encodeFastBlockGo},
-	{"Fastest", simdAsmBlock, 4096, MaxBlockSize, (*simdEncoder).encodeBlockGo},
-	{"Balanced", simdAsmBetter, 0, MaxBlockSize, (*simdEncoder).encodeBlockBetterGo},
-	{"SuperFast64K", simdAsmFast64K, 1, 64 << 10, (*simdEncoder).encodeFastBlockGo64K},
-	{"Fastest64K", simdAsmBlock64K, 4096, 64 << 10, (*simdEncoder).encodeBlockGo64K},
-	{"Balanced64K", simdAsmBetter64K, 0, 64 << 10, (*simdEncoder).encodeBlockBetterGo64K},
+	{"SuperFast", simdAsmFast, 1, MaxBlockSize, true, true, (*simdEncoder).encodeFastBlockGo},
+	{"Fastest", simdAsmBlock, 4096, MaxBlockSize, false, false, (*simdEncoder).encodeBlockGo},
+	{"Balanced", simdAsmBetter, 0, MaxBlockSize, false, false, (*simdEncoder).encodeBlockBetterGo},
+	{"SuperFast64K", simdAsmFast64K, 1, 64 << 10, true, true, (*simdEncoder).encodeFastBlockGo64K},
+	{"Fastest64K", simdAsmBlock64K, 4096, 64 << 10, false, false, (*simdEncoder).encodeBlockGo64K},
+	{"Balanced64K", simdAsmBetter64K, 0, 64 << 10, false, false, (*simdEncoder).encodeBlockBetterGo64K},
 }
 
 // simdParseResult is the state of a simdEncoder after a block is parsed, and the block.
@@ -1730,7 +1858,7 @@ func simdParseRun(e *simdEncoder, src []byte, p simdAsmParser, asm bool) (r simd
 	if n := 2*len(src) + 1<<16; cap(e.out) < n {
 		e.out = make([]byte, 0, n)
 	}
-	e.splitLits, e.fastCode = false, p.fastCode
+	e.splitLits, e.fastCode, e.noOverlap, e.budget = false, p.fastCode, p.noOverlap, p.budget
 	e.reset(src, 0, 0)
 	e.limit = math.MaxInt / 2
 	if asm {

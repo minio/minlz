@@ -27,7 +27,8 @@ import (
 // The assembly SIMD parsers produce what the Go parsers (simdEncoder methods) do, and the same state.
 // They also add the long matches that the Go parsers leave to emitLong, if their operations fit the chunk.
 // They return to Go when a chunk is full, for operations whose literals are over simdMaxLong bytes or start
-// within simdMaxLen bytes of the end, for long matches that don't fit the chunk, and at the end of the block.
+// within simdMaxLen bytes of the end, for long matches that don't fit the chunk, with noOverlap for matches
+// that overlap their output, and at the end of the block.
 // As they are lowered to arm64, they use no CALL and no BMI2, and of the vector instructions only 128 bit moves.
 
 const (
@@ -70,7 +71,7 @@ const (
 
 // genSIMDEnc generates the SIMD block parsers.
 func genSIMDEnc() {
-	fast := simdBlockParams{hashBytes: 8, minMatch: 8, skipLog: 5, skipAdd: 5}
+	fast := simdBlockParams{hashBytes: 8, minMatch: 8, skipLog: 5, skipAdd: 5, noOverlap: true}
 	block := simdBlockParams{hashBytes: 6, minMatch: 4, skipLog: 6, skipAdd: 4, backMatch: true}
 	genSIMDEncodeBlockAsm("encodeFastBlockSIMDAsm", 13, 4, fast)
 	genSIMDEncodeBlockAsm("encodeBlockSIMDAsm", 15, 4, block)
@@ -115,6 +116,7 @@ type simdEmit struct {
 	labels                                   int
 	exits                                    map[[2]int]LabelRef
 	later                                    []func()
+	noOverlap                                bool // as simdEncoder.noOverlap
 }
 
 func newSIMDEmit(name string) *simdEmit {
@@ -274,12 +276,29 @@ func (e *simdEmit) fits(base, s, offset reg.GPVirtual, slow LabelRef) (ml reg.GP
 	MOVQ(s, ml)
 	SUBQ(base, ml)
 	ok, split := e.label("one_op"), e.label("split")
-	CMPQ(ml, U8(simdMaxLen))
-	JBE(ok)
-	CMPQ(ml, U32(simdMaxLong))
-	JA(split)
-	CMPQ(offset, U8(simdMaxLen))
-	JB(split)
+	if e.noOverlap {
+		// Go splits the matches that overlap their output: those at offsets below min(ml, simdMaxLen).
+		long := e.label("long")
+		CMPQ(ml, U8(simdMaxLen))
+		JA(long)
+		CMPQ(offset, ml)
+		JB(slow)
+		e.later = append(e.later, func() {
+			Label(string(long))
+			CMPQ(offset, U8(simdMaxLen))
+			JB(slow)
+			CMPQ(ml, U32(simdMaxLong))
+			JA(split)
+			JMP(ok)
+		})
+	} else {
+		CMPQ(ml, U8(simdMaxLen))
+		JBE(ok)
+		CMPQ(ml, U32(simdMaxLong))
+		JA(split)
+		CMPQ(offset, U8(simdMaxLen))
+		JB(split)
+	}
 	Label(string(ok))
 	e.later = append(e.later, func() {
 		// The chunk has room for n operations: of 32 bytes, or of 288 at offsets from 32.
@@ -287,8 +306,10 @@ func (e *simdEmit) fits(base, s, offset reg.GPVirtual, slow LabelRef) (ml reg.GP
 		n, short := GP64(), e.label("split_short")
 		MOVQ(U32(simdChunkOps), n)
 		SUBQ(e.nTok, n)
-		CMPQ(offset, U8(simdMaxLen))
-		JB(short)
+		if !e.noOverlap {
+			CMPQ(offset, U8(simdMaxLen))
+			JB(short)
+		}
 		LEAQ(Mem{Base: n, Index: n, Scale: 8}, n)
 		Label(string(short))
 		SHLQ(U8(5), n)
@@ -452,11 +473,13 @@ func (e *simdEmit) putMatch(t, offset, ml, s reg.GPVirtual, full LabelRef) {
 	CMPQ(ml, U8(simdMaxLen))
 	JA(long)
 	LEAQ(Mem{Base: t, Index: ml, Scale: 4}, t)
-	o := GP64()
-	XORL(o.As32(), o.As32())
-	CMPQ(offset, ml)
-	SETCS(o.As8())
-	ORQ(o, e.ov)
+	if !e.noOverlap {
+		o := GP64()
+		XORL(o.As32(), o.As32())
+		CMPQ(offset, ml)
+		SETCS(o.As8())
+		ORQ(o, e.ov)
+	}
 	Label(string(tok))
 	n := e.putTok(t)
 	MOVQ(s, e.nextEmit)
@@ -467,8 +490,10 @@ func (e *simdEmit) putMatch(t, offset, ml, s reg.GPVirtual, full LabelRef) {
 		// The loops stay here, as arm64 ranks slots by the loops that enclose their uses.
 		Label(string(long))
 		esc, short, big, rest := e.label("match_esc"), e.label("match_short"), e.label("match_big"), e.label("match_rest")
-		CMPQ(offset, U8(simdMaxLen))
-		JB(short)
+		if !e.noOverlap {
+			CMPQ(offset, U8(simdMaxLen))
+			JB(short)
+		}
 		CMPQ(ml, U32(simdMaxLong))
 		JA(big)
 		Label(string(esc))
@@ -490,19 +515,21 @@ func (e *simdEmit) putMatch(t, offset, ml, s reg.GPVirtual, full LabelRef) {
 		JA(big)
 		CMPQ(ml, U8(simdMaxLen))
 		JA(esc)
-		JMP(rest)
+		if !e.noOverlap {
+			JMP(rest)
 
-		// The first operation overlaps.
-		Label(string(short))
-		ORQ(U8(1), e.ov)
-		loop := e.label("match_short_loop")
-		Label(string(loop))
-		ORQ(U32(simdMaxLen<<2), t)
-		e.putTok(t)
-		MOVQ(U32(1), t)
-		SUBQ(U8(simdMaxLen), ml)
-		CMPQ(ml, U8(simdMaxLen))
-		JA(loop)
+			// The first operation overlaps.
+			Label(string(short))
+			ORQ(U8(1), e.ov)
+			loop := e.label("match_short_loop")
+			Label(string(loop))
+			ORQ(U32(simdMaxLen<<2), t)
+			e.putTok(t)
+			MOVQ(U32(1), t)
+			SUBQ(U8(simdMaxLen), ml)
+			CMPQ(ml, U8(simdMaxLen))
+			JA(loop)
+		}
 		Label(string(rest))
 		LEAQ(Mem{Base: t, Index: ml, Scale: 4}, t)
 		JMP(tok)
@@ -615,6 +642,7 @@ type simdBlockParams struct {
 	minMatch         int  // 8: 8 byte loads at s, s+1 and s+2 are compared; 4: the low 4 bytes of cv, cv>>8 and cv>>16
 	skipLog, skipAdd int  // the search steps to s + (s-nextEmit)>>skipLog + skipAdd
 	backMatch        bool // matches are extended back
+	noOverlap        bool // as simdEncoder.noOverlap
 }
 
 // genSIMDEncodeBlockAsm generates name, the parser of encodeFastBlockGo or encodeBlockGo, or of their 64K versions,
@@ -625,6 +653,7 @@ func genSIMDEncodeBlockAsm(name string, tableBits, entryBytes int, p simdBlockPa
 	Pragma("noescape")
 
 	e := newSIMDEmit(name)
+	e.noOverlap = p.noOverlap
 	search, post := LabelRef("search_"+name), LabelRef("post_"+name)
 	src, s := e.load()
 	table := regTable{r: GP64(), scale: uint8(entryBytes)}

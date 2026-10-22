@@ -608,7 +608,7 @@ func (e *simdEncoder) encodeBlockBest(src []byte) {
 			score -= symbolBits + 16*max(bits.Len(uint(dist))-4, 0)
 		}
 		switch {
-		case simdSplitCost && simdNoOverlap && dist < length && dist < simdMaxLen:
+		case simdSplitCost && e.noOverlap && dist < length && dist < simdMaxLen:
 			// emitLong splits the match in pieces of the offset, which doubles while more than a piece is left.
 			for o, c := dist, dist; c < length && o < simdMaxLen; c += o {
 				if length-c > o {

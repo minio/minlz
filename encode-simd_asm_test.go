@@ -129,6 +129,10 @@ func simdParseAsmInputs(t *testing.T) (names []string, srcs [][]byte) {
 	for i := range 64 {
 		add(fmt.Sprintf("overlap-edge-%d", i), simdOverlapEdgeInput(rng, 40))
 	}
+	// Short runs, whose splits use up the budget of their chunks, and the matches after are left to Go unsplit.
+	for _, n := range []int{6, 9, 17} {
+		add(fmt.Sprintf("runs-%d", n), simdRuns(rng, n, 512<<10))
+	}
 	add("lits-edge", simdLitsEdgeInput(rng, 128<<10))
 	add("long-edges", simdLongEdgeInput(rng))
 	// Blocks where only the split of a run at offset 31 overlaps, at each site.
@@ -413,6 +417,10 @@ func TestSIMDParseAsm(t *testing.T) {
 					continue
 				}
 				for _, off := range []int{simdMaxLen - 1, simdMaxLen} {
+					if p.noOverlap && off < simdMaxLen {
+						// Go splits the run.
+						continue
+					}
 					fit, over := simdSplitEdgeInputs(t, p, site, off)
 					names = append(slices.Clip(names), fmt.Sprintf("split-fit-%s-%d", sn, off), fmt.Sprintf("split-over-%s-%d", sn, off))
 					srcs = append(slices.Clip(srcs), fit, over)
@@ -452,6 +460,10 @@ func TestSIMDParseAsm(t *testing.T) {
 			off := e.asmOff
 			if r == simdAsmRepeat {
 				off = e.rep
+			}
+			if p.noOverlap && off < min(e.asmLen, simdMaxLen) {
+				// Go splits the matches that overlap.
+				return
 			}
 			// The operations of the match, as emitLong splits it, less the room in the chunk.
 			step := simdMaxLen
