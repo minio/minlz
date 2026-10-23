@@ -18,6 +18,7 @@
 package main
 
 //go:generate go run . -out ../../internal/pivco/kernel/asm_amd64.s -stubs ../../internal/pivco/kernel/asm_amd64.go -pkg=kernel
+//go:generate go tool asmfmt -w ../../internal/pivco/kernel/asm_amd64.s
 //go:generate gofmt -w ../../internal/pivco/kernel/asm_amd64.go
 
 import (

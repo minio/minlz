@@ -4433,7 +4433,7 @@ nat_d7_16:
 	SUBQ      $0x10, CX
 	JMP       nat_d7_16
 
-	// Near the end of the source: exact loads of min(16, rest) codes.
+// Near the end of the source: exact loads of min(16, rest) codes.
 nat_d7_exact:
 	TESTQ   CX, CX
 	JZ      advance
@@ -4622,7 +4622,7 @@ nat_d6_16:
 	SUBQ      $0x10, CX
 	JMP       nat_d6_16
 
-	// Near the end of the source: exact loads of min(16, rest) codes.
+// Near the end of the source: exact loads of min(16, rest) codes.
 nat_d6_exact:
 	TESTQ   CX, CX
 	JZ      advance
@@ -4790,7 +4790,7 @@ nat_d5_16:
 	SUBQ      $0x10, CX
 	JMP       nat_d5_16
 
-	// Near the end of the source: exact loads of min(16, rest) codes.
+// Near the end of the source: exact loads of min(16, rest) codes.
 nat_d5_exact:
 	TESTQ   CX, CX
 	JZ      advance
@@ -4946,7 +4946,7 @@ nat_d4_16:
 	SUBQ      $0x10, CX
 	JMP       nat_d4_16
 
-	// Near the end of the source: exact loads of min(16, rest) codes.
+// Near the end of the source: exact loads of min(16, rest) codes.
 nat_d4_exact:
 	TESTQ   CX, CX
 	JZ      advance
@@ -5099,7 +5099,7 @@ nat_d3_16:
 	SUBQ      $0x10, CX
 	JMP       nat_d3_16
 
-	// Near the end of the source: exact loads of min(16, rest) codes.
+// Near the end of the source: exact loads of min(16, rest) codes.
 nat_d3_exact:
 	TESTQ   CX, CX
 	JZ      advance
@@ -5252,7 +5252,7 @@ nat_d2_16:
 	SUBQ      $0x10, CX
 	JMP       nat_d2_16
 
-	// Near the end of the source: exact loads of min(16, rest) codes.
+// Near the end of the source: exact loads of min(16, rest) codes.
 nat_d2_exact:
 	TESTQ   CX, CX
 	JZ      advance

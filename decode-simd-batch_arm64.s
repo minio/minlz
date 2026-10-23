@@ -33,108 +33,109 @@
 
 // func simdExecBatchNEON(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, esc *byte, n int, st *[4]int)
 TEXT ·simdExecBatchNEON(SB), NOSPLIT, $0-72
-	MOVD dst+0(FP), DST
-	MOVD lits+8(FP), LITP
-	MOVD tok+16(FP), TOKP
-	MOVD ll+24(FP), LLP
-	MOVD offc+32(FP), OFFP
-	MOVD raw+40(FP), RAW
-	MOVD esc+48(FP), ESCP
-	MOVD n+56(FP), LEFT
-	MOVD ZR, POS
-	MOVD st+64(FP), ST
-	MOVD (ST), DP
-	ADD DST, DP
-	MOVD 8(ST), R14
-	ADD R14, LITP
-	MOVD 16(ST), LAST
-	MOVD $·simdOffTabNEON(SB), OFFTAB
-	MOVD $·simdPermTabNEON(SB), PERMTAB
-	MOVD $0x0101010101010101, ONES
-	CBZ LEFT, done
-	MOVD (TOKP), R14
-	LSR $1, R14, R15
-	AND ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
+	MOVD  dst+0(FP), DST
+	MOVD  lits+8(FP), LITP
+	MOVD  tok+16(FP), TOKP
+	MOVD  ll+24(FP), LLP
+	MOVD  offc+32(FP), OFFP
+	MOVD  raw+40(FP), RAW
+	MOVD  esc+48(FP), ESCP
+	MOVD  n+56(FP), LEFT
+	MOVD  ZR, POS
+	MOVD  st+64(FP), ST
+	MOVD  (ST), DP
+	ADD   DST, DP
+	MOVD  8(ST), R14
+	ADD   R14, LITP
+	MOVD  16(ST), LAST
+	MOVD  $·simdOffTabNEON(SB), OFFTAB
+	MOVD  $·simdPermTabNEON(SB), PERMTAB
+	MOVD  $0x0101010101010101, ONES
+	CBZ   LEFT, done
+	MOVD  (TOKP), R14
+	LSR   $1, R14, R15
+	AND   ONES, R15
+	MUL   ONES, R15, R16
+	SUB   R15, R16, R13
+	EOR   ONES, R15
+	ORR   R15<<7, R13
 	FMOVD R13, F16
 	FMOVD (LLP), F17
-	VTBL V16.B8, [V17.B16], V16.B8
+	VTBL  V16.B8, [V17.B16], V16.B8
 	FMOVD F16, LWN
-	ADD R16>>56, LLP
-	BIC R14, ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
+	ADD   R16>>56, LLP
+	BIC   R14, ONES, R15
+	MUL   ONES, R15, R16
+	SUB   R15, R16, R13
+	EOR   ONES, R15
+	ORR   R15<<7, R13
 	FMOVD R13, F18
 	FMOVD (OFFP), F19
-	VTBL V18.B8, [V19.B16], V18.B8
+	VTBL  V18.B8, [V19.B16], V18.B8
 	FMOVD F18, SWN
-	ADD R16>>56, OFFP
+	ADD   R16>>56, OFFP
+
 	// LEFT is the number of operations left, from TOKP on.
 	PCALIGN $64
 
 loop:
-	CMP $8, LEFT
-	BLO tail
+	CMP    $8, LEFT
+	BLO    tail
 	MOVD.P 8(TOKP), TW
-	MOVD LWN, LW
-	MOVD SWN, SW
-	SUBS $8, LEFT
-	BEQ batch
-	MOVD (TOKP), R14
-	LSR $1, R14, R15
-	AND ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
-	FMOVD R13, F16
-	FMOVD (LLP), F17
-	VTBL V16.B8, [V17.B16], V16.B8
-	FMOVD F16, LWN
-	ADD R16>>56, LLP
-	BIC R14, ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
-	FMOVD R13, F18
-	FMOVD (OFFP), F19
-	VTBL V18.B8, [V19.B16], V18.B8
-	FMOVD F18, SWN
-	ADD R16>>56, OFFP
+	MOVD   LWN, LW
+	MOVD   SWN, SW
+	SUBS   $8, LEFT
+	BEQ    batch
+	MOVD   (TOKP), R14
+	LSR    $1, R14, R15
+	AND    ONES, R15
+	MUL    ONES, R15, R16
+	SUB    R15, R16, R13
+	EOR    ONES, R15
+	ORR    R15<<7, R13
+	FMOVD  R13, F16
+	FMOVD  (LLP), F17
+	VTBL   V16.B8, [V17.B16], V16.B8
+	FMOVD  F16, LWN
+	ADD    R16>>56, LLP
+	BIC    R14, ONES, R15
+	MUL    ONES, R15, R16
+	SUB    R15, R16, R13
+	EOR    ONES, R15
+	ORR    R15<<7, R13
+	FMOVD  R13, F18
+	FMOVD  (OFFP), F19
+	VTBL   V18.B8, [V19.B16], V18.B8
+	FMOVD  F18, SWN
+	ADD    R16>>56, OFFP
 
 batch:
-	UBFX $0, TW, $8, TOK
+	UBFX  $0, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $0, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong0
+	UBFX  $0, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong0
 
 litback0:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $0, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp0
-	CMP TOK>>2, LAST
-	BLO pattern0
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $0, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp0
+	CMP   TOK>>2, LAST
+	BLO   pattern0
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -143,33 +144,33 @@ check0:
 	BHS long0
 
 next0:
-	ADD TOK>>2, DP
-	UBFX $8, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $8, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $8, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong1
+	UBFX  $8, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong1
 
 litback1:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $8, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp1
-	CMP TOK>>2, LAST
-	BLO pattern1
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $8, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp1
+	CMP   TOK>>2, LAST
+	BLO   pattern1
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -178,33 +179,33 @@ check1:
 	BHS long1
 
 next1:
-	ADD TOK>>2, DP
-	UBFX $16, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $16, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $16, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong2
+	UBFX  $16, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong2
 
 litback2:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $16, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp2
-	CMP TOK>>2, LAST
-	BLO pattern2
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $16, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp2
+	CMP   TOK>>2, LAST
+	BLO   pattern2
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -213,33 +214,33 @@ check2:
 	BHS long2
 
 next2:
-	ADD TOK>>2, DP
-	UBFX $24, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $24, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $24, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong3
+	UBFX  $24, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong3
 
 litback3:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $24, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp3
-	CMP TOK>>2, LAST
-	BLO pattern3
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $24, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp3
+	CMP   TOK>>2, LAST
+	BLO   pattern3
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -248,33 +249,33 @@ check3:
 	BHS long3
 
 next3:
-	ADD TOK>>2, DP
-	UBFX $32, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $32, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $32, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong4
+	UBFX  $32, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong4
 
 litback4:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $32, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp4
-	CMP TOK>>2, LAST
-	BLO pattern4
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $32, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp4
+	CMP   TOK>>2, LAST
+	BLO   pattern4
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -283,33 +284,33 @@ check4:
 	BHS long4
 
 next4:
-	ADD TOK>>2, DP
-	UBFX $40, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $40, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $40, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong5
+	UBFX  $40, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong5
 
 litback5:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $40, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp5
-	CMP TOK>>2, LAST
-	BLO pattern5
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $40, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp5
+	CMP   TOK>>2, LAST
+	BLO   pattern5
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -318,33 +319,33 @@ check5:
 	BHS long5
 
 next5:
-	ADD TOK>>2, DP
-	UBFX $48, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $48, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $48, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong6
+	UBFX  $48, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong6
 
 litback6:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $48, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp6
-	CMP TOK>>2, LAST
-	BLO pattern6
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $48, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp6
+	CMP   TOK>>2, LAST
+	BLO   pattern6
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -353,33 +354,33 @@ check6:
 	BHS long6
 
 next6:
-	ADD TOK>>2, DP
-	UBFX $56, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $56, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $56, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong7
+	UBFX  $56, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong7
 
 litback7:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $56, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp7
-	CMP TOK>>2, LAST
-	BLO pattern7
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $56, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp7
+	CMP   TOK>>2, LAST
+	BLO   pattern7
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -389,44 +390,44 @@ check7:
 
 next7:
 	ADD TOK>>2, DP
-	B loop
+	B   loop
 
 tail:
-	CBZ LEFT, done
+	CBZ  LEFT, done
 	MOVD (TOKP), TW
 	MOVD LWN, LW
 	MOVD SWN, SW
 
 tailloop:
-	AND $0xff, TW, TOK
-	LSR $8, TW
+	AND   $0xff, TW, TOK
+	LSR   $8, TW
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	AND $0xff, LW, LEN
-	LSR $8, LW
-	CMP $33, LEN
-	BEQ litlongt
+	AND   $0xff, LW, LEN
+	LSR   $8, LW
+	CMP   $33, LEN
+	BEQ   litlongt
 
 litbackt:
-	ADD LEN, DP
-	ADD LEN, LITP
-	AND $0xff, SW, R14
-	LSR $8, SW
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clampt
-	CMP TOK>>2, LAST
-	BLO patternt
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	AND   $0xff, SW, R14
+	LSR   $8, SW
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clampt
+	CMP   TOK>>2, LAST
+	BLO   patternt
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -435,692 +436,693 @@ checkt:
 	BHS longt
 
 nextt:
-	ADD TOK>>2, DP
+	ADD  TOK>>2, DP
 	SUBS $1, LEFT
-	BNE tailloop
+	BNE  tailloop
 
 done:
-	SUB DST, DP
+	SUB  DST, DP
 	MOVD DP, (ST)
 	MOVD lits+8(FP), R14
-	SUB R14, LITP
+	SUB  R14, LITP
 	MOVD LITP, 8(ST)
 	MOVD LAST, 16(ST)
 	RET
 
 litlong0:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop0:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop0
-	B litback0
+	SUBS    $1, R15
+	BNE     litloop0
+	B       litback0
 
 pattern0:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check0
+	B     check0
 
 clamp0:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy0
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy0
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy0:
 	FSTPQ (F2, F3), (DP)
-	B check0
+	B     check0
 
 long0:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok0
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok0
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok0:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop0:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop0
-	B next0
+	SUBS    $1, R15
+	BNE     longloop0
+	B       next0
 
 litlong1:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop1:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop1
-	B litback1
+	SUBS    $1, R15
+	BNE     litloop1
+	B       litback1
 
 pattern1:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check1
+	B     check1
 
 clamp1:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy1
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy1
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy1:
 	FSTPQ (F2, F3), (DP)
-	B check1
+	B     check1
 
 long1:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok1
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok1
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok1:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop1:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop1
-	B next1
+	SUBS    $1, R15
+	BNE     longloop1
+	B       next1
 
 litlong2:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop2:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop2
-	B litback2
+	SUBS    $1, R15
+	BNE     litloop2
+	B       litback2
 
 pattern2:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check2
+	B     check2
 
 clamp2:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy2
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy2
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy2:
 	FSTPQ (F2, F3), (DP)
-	B check2
+	B     check2
 
 long2:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok2
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok2
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok2:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop2:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop2
-	B next2
+	SUBS    $1, R15
+	BNE     longloop2
+	B       next2
 
 litlong3:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop3:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop3
-	B litback3
+	SUBS    $1, R15
+	BNE     litloop3
+	B       litback3
 
 pattern3:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check3
+	B     check3
 
 clamp3:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy3
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy3
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy3:
 	FSTPQ (F2, F3), (DP)
-	B check3
+	B     check3
 
 long3:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok3
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok3
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok3:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop3:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop3
-	B next3
+	SUBS    $1, R15
+	BNE     longloop3
+	B       next3
 
 litlong4:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop4:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop4
-	B litback4
+	SUBS    $1, R15
+	BNE     litloop4
+	B       litback4
 
 pattern4:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check4
+	B     check4
 
 clamp4:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy4
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy4
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy4:
 	FSTPQ (F2, F3), (DP)
-	B check4
+	B     check4
 
 long4:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok4
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok4
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok4:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop4:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop4
-	B next4
+	SUBS    $1, R15
+	BNE     longloop4
+	B       next4
 
 litlong5:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop5:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop5
-	B litback5
+	SUBS    $1, R15
+	BNE     litloop5
+	B       litback5
 
 pattern5:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check5
+	B     check5
 
 clamp5:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy5
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy5
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy5:
 	FSTPQ (F2, F3), (DP)
-	B check5
+	B     check5
 
 long5:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok5
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok5
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok5:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop5:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop5
-	B next5
+	SUBS    $1, R15
+	BNE     longloop5
+	B       next5
 
 litlong6:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop6:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop6
-	B litback6
+	SUBS    $1, R15
+	BNE     litloop6
+	B       litback6
 
 pattern6:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check6
+	B     check6
 
 clamp6:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy6
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy6
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy6:
 	FSTPQ (F2, F3), (DP)
-	B check6
+	B     check6
 
 long6:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok6
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok6
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok6:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop6:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop6
-	B next6
+	SUBS    $1, R15
+	BNE     longloop6
+	B       next6
 
 litlong7:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop7:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop7
-	B litback7
+	SUBS    $1, R15
+	BNE     litloop7
+	B       litback7
 
 pattern7:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check7
+	B     check7
 
 clamp7:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy7
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy7
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy7:
 	FSTPQ (F2, F3), (DP)
-	B check7
+	B     check7
 
 long7:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok7
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok7
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok7:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop7:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop7
-	B next7
+	SUBS    $1, R15
+	BNE     longloop7
+	B       next7
 
 litlongt:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloopt:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloopt
-	B litbackt
+	SUBS    $1, R15
+	BNE     litloopt
+	B       litbackt
 
 patternt:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B checkt
+	B     checkt
 
 clampt:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopyt
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopyt
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopyt:
 	FSTPQ (F2, F3), (DP)
-	B checkt
+	B     checkt
 
 longt:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longokt
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longokt
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longokt:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloopt:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloopt
-	B nextt
+	SUBS    $1, R15
+	BNE     longloopt
+	B       nextt
 
 // func simdExecBatchDeltaNEON(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, esc *byte, n int, st *[4]int)
 TEXT ·simdExecBatchDeltaNEON(SB), NOSPLIT, $0-72
-	MOVD dst+0(FP), DST
-	MOVD lits+8(FP), LITP
-	MOVD tok+16(FP), TOKP
-	MOVD ll+24(FP), LLP
-	MOVD offc+32(FP), OFFP
-	MOVD raw+40(FP), RAW
-	MOVD esc+48(FP), ESCP
-	MOVD n+56(FP), LEFT
-	MOVD ZR, POS
-	MOVD st+64(FP), ST
-	MOVD (ST), DP
-	ADD DST, DP
-	MOVD 8(ST), R14
-	ADD R14, LITP
-	MOVD 16(ST), LAST
-	MOVD $·simdOffTabNEON(SB), OFFTAB
-	MOVD $·simdPermTabNEON(SB), PERMTAB
-	MOVD $0x0101010101010101, ONES
-	CBZ LEFT, done
-	MOVD (TOKP), R14
-	LSR $1, R14, R15
-	AND ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
+	MOVD  dst+0(FP), DST
+	MOVD  lits+8(FP), LITP
+	MOVD  tok+16(FP), TOKP
+	MOVD  ll+24(FP), LLP
+	MOVD  offc+32(FP), OFFP
+	MOVD  raw+40(FP), RAW
+	MOVD  esc+48(FP), ESCP
+	MOVD  n+56(FP), LEFT
+	MOVD  ZR, POS
+	MOVD  st+64(FP), ST
+	MOVD  (ST), DP
+	ADD   DST, DP
+	MOVD  8(ST), R14
+	ADD   R14, LITP
+	MOVD  16(ST), LAST
+	MOVD  $·simdOffTabNEON(SB), OFFTAB
+	MOVD  $·simdPermTabNEON(SB), PERMTAB
+	MOVD  $0x0101010101010101, ONES
+	CBZ   LEFT, done
+	MOVD  (TOKP), R14
+	LSR   $1, R14, R15
+	AND   ONES, R15
+	MUL   ONES, R15, R16
+	SUB   R15, R16, R13
+	EOR   ONES, R15
+	ORR   R15<<7, R13
 	FMOVD R13, F16
 	FMOVD (LLP), F17
-	VTBL V16.B8, [V17.B16], V16.B8
+	VTBL  V16.B8, [V17.B16], V16.B8
 	FMOVD F16, LWN
-	ADD R16>>56, LLP
-	BIC R14, ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
+	ADD   R16>>56, LLP
+	BIC   R14, ONES, R15
+	MUL   ONES, R15, R16
+	SUB   R15, R16, R13
+	EOR   ONES, R15
+	ORR   R15<<7, R13
 	FMOVD R13, F18
 	FMOVD (OFFP), F19
-	VTBL V18.B8, [V19.B16], V18.B8
+	VTBL  V18.B8, [V19.B16], V18.B8
 	FMOVD F18, SWN
-	ADD R16>>56, OFFP
+	ADD   R16>>56, OFFP
+
 	// LEFT is the number of operations left, from TOKP on.
 	PCALIGN $64
 
 loop:
-	CMP $8, LEFT
-	BLO tail
+	CMP    $8, LEFT
+	BLO    tail
 	MOVD.P 8(TOKP), TW
-	MOVD LWN, LW
-	MOVD SWN, SW
-	SUBS $8, LEFT
-	BEQ batch
-	MOVD (TOKP), R14
-	LSR $1, R14, R15
-	AND ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
-	FMOVD R13, F16
-	FMOVD (LLP), F17
-	VTBL V16.B8, [V17.B16], V16.B8
-	FMOVD F16, LWN
-	ADD R16>>56, LLP
-	BIC R14, ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
-	FMOVD R13, F18
-	FMOVD (OFFP), F19
-	VTBL V18.B8, [V19.B16], V18.B8
-	FMOVD F18, SWN
-	ADD R16>>56, OFFP
+	MOVD   LWN, LW
+	MOVD   SWN, SW
+	SUBS   $8, LEFT
+	BEQ    batch
+	MOVD   (TOKP), R14
+	LSR    $1, R14, R15
+	AND    ONES, R15
+	MUL    ONES, R15, R16
+	SUB    R15, R16, R13
+	EOR    ONES, R15
+	ORR    R15<<7, R13
+	FMOVD  R13, F16
+	FMOVD  (LLP), F17
+	VTBL   V16.B8, [V17.B16], V16.B8
+	FMOVD  F16, LWN
+	ADD    R16>>56, LLP
+	BIC    R14, ONES, R15
+	MUL    ONES, R15, R16
+	SUB    R15, R16, R13
+	EOR    ONES, R15
+	ORR    R15<<7, R13
+	FMOVD  R13, F18
+	FMOVD  (OFFP), F19
+	VTBL   V18.B8, [V19.B16], V18.B8
+	FMOVD  F18, SWN
+	ADD    R16>>56, OFFP
 
 batch:
-	UBFX $0, TW, $8, TOK
+	UBFX  $0, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP R16, LAST
-	CSEL LO, LAST, R16, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   R16, LAST
+	CSEL  LO, LAST, R16, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	CMP $32, R15
-	BLO dpattern0
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	CMP   $32, R15
+	BLO   dpattern0
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 
 dstore0:
 	FSTPQ (F0, F1), (DP)
-	UBFX $0, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong0
+	UBFX  $0, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong0
 
 litback0:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $0, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp0
-	CMP TOK>>2, LAST
-	BLO pattern0
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $0, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp0
+	CMP   TOK>>2, LAST
+	BLO   pattern0
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -1129,44 +1131,44 @@ check0:
 	BHS long0
 
 next0:
-	ADD TOK>>2, DP
-	UBFX $8, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $8, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP R16, LAST
-	CSEL LO, LAST, R16, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   R16, LAST
+	CSEL  LO, LAST, R16, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	CMP $32, R15
-	BLO dpattern1
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	CMP   $32, R15
+	BLO   dpattern1
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 
 dstore1:
 	FSTPQ (F0, F1), (DP)
-	UBFX $8, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong1
+	UBFX  $8, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong1
 
 litback1:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $8, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp1
-	CMP TOK>>2, LAST
-	BLO pattern1
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $8, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp1
+	CMP   TOK>>2, LAST
+	BLO   pattern1
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -1175,44 +1177,44 @@ check1:
 	BHS long1
 
 next1:
-	ADD TOK>>2, DP
-	UBFX $16, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $16, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP R16, LAST
-	CSEL LO, LAST, R16, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   R16, LAST
+	CSEL  LO, LAST, R16, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	CMP $32, R15
-	BLO dpattern2
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	CMP   $32, R15
+	BLO   dpattern2
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 
 dstore2:
 	FSTPQ (F0, F1), (DP)
-	UBFX $16, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong2
+	UBFX  $16, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong2
 
 litback2:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $16, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp2
-	CMP TOK>>2, LAST
-	BLO pattern2
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $16, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp2
+	CMP   TOK>>2, LAST
+	BLO   pattern2
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -1221,44 +1223,44 @@ check2:
 	BHS long2
 
 next2:
-	ADD TOK>>2, DP
-	UBFX $24, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $24, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP R16, LAST
-	CSEL LO, LAST, R16, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   R16, LAST
+	CSEL  LO, LAST, R16, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	CMP $32, R15
-	BLO dpattern3
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	CMP   $32, R15
+	BLO   dpattern3
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 
 dstore3:
 	FSTPQ (F0, F1), (DP)
-	UBFX $24, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong3
+	UBFX  $24, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong3
 
 litback3:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $24, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp3
-	CMP TOK>>2, LAST
-	BLO pattern3
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $24, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp3
+	CMP   TOK>>2, LAST
+	BLO   pattern3
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -1267,44 +1269,44 @@ check3:
 	BHS long3
 
 next3:
-	ADD TOK>>2, DP
-	UBFX $32, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $32, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP R16, LAST
-	CSEL LO, LAST, R16, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   R16, LAST
+	CSEL  LO, LAST, R16, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	CMP $32, R15
-	BLO dpattern4
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	CMP   $32, R15
+	BLO   dpattern4
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 
 dstore4:
 	FSTPQ (F0, F1), (DP)
-	UBFX $32, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong4
+	UBFX  $32, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong4
 
 litback4:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $32, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp4
-	CMP TOK>>2, LAST
-	BLO pattern4
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $32, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp4
+	CMP   TOK>>2, LAST
+	BLO   pattern4
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -1313,44 +1315,44 @@ check4:
 	BHS long4
 
 next4:
-	ADD TOK>>2, DP
-	UBFX $40, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $40, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP R16, LAST
-	CSEL LO, LAST, R16, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   R16, LAST
+	CSEL  LO, LAST, R16, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	CMP $32, R15
-	BLO dpattern5
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	CMP   $32, R15
+	BLO   dpattern5
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 
 dstore5:
 	FSTPQ (F0, F1), (DP)
-	UBFX $40, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong5
+	UBFX  $40, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong5
 
 litback5:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $40, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp5
-	CMP TOK>>2, LAST
-	BLO pattern5
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $40, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp5
+	CMP   TOK>>2, LAST
+	BLO   pattern5
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -1359,44 +1361,44 @@ check5:
 	BHS long5
 
 next5:
-	ADD TOK>>2, DP
-	UBFX $48, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $48, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP R16, LAST
-	CSEL LO, LAST, R16, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   R16, LAST
+	CSEL  LO, LAST, R16, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	CMP $32, R15
-	BLO dpattern6
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	CMP   $32, R15
+	BLO   dpattern6
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 
 dstore6:
 	FSTPQ (F0, F1), (DP)
-	UBFX $48, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong6
+	UBFX  $48, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong6
 
 litback6:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $48, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp6
-	CMP TOK>>2, LAST
-	BLO pattern6
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $48, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp6
+	CMP   TOK>>2, LAST
+	BLO   pattern6
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -1405,44 +1407,44 @@ check6:
 	BHS long6
 
 next6:
-	ADD TOK>>2, DP
-	UBFX $56, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $56, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP R16, LAST
-	CSEL LO, LAST, R16, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   R16, LAST
+	CSEL  LO, LAST, R16, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	CMP $32, R15
-	BLO dpattern7
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	CMP   $32, R15
+	BLO   dpattern7
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 
 dstore7:
 	FSTPQ (F0, F1), (DP)
-	UBFX $56, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong7
+	UBFX  $56, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong7
 
 litback7:
-	ADD LEN, DP
-	ADD LEN, LITP
-	UBFX $56, SW, $8, R14
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clamp7
-	CMP TOK>>2, LAST
-	BLO pattern7
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	UBFX  $56, SW, $8, R14
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clamp7
+	CMP   TOK>>2, LAST
+	BLO   pattern7
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -1452,55 +1454,55 @@ check7:
 
 next7:
 	ADD TOK>>2, DP
-	B loop
+	B   loop
 
 tail:
-	CBZ LEFT, done
+	CBZ  LEFT, done
 	MOVD (TOKP), TW
 	MOVD LWN, LW
 	MOVD SWN, SW
 
 tailloop:
-	AND $0xff, TW, TOK
-	LSR $8, TW
+	AND   $0xff, TW, TOK
+	LSR   $8, TW
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP R16, LAST
-	CSEL LO, LAST, R16, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   R16, LAST
+	CSEL  LO, LAST, R16, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	CMP $32, R15
-	BLO dpatternt
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	CMP   $32, R15
+	BLO   dpatternt
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 
 dstoret:
 	FSTPQ (F0, F1), (DP)
-	AND $0xff, LW, LEN
-	LSR $8, LW
-	CMP $33, LEN
-	BEQ litlongt
+	AND   $0xff, LW, LEN
+	LSR   $8, LW
+	CMP   $33, LEN
+	BEQ   litlongt
 
 litbackt:
-	ADD LEN, DP
-	ADD LEN, LITP
-	AND $0xff, SW, R14
-	LSR $8, SW
-	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
-	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
-	ANDW R14, R15, R15
-	UBFX $32, R14, $8, R16
-	ADDS R14>>40, R15, R14
-	ADD R16, POS
-	CSEL NE, R14, LAST, LAST
-	SUBS LAST, DP, R14
-	CCMP HS, R14, DST, $0
-	BLO clampt
-	CMP TOK>>2, LAST
-	BLO patternt
+	ADD   LEN, DP
+	ADD   LEN, LITP
+	AND   $0xff, SW, R14
+	LSR   $8, SW
+	MOVD  (OFFTAB)(R14<<3), R14
+	LSR   $3, POS, R15
+	MOVD  (RAW)(R15), R15
+	AND   $7, POS, R16
+	LSR   R16, R15, R15
+	ANDW  R14, R15, R15
+	UBFX  $32, R14, $8, R16
+	ADDS  R14>>40, R15, R14
+	ADD   R16, POS
+	CSEL  NE, R14, LAST, LAST
+	SUBS  LAST, DP, R14
+	CCMP  HS, R14, DST, $0
+	BLO   clampt
+	CMP   TOK>>2, LAST
+	BLO   patternt
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
 
@@ -1509,2454 +1511,2456 @@ checkt:
 	BHS longt
 
 nextt:
-	ADD TOK>>2, DP
+	ADD  TOK>>2, DP
 	SUBS $1, LEFT
-	BNE tailloop
+	BNE  tailloop
 
 done:
-	SUB DST, DP
+	SUB  DST, DP
 	MOVD DP, (ST)
 	MOVD lits+8(FP), R14
-	SUB R14, LITP
+	SUB  R14, LITP
 	MOVD LITP, 8(ST)
 	MOVD LAST, 16(ST)
 	RET
 
 dpattern0:
-	ADD R15<<5, PERMTAB, R16
+	ADD   R15<<5, PERMTAB, R16
 	FLDPQ (R16), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
-	VADD V6.B16, V0.B16, V0.B16
-	VADD V7.B16, V1.B16, V1.B16
-	B dstore0
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
+	VADD  V6.B16, V0.B16, V0.B16
+	VADD  V7.B16, V1.B16, V1.B16
+	B     dstore0
 
 litlong0:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop0:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop0
-	B litback0
+	SUBS    $1, R15
+	BNE     litloop0
+	B       litback0
 
 pattern0:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check0
+	B     check0
 
 clamp0:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy0
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy0
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy0:
 	FSTPQ (F2, F3), (DP)
-	B check0
+	B     check0
 
 long0:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok0
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok0
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok0:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop0:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop0
-	B next0
+	SUBS    $1, R15
+	BNE     longloop0
+	B       next0
 
 dpattern1:
-	ADD R15<<5, PERMTAB, R16
+	ADD   R15<<5, PERMTAB, R16
 	FLDPQ (R16), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
-	VADD V6.B16, V0.B16, V0.B16
-	VADD V7.B16, V1.B16, V1.B16
-	B dstore1
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
+	VADD  V6.B16, V0.B16, V0.B16
+	VADD  V7.B16, V1.B16, V1.B16
+	B     dstore1
 
 litlong1:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop1:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop1
-	B litback1
+	SUBS    $1, R15
+	BNE     litloop1
+	B       litback1
 
 pattern1:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check1
+	B     check1
 
 clamp1:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy1
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy1
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy1:
 	FSTPQ (F2, F3), (DP)
-	B check1
+	B     check1
 
 long1:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok1
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok1
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok1:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop1:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop1
-	B next1
+	SUBS    $1, R15
+	BNE     longloop1
+	B       next1
 
 dpattern2:
-	ADD R15<<5, PERMTAB, R16
+	ADD   R15<<5, PERMTAB, R16
 	FLDPQ (R16), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
-	VADD V6.B16, V0.B16, V0.B16
-	VADD V7.B16, V1.B16, V1.B16
-	B dstore2
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
+	VADD  V6.B16, V0.B16, V0.B16
+	VADD  V7.B16, V1.B16, V1.B16
+	B     dstore2
 
 litlong2:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop2:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop2
-	B litback2
+	SUBS    $1, R15
+	BNE     litloop2
+	B       litback2
 
 pattern2:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check2
+	B     check2
 
 clamp2:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy2
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy2
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy2:
 	FSTPQ (F2, F3), (DP)
-	B check2
+	B     check2
 
 long2:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok2
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok2
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok2:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop2:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop2
-	B next2
+	SUBS    $1, R15
+	BNE     longloop2
+	B       next2
 
 dpattern3:
-	ADD R15<<5, PERMTAB, R16
+	ADD   R15<<5, PERMTAB, R16
 	FLDPQ (R16), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
-	VADD V6.B16, V0.B16, V0.B16
-	VADD V7.B16, V1.B16, V1.B16
-	B dstore3
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
+	VADD  V6.B16, V0.B16, V0.B16
+	VADD  V7.B16, V1.B16, V1.B16
+	B     dstore3
 
 litlong3:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop3:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop3
-	B litback3
+	SUBS    $1, R15
+	BNE     litloop3
+	B       litback3
 
 pattern3:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check3
+	B     check3
 
 clamp3:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy3
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy3
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy3:
 	FSTPQ (F2, F3), (DP)
-	B check3
+	B     check3
 
 long3:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok3
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok3
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok3:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop3:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop3
-	B next3
+	SUBS    $1, R15
+	BNE     longloop3
+	B       next3
 
 dpattern4:
-	ADD R15<<5, PERMTAB, R16
+	ADD   R15<<5, PERMTAB, R16
 	FLDPQ (R16), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
-	VADD V6.B16, V0.B16, V0.B16
-	VADD V7.B16, V1.B16, V1.B16
-	B dstore4
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
+	VADD  V6.B16, V0.B16, V0.B16
+	VADD  V7.B16, V1.B16, V1.B16
+	B     dstore4
 
 litlong4:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop4:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop4
-	B litback4
+	SUBS    $1, R15
+	BNE     litloop4
+	B       litback4
 
 pattern4:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check4
+	B     check4
 
 clamp4:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy4
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy4
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy4:
 	FSTPQ (F2, F3), (DP)
-	B check4
+	B     check4
 
 long4:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok4
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok4
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok4:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop4:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop4
-	B next4
+	SUBS    $1, R15
+	BNE     longloop4
+	B       next4
 
 dpattern5:
-	ADD R15<<5, PERMTAB, R16
+	ADD   R15<<5, PERMTAB, R16
 	FLDPQ (R16), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
-	VADD V6.B16, V0.B16, V0.B16
-	VADD V7.B16, V1.B16, V1.B16
-	B dstore5
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
+	VADD  V6.B16, V0.B16, V0.B16
+	VADD  V7.B16, V1.B16, V1.B16
+	B     dstore5
 
 litlong5:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop5:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop5
-	B litback5
+	SUBS    $1, R15
+	BNE     litloop5
+	B       litback5
 
 pattern5:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check5
+	B     check5
 
 clamp5:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy5
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy5
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy5:
 	FSTPQ (F2, F3), (DP)
-	B check5
+	B     check5
 
 long5:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok5
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok5
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok5:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop5:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop5
-	B next5
+	SUBS    $1, R15
+	BNE     longloop5
+	B       next5
 
 dpattern6:
-	ADD R15<<5, PERMTAB, R16
+	ADD   R15<<5, PERMTAB, R16
 	FLDPQ (R16), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
-	VADD V6.B16, V0.B16, V0.B16
-	VADD V7.B16, V1.B16, V1.B16
-	B dstore6
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
+	VADD  V6.B16, V0.B16, V0.B16
+	VADD  V7.B16, V1.B16, V1.B16
+	B     dstore6
 
 litlong6:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop6:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop6
-	B litback6
+	SUBS    $1, R15
+	BNE     litloop6
+	B       litback6
 
 pattern6:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check6
+	B     check6
 
 clamp6:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy6
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy6
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy6:
 	FSTPQ (F2, F3), (DP)
-	B check6
+	B     check6
 
 long6:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok6
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok6
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok6:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop6:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop6
-	B next6
+	SUBS    $1, R15
+	BNE     longloop6
+	B       next6
 
 dpattern7:
-	ADD R15<<5, PERMTAB, R16
+	ADD   R15<<5, PERMTAB, R16
 	FLDPQ (R16), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
-	VADD V6.B16, V0.B16, V0.B16
-	VADD V7.B16, V1.B16, V1.B16
-	B dstore7
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
+	VADD  V6.B16, V0.B16, V0.B16
+	VADD  V7.B16, V1.B16, V1.B16
+	B     dstore7
 
 litlong7:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop7:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop7
-	B litback7
+	SUBS    $1, R15
+	BNE     litloop7
+	B       litback7
 
 pattern7:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B check7
+	B     check7
 
 clamp7:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopy7
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopy7
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopy7:
 	FSTPQ (F2, F3), (DP)
-	B check7
+	B     check7
 
 long7:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longok7
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longok7
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longok7:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop7:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop7
-	B next7
+	SUBS    $1, R15
+	BNE     longloop7
+	B       next7
 
 dpatternt:
-	ADD R15<<5, PERMTAB, R16
+	ADD   R15<<5, PERMTAB, R16
 	FLDPQ (R16), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
-	VADD V6.B16, V0.B16, V0.B16
-	VADD V7.B16, V1.B16, V1.B16
-	B dstoret
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
+	VADD  V6.B16, V0.B16, V0.B16
+	VADD  V7.B16, V1.B16, V1.B16
+	B     dstoret
 
 litlongt:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloopt:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloopt
-	B litbackt
+	SUBS    $1, R15
+	BNE     litloopt
+	B       litbackt
 
 patternt:
 	FLDPQ (R14), (F2, F3)
-	ADD LAST<<5, PERMTAB, R15
+	ADD   LAST<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V6.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V7.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V6.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V7.B16
 	FSTPQ (F6, F7), (DP)
-	B checkt
+	B     checkt
 
 clampt:
-	MOVD DST, R14
-	SUB DST, DP, R16
+	MOVD  DST, R14
+	SUB   DST, DP, R16
 	FLDPQ (R14), (F2, F3)
-	CMP TOK>>2, R16
-	BHS clampcopyt
-	ADD R16<<5, PERMTAB, R15
+	CMP   TOK>>2, R16
+	BHS   clampcopyt
+	ADD   R16<<5, PERMTAB, R15
 	FLDPQ (R15), (F4, F5)
-	VTBL V4.B16, [V2.B16, V3.B16], V2.B16
-	VTBL V5.B16, [V2.B16, V3.B16], V3.B16
+	VTBL  V4.B16, [V2.B16, V3.B16], V2.B16
+	VTBL  V5.B16, [V2.B16, V3.B16], V3.B16
 
 clampcopyt:
 	FSTPQ (F2, F3), (DP)
-	B checkt
+	B     checkt
 
 longt:
-	SUB R14, DP, R16
-	CMP $32, R16
-	BHS longokt
+	SUB  R14, DP, R16
+	CMP  $32, R16
+	BHS  longokt
 	MOVD $1, R15
 	MOVD R15, 24(ST)
 
 longokt:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloopt:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloopt
-	B nextt
+	SUBS    $1, R15
+	BNE     longloopt
+	B       nextt
 
 // func simdExecBatchFlatNEON(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, esc *byte, n, pos int, st *[4]int)
 TEXT ·simdExecBatchFlatNEON(SB), NOSPLIT, $0-80
-	MOVD dst+0(FP), DST
-	MOVD lits+8(FP), LITP
-	MOVD tok+16(FP), TOKP
-	MOVD ll+24(FP), LLP
-	MOVD offc+32(FP), OFFP
-	MOVD raw+40(FP), RAW
-	MOVD esc+48(FP), ESCP
-	MOVD n+56(FP), LEFT
-	MOVD ZR, POS
-	MOVD st+72(FP), ST
-	MOVD pos+64(FP), POS
-	MOVD (ST), DP
-	ADD DST, DP
-	MOVD 8(ST), R14
-	ADD R14, LITP
-	MOVD 16(ST), LAST
-	MOVD $·simdOffTabNEON(SB), OFFTAB
-	MOVD $·simdPermTabNEON(SB), PERMTAB
-	MOVD $0x0101010101010101, ONES
-	CBZ LEFT, done
-	MOVD (TOKP), R14
-	LSR $1, R14, R15
-	AND ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
+	MOVD  dst+0(FP), DST
+	MOVD  lits+8(FP), LITP
+	MOVD  tok+16(FP), TOKP
+	MOVD  ll+24(FP), LLP
+	MOVD  offc+32(FP), OFFP
+	MOVD  raw+40(FP), RAW
+	MOVD  esc+48(FP), ESCP
+	MOVD  n+56(FP), LEFT
+	MOVD  ZR, POS
+	MOVD  st+72(FP), ST
+	MOVD  pos+64(FP), POS
+	MOVD  (ST), DP
+	ADD   DST, DP
+	MOVD  8(ST), R14
+	ADD   R14, LITP
+	MOVD  16(ST), LAST
+	MOVD  $·simdOffTabNEON(SB), OFFTAB
+	MOVD  $·simdPermTabNEON(SB), PERMTAB
+	MOVD  $0x0101010101010101, ONES
+	CBZ   LEFT, done
+	MOVD  (TOKP), R14
+	LSR   $1, R14, R15
+	AND   ONES, R15
+	MUL   ONES, R15, R16
+	SUB   R15, R16, R13
+	EOR   ONES, R15
+	ORR   R15<<7, R13
 	FMOVD R13, F16
 	FMOVD (LLP), F17
-	VTBL V16.B8, [V17.B16], V16.B8
+	VTBL  V16.B8, [V17.B16], V16.B8
 	FMOVD F16, LWN
-	ADD R16>>56, LLP
-	BIC R14, ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
+	ADD   R16>>56, LLP
+	BIC   R14, ONES, R15
+	MUL   ONES, R15, R16
+	SUB   R15, R16, R13
+	EOR   ONES, R15
+	ORR   R15<<7, R13
 	FMOVD R13, F18
 	FMOVD (OFFP), F19
-	VTBL V18.B8, [V19.B16], V18.B8
+	VTBL  V18.B8, [V19.B16], V18.B8
 	FMOVD F18, SWN
-	ADD R16>>56, OFFP
+	ADD   R16>>56, OFFP
+
 	// LEFT is the number of operations left, from TOKP on.
 	PCALIGN $64
 
 loop:
-	CMP $8, LEFT
-	BLO tail
+	CMP    $8, LEFT
+	BLO    tail
 	MOVD.P 8(TOKP), TW
-	MOVD LWN, LW
-	MOVD SWN, SW
-	SUBS $8, LEFT
-	BEQ batch
-	MOVD (TOKP), R14
-	LSR $1, R14, R15
-	AND ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
-	FMOVD R13, F16
-	FMOVD (LLP), F17
-	VTBL V16.B8, [V17.B16], V16.B8
-	FMOVD F16, LWN
-	ADD R16>>56, LLP
-	BIC R14, ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
-	FMOVD R13, F18
-	FMOVD (OFFP), F19
-	VTBL V18.B8, [V19.B16], V18.B8
-	FMOVD F18, SWN
-	ADD R16>>56, OFFP
+	MOVD   LWN, LW
+	MOVD   SWN, SW
+	SUBS   $8, LEFT
+	BEQ    batch
+	MOVD   (TOKP), R14
+	LSR    $1, R14, R15
+	AND    ONES, R15
+	MUL    ONES, R15, R16
+	SUB    R15, R16, R13
+	EOR    ONES, R15
+	ORR    R15<<7, R13
+	FMOVD  R13, F16
+	FMOVD  (LLP), F17
+	VTBL   V16.B8, [V17.B16], V16.B8
+	FMOVD  F16, LWN
+	ADD    R16>>56, LLP
+	BIC    R14, ONES, R15
+	MUL    ONES, R15, R16
+	SUB    R15, R16, R13
+	EOR    ONES, R15
+	ORR    R15<<7, R13
+	FMOVD  R13, F18
+	FMOVD  (OFFP), F19
+	VTBL   V18.B8, [V19.B16], V18.B8
+	FMOVD  F18, SWN
+	ADD    R16>>56, OFFP
 
 batch:
-	UBFX $0, TW, $8, TOK
+	UBFX  $0, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $0, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong0
+	UBFX  $0, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong0
 
 litback0:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $0, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise0
+	CMP  TOK>>2, LAST
+	BLO  raise0
 
 clampcheck0:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp0
+	BLO  clamp0
 
 copy0:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long0
+	CMP   $132, TOK
+	BHS   long0
 
 next0:
-	ADD TOK>>2, DP
-	UBFX $8, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $8, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $8, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong1
+	UBFX  $8, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong1
 
 litback1:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $8, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise1
+	CMP  TOK>>2, LAST
+	BLO  raise1
 
 clampcheck1:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp1
+	BLO  clamp1
 
 copy1:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long1
+	CMP   $132, TOK
+	BHS   long1
 
 next1:
-	ADD TOK>>2, DP
-	UBFX $16, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $16, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $16, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong2
+	UBFX  $16, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong2
 
 litback2:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $16, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise2
+	CMP  TOK>>2, LAST
+	BLO  raise2
 
 clampcheck2:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp2
+	BLO  clamp2
 
 copy2:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long2
+	CMP   $132, TOK
+	BHS   long2
 
 next2:
-	ADD TOK>>2, DP
-	UBFX $24, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $24, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $24, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong3
+	UBFX  $24, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong3
 
 litback3:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $24, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise3
+	CMP  TOK>>2, LAST
+	BLO  raise3
 
 clampcheck3:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp3
+	BLO  clamp3
 
 copy3:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long3
+	CMP   $132, TOK
+	BHS   long3
 
 next3:
-	ADD TOK>>2, DP
-	UBFX $32, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $32, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $32, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong4
+	UBFX  $32, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong4
 
 litback4:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $32, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise4
+	CMP  TOK>>2, LAST
+	BLO  raise4
 
 clampcheck4:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp4
+	BLO  clamp4
 
 copy4:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long4
+	CMP   $132, TOK
+	BHS   long4
 
 next4:
-	ADD TOK>>2, DP
-	UBFX $40, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $40, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $40, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong5
+	UBFX  $40, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong5
 
 litback5:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $40, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise5
+	CMP  TOK>>2, LAST
+	BLO  raise5
 
 clampcheck5:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp5
+	BLO  clamp5
 
 copy5:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long5
+	CMP   $132, TOK
+	BHS   long5
 
 next5:
-	ADD TOK>>2, DP
-	UBFX $48, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $48, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $48, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong6
+	UBFX  $48, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong6
 
 litback6:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $48, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise6
+	CMP  TOK>>2, LAST
+	BLO  raise6
 
 clampcheck6:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp6
+	BLO  clamp6
 
 copy6:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long6
+	CMP   $132, TOK
+	BHS   long6
 
 next6:
-	ADD TOK>>2, DP
-	UBFX $56, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $56, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	UBFX $56, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong7
+	UBFX  $56, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong7
 
 litback7:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $56, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise7
+	CMP  TOK>>2, LAST
+	BLO  raise7
 
 clampcheck7:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp7
+	BLO  clamp7
 
 copy7:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long7
+	CMP   $132, TOK
+	BHS   long7
 
 next7:
 	ADD TOK>>2, DP
-	B loop
+	B   loop
 
 tail:
-	CBZ LEFT, done
+	CBZ  LEFT, done
 	MOVD (TOKP), TW
 	MOVD LWN, LW
 	MOVD SWN, SW
 
 tailloop:
-	AND $0xff, TW, TOK
-	LSR $8, TW
+	AND   $0xff, TW, TOK
+	LSR   $8, TW
 	FLDPQ (LITP), (F0, F1)
 	FSTPQ (F0, F1), (DP)
-	AND $0xff, LW, LEN
-	LSR $8, LW
-	CMP $33, LEN
-	BEQ litlongt
+	AND   $0xff, LW, LEN
+	LSR   $8, LW
+	CMP   $33, LEN
+	BEQ   litlongt
 
 litbackt:
-	ADD LEN, DP
-	ADD LEN, LITP
-	AND $0xff, SW, R14
-	LSR $8, SW
+	ADD  LEN, DP
+	ADD  LEN, LITP
+	AND  $0xff, SW, R14
+	LSR  $8, SW
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raiset
+	CMP  TOK>>2, LAST
+	BLO  raiset
 
 clampcheckt:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clampt
+	BLO  clampt
 
 copyt:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS longt
+	CMP   $132, TOK
+	BHS   longt
 
 nextt:
-	ADD TOK>>2, DP
+	ADD  TOK>>2, DP
 	SUBS $1, LEFT
-	BNE tailloop
+	BNE  tailloop
 
 done:
-	SUB DST, DP
+	SUB  DST, DP
 	MOVD DP, (ST)
 	MOVD lits+8(FP), R14
-	SUB R14, LITP
+	SUB  R14, LITP
 	MOVD LITP, 8(ST)
 	MOVD LAST, 16(ST)
 	RET
 
 litlong0:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop0:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop0
-	B litback0
+	SUBS    $1, R15
+	BNE     litloop0
+	B       litback0
 
 raise0:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised0
-	CMP $32, LAST
-	BHS clampcheck0
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised0
+	CMP  $32, LAST
+	BHS  clampcheck0
 	MOVD $32, R16
 
 raised0:
 	SUB R16, DP, R14
-	B copy0
+	B   copy0
 
 clamp0:
 	MOVD DST, R14
-	B copy0
+	B    copy0
 
 long0:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop0:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop0
-	B next0
+	SUBS    $1, R15
+	BNE     longloop0
+	B       next0
 
 litlong1:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop1:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop1
-	B litback1
+	SUBS    $1, R15
+	BNE     litloop1
+	B       litback1
 
 raise1:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised1
-	CMP $32, LAST
-	BHS clampcheck1
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised1
+	CMP  $32, LAST
+	BHS  clampcheck1
 	MOVD $32, R16
 
 raised1:
 	SUB R16, DP, R14
-	B copy1
+	B   copy1
 
 clamp1:
 	MOVD DST, R14
-	B copy1
+	B    copy1
 
 long1:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop1:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop1
-	B next1
+	SUBS    $1, R15
+	BNE     longloop1
+	B       next1
 
 litlong2:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop2:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop2
-	B litback2
+	SUBS    $1, R15
+	BNE     litloop2
+	B       litback2
 
 raise2:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised2
-	CMP $32, LAST
-	BHS clampcheck2
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised2
+	CMP  $32, LAST
+	BHS  clampcheck2
 	MOVD $32, R16
 
 raised2:
 	SUB R16, DP, R14
-	B copy2
+	B   copy2
 
 clamp2:
 	MOVD DST, R14
-	B copy2
+	B    copy2
 
 long2:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop2:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop2
-	B next2
+	SUBS    $1, R15
+	BNE     longloop2
+	B       next2
 
 litlong3:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop3:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop3
-	B litback3
+	SUBS    $1, R15
+	BNE     litloop3
+	B       litback3
 
 raise3:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised3
-	CMP $32, LAST
-	BHS clampcheck3
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised3
+	CMP  $32, LAST
+	BHS  clampcheck3
 	MOVD $32, R16
 
 raised3:
 	SUB R16, DP, R14
-	B copy3
+	B   copy3
 
 clamp3:
 	MOVD DST, R14
-	B copy3
+	B    copy3
 
 long3:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop3:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop3
-	B next3
+	SUBS    $1, R15
+	BNE     longloop3
+	B       next3
 
 litlong4:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop4:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop4
-	B litback4
+	SUBS    $1, R15
+	BNE     litloop4
+	B       litback4
 
 raise4:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised4
-	CMP $32, LAST
-	BHS clampcheck4
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised4
+	CMP  $32, LAST
+	BHS  clampcheck4
 	MOVD $32, R16
 
 raised4:
 	SUB R16, DP, R14
-	B copy4
+	B   copy4
 
 clamp4:
 	MOVD DST, R14
-	B copy4
+	B    copy4
 
 long4:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop4:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop4
-	B next4
+	SUBS    $1, R15
+	BNE     longloop4
+	B       next4
 
 litlong5:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop5:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop5
-	B litback5
+	SUBS    $1, R15
+	BNE     litloop5
+	B       litback5
 
 raise5:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised5
-	CMP $32, LAST
-	BHS clampcheck5
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised5
+	CMP  $32, LAST
+	BHS  clampcheck5
 	MOVD $32, R16
 
 raised5:
 	SUB R16, DP, R14
-	B copy5
+	B   copy5
 
 clamp5:
 	MOVD DST, R14
-	B copy5
+	B    copy5
 
 long5:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop5:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop5
-	B next5
+	SUBS    $1, R15
+	BNE     longloop5
+	B       next5
 
 litlong6:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop6:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop6
-	B litback6
+	SUBS    $1, R15
+	BNE     litloop6
+	B       litback6
 
 raise6:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised6
-	CMP $32, LAST
-	BHS clampcheck6
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised6
+	CMP  $32, LAST
+	BHS  clampcheck6
 	MOVD $32, R16
 
 raised6:
 	SUB R16, DP, R14
-	B copy6
+	B   copy6
 
 clamp6:
 	MOVD DST, R14
-	B copy6
+	B    copy6
 
 long6:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop6:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop6
-	B next6
+	SUBS    $1, R15
+	BNE     longloop6
+	B       next6
 
 litlong7:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop7:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop7
-	B litback7
+	SUBS    $1, R15
+	BNE     litloop7
+	B       litback7
 
 raise7:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised7
-	CMP $32, LAST
-	BHS clampcheck7
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised7
+	CMP  $32, LAST
+	BHS  clampcheck7
 	MOVD $32, R16
 
 raised7:
 	SUB R16, DP, R14
-	B copy7
+	B   copy7
 
 clamp7:
 	MOVD DST, R14
-	B copy7
+	B    copy7
 
 long7:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop7:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop7
-	B next7
+	SUBS    $1, R15
+	BNE     longloop7
+	B       next7
 
 litlongt:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloopt:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloopt
-	B litbackt
+	SUBS    $1, R15
+	BNE     litloopt
+	B       litbackt
 
 raiset:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raisedt
-	CMP $32, LAST
-	BHS clampcheckt
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raisedt
+	CMP  $32, LAST
+	BHS  clampcheckt
 	MOVD $32, R16
 
 raisedt:
 	SUB R16, DP, R14
-	B copyt
+	B   copyt
 
 clampt:
 	MOVD DST, R14
-	B copyt
+	B    copyt
 
 longt:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloopt:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloopt
-	B nextt
+	SUBS    $1, R15
+	BNE     longloopt
+	B       nextt
 
 // func simdExecBatchFlatDeltaNEON(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, esc *byte, n, pos int, st *[4]int)
 TEXT ·simdExecBatchFlatDeltaNEON(SB), NOSPLIT, $0-80
-	MOVD dst+0(FP), DST
-	MOVD lits+8(FP), LITP
-	MOVD tok+16(FP), TOKP
-	MOVD ll+24(FP), LLP
-	MOVD offc+32(FP), OFFP
-	MOVD raw+40(FP), RAW
-	MOVD esc+48(FP), ESCP
-	MOVD n+56(FP), LEFT
-	MOVD ZR, POS
-	MOVD st+72(FP), ST
-	MOVD pos+64(FP), POS
-	MOVD (ST), DP
-	ADD DST, DP
-	MOVD 8(ST), R14
-	ADD R14, LITP
-	MOVD 16(ST), LAST
-	MOVD $·simdOffTabNEON(SB), OFFTAB
-	MOVD $·simdPermTabNEON(SB), PERMTAB
-	MOVD $0x0101010101010101, ONES
-	MOVD $32, C32
-	CBZ LEFT, done
-	MOVD (TOKP), R14
-	LSR $1, R14, R15
-	AND ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
+	MOVD  dst+0(FP), DST
+	MOVD  lits+8(FP), LITP
+	MOVD  tok+16(FP), TOKP
+	MOVD  ll+24(FP), LLP
+	MOVD  offc+32(FP), OFFP
+	MOVD  raw+40(FP), RAW
+	MOVD  esc+48(FP), ESCP
+	MOVD  n+56(FP), LEFT
+	MOVD  ZR, POS
+	MOVD  st+72(FP), ST
+	MOVD  pos+64(FP), POS
+	MOVD  (ST), DP
+	ADD   DST, DP
+	MOVD  8(ST), R14
+	ADD   R14, LITP
+	MOVD  16(ST), LAST
+	MOVD  $·simdOffTabNEON(SB), OFFTAB
+	MOVD  $·simdPermTabNEON(SB), PERMTAB
+	MOVD  $0x0101010101010101, ONES
+	MOVD  $32, C32
+	CBZ   LEFT, done
+	MOVD  (TOKP), R14
+	LSR   $1, R14, R15
+	AND   ONES, R15
+	MUL   ONES, R15, R16
+	SUB   R15, R16, R13
+	EOR   ONES, R15
+	ORR   R15<<7, R13
 	FMOVD R13, F16
 	FMOVD (LLP), F17
-	VTBL V16.B8, [V17.B16], V16.B8
+	VTBL  V16.B8, [V17.B16], V16.B8
 	FMOVD F16, LWN
-	ADD R16>>56, LLP
-	BIC R14, ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
+	ADD   R16>>56, LLP
+	BIC   R14, ONES, R15
+	MUL   ONES, R15, R16
+	SUB   R15, R16, R13
+	EOR   ONES, R15
+	ORR   R15<<7, R13
 	FMOVD R13, F18
 	FMOVD (OFFP), F19
-	VTBL V18.B8, [V19.B16], V18.B8
+	VTBL  V18.B8, [V19.B16], V18.B8
 	FMOVD F18, SWN
-	ADD R16>>56, OFFP
+	ADD   R16>>56, OFFP
+
 	// LEFT is the number of operations left, from TOKP on.
 	PCALIGN $64
 
 loop:
-	CMP $8, LEFT
-	BLO tail
+	CMP    $8, LEFT
+	BLO    tail
 	MOVD.P 8(TOKP), TW
-	MOVD LWN, LW
-	MOVD SWN, SW
-	SUBS $8, LEFT
-	BEQ batch
-	MOVD (TOKP), R14
-	LSR $1, R14, R15
-	AND ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
-	FMOVD R13, F16
-	FMOVD (LLP), F17
-	VTBL V16.B8, [V17.B16], V16.B8
-	FMOVD F16, LWN
-	ADD R16>>56, LLP
-	BIC R14, ONES, R15
-	MUL ONES, R15, R16
-	SUB R15, R16, R13
-	EOR ONES, R15
-	ORR R15<<7, R13
-	FMOVD R13, F18
-	FMOVD (OFFP), F19
-	VTBL V18.B8, [V19.B16], V18.B8
-	FMOVD F18, SWN
-	ADD R16>>56, OFFP
+	MOVD   LWN, LW
+	MOVD   SWN, SW
+	SUBS   $8, LEFT
+	BEQ    batch
+	MOVD   (TOKP), R14
+	LSR    $1, R14, R15
+	AND    ONES, R15
+	MUL    ONES, R15, R16
+	SUB    R15, R16, R13
+	EOR    ONES, R15
+	ORR    R15<<7, R13
+	FMOVD  R13, F16
+	FMOVD  (LLP), F17
+	VTBL   V16.B8, [V17.B16], V16.B8
+	FMOVD  F16, LWN
+	ADD    R16>>56, LLP
+	BIC    R14, ONES, R15
+	MUL    ONES, R15, R16
+	SUB    R15, R16, R13
+	EOR    ONES, R15
+	ORR    R15<<7, R13
+	FMOVD  R13, F18
+	FMOVD  (OFFP), F19
+	VTBL   V18.B8, [V19.B16], V18.B8
+	FMOVD  F18, SWN
+	ADD    R16>>56, OFFP
 
 batch:
-	UBFX $0, TW, $8, TOK
+	UBFX  $0, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP $32, LAST
-	CSEL HS, LAST, C32, R15
-	CMP R16, R15
-	CSEL HI, R16, R15, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   $32, LAST
+	CSEL  HS, LAST, C32, R15
+	CMP   R16, R15
+	CSEL  HI, R16, R15, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 	FSTPQ (F0, F1), (DP)
-	UBFX $0, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong0
+	UBFX  $0, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong0
 
 litback0:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $0, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise0
+	CMP  TOK>>2, LAST
+	BLO  raise0
 
 clampcheck0:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp0
+	BLO  clamp0
 
 copy0:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long0
+	CMP   $132, TOK
+	BHS   long0
 
 next0:
-	ADD TOK>>2, DP
-	UBFX $8, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $8, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP $32, LAST
-	CSEL HS, LAST, C32, R15
-	CMP R16, R15
-	CSEL HI, R16, R15, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   $32, LAST
+	CSEL  HS, LAST, C32, R15
+	CMP   R16, R15
+	CSEL  HI, R16, R15, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 	FSTPQ (F0, F1), (DP)
-	UBFX $8, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong1
+	UBFX  $8, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong1
 
 litback1:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $8, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise1
+	CMP  TOK>>2, LAST
+	BLO  raise1
 
 clampcheck1:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp1
+	BLO  clamp1
 
 copy1:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long1
+	CMP   $132, TOK
+	BHS   long1
 
 next1:
-	ADD TOK>>2, DP
-	UBFX $16, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $16, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP $32, LAST
-	CSEL HS, LAST, C32, R15
-	CMP R16, R15
-	CSEL HI, R16, R15, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   $32, LAST
+	CSEL  HS, LAST, C32, R15
+	CMP   R16, R15
+	CSEL  HI, R16, R15, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 	FSTPQ (F0, F1), (DP)
-	UBFX $16, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong2
+	UBFX  $16, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong2
 
 litback2:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $16, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise2
+	CMP  TOK>>2, LAST
+	BLO  raise2
 
 clampcheck2:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp2
+	BLO  clamp2
 
 copy2:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long2
+	CMP   $132, TOK
+	BHS   long2
 
 next2:
-	ADD TOK>>2, DP
-	UBFX $24, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $24, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP $32, LAST
-	CSEL HS, LAST, C32, R15
-	CMP R16, R15
-	CSEL HI, R16, R15, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   $32, LAST
+	CSEL  HS, LAST, C32, R15
+	CMP   R16, R15
+	CSEL  HI, R16, R15, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 	FSTPQ (F0, F1), (DP)
-	UBFX $24, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong3
+	UBFX  $24, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong3
 
 litback3:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $24, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise3
+	CMP  TOK>>2, LAST
+	BLO  raise3
 
 clampcheck3:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp3
+	BLO  clamp3
 
 copy3:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long3
+	CMP   $132, TOK
+	BHS   long3
 
 next3:
-	ADD TOK>>2, DP
-	UBFX $32, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $32, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP $32, LAST
-	CSEL HS, LAST, C32, R15
-	CMP R16, R15
-	CSEL HI, R16, R15, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   $32, LAST
+	CSEL  HS, LAST, C32, R15
+	CMP   R16, R15
+	CSEL  HI, R16, R15, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 	FSTPQ (F0, F1), (DP)
-	UBFX $32, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong4
+	UBFX  $32, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong4
 
 litback4:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $32, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise4
+	CMP  TOK>>2, LAST
+	BLO  raise4
 
 clampcheck4:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp4
+	BLO  clamp4
 
 copy4:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long4
+	CMP   $132, TOK
+	BHS   long4
 
 next4:
-	ADD TOK>>2, DP
-	UBFX $40, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $40, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP $32, LAST
-	CSEL HS, LAST, C32, R15
-	CMP R16, R15
-	CSEL HI, R16, R15, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   $32, LAST
+	CSEL  HS, LAST, C32, R15
+	CMP   R16, R15
+	CSEL  HI, R16, R15, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 	FSTPQ (F0, F1), (DP)
-	UBFX $40, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong5
+	UBFX  $40, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong5
 
 litback5:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $40, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise5
+	CMP  TOK>>2, LAST
+	BLO  raise5
 
 clampcheck5:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp5
+	BLO  clamp5
 
 copy5:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long5
+	CMP   $132, TOK
+	BHS   long5
 
 next5:
-	ADD TOK>>2, DP
-	UBFX $48, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $48, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP $32, LAST
-	CSEL HS, LAST, C32, R15
-	CMP R16, R15
-	CSEL HI, R16, R15, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   $32, LAST
+	CSEL  HS, LAST, C32, R15
+	CMP   R16, R15
+	CSEL  HI, R16, R15, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 	FSTPQ (F0, F1), (DP)
-	UBFX $48, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong6
+	UBFX  $48, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong6
 
 litback6:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $48, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise6
+	CMP  TOK>>2, LAST
+	BLO  raise6
 
 clampcheck6:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp6
+	BLO  clamp6
 
 copy6:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long6
+	CMP   $132, TOK
+	BHS   long6
 
 next6:
-	ADD TOK>>2, DP
-	UBFX $56, TW, $8, TOK
+	ADD   TOK>>2, DP
+	UBFX  $56, TW, $8, TOK
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP $32, LAST
-	CSEL HS, LAST, C32, R15
-	CMP R16, R15
-	CSEL HI, R16, R15, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   $32, LAST
+	CSEL  HS, LAST, C32, R15
+	CMP   R16, R15
+	CSEL  HI, R16, R15, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 	FSTPQ (F0, F1), (DP)
-	UBFX $56, LW, $8, LEN
-	CMP $33, LEN
-	BEQ litlong7
+	UBFX  $56, LW, $8, LEN
+	CMP   $33, LEN
+	BEQ   litlong7
 
 litback7:
-	ADD LEN, DP
-	ADD LEN, LITP
+	ADD  LEN, DP
+	ADD  LEN, LITP
 	UBFX $56, SW, $8, R14
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raise7
+	CMP  TOK>>2, LAST
+	BLO  raise7
 
 clampcheck7:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clamp7
+	BLO  clamp7
 
 copy7:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS long7
+	CMP   $132, TOK
+	BHS   long7
 
 next7:
 	ADD TOK>>2, DP
-	B loop
+	B   loop
 
 tail:
-	CBZ LEFT, done
+	CBZ  LEFT, done
 	MOVD (TOKP), TW
 	MOVD LWN, LW
 	MOVD SWN, SW
 
 tailloop:
-	AND $0xff, TW, TOK
-	LSR $8, TW
+	AND   $0xff, TW, TOK
+	LSR   $8, TW
 	FLDPQ (LITP), (F0, F1)
-	SUB DST, DP, R16
-	CMP $32, LAST
-	CSEL HS, LAST, C32, R15
-	CMP R16, R15
-	CSEL HI, R16, R15, R15
-	SUB R15, DP, R14
+	SUB   DST, DP, R16
+	CMP   $32, LAST
+	CSEL  HS, LAST, C32, R15
+	CMP   R16, R15
+	CSEL  HI, R16, R15, R15
+	SUB   R15, DP, R14
 	FLDPQ (R14), (F2, F3)
-	VADD V2.B16, V0.B16, V0.B16
-	VADD V3.B16, V1.B16, V1.B16
+	VADD  V2.B16, V0.B16, V0.B16
+	VADD  V3.B16, V1.B16, V1.B16
 	FSTPQ (F0, F1), (DP)
-	AND $0xff, LW, LEN
-	LSR $8, LW
-	CMP $33, LEN
-	BEQ litlongt
+	AND   $0xff, LW, LEN
+	LSR   $8, LW
+	CMP   $33, LEN
+	BEQ   litlongt
 
 litbackt:
-	ADD LEN, DP
-	ADD LEN, LITP
-	AND $0xff, SW, R14
-	LSR $8, SW
+	ADD  LEN, DP
+	ADD  LEN, LITP
+	AND  $0xff, SW, R14
+	LSR  $8, SW
 	MOVD (OFFTAB)(R14<<3), R14
-	LSR $3, POS, R15
+	LSR  $3, POS, R15
 	MOVD (RAW)(R15), R15
-	AND $7, POS, R16
-	LSR R16, R15, R15
+	AND  $7, POS, R16
+	LSR  R16, R15, R15
 	ANDW R14, R15, R15
 	UBFX $32, R14, $8, R16
 	ADDS R14>>40, R15, R14
-	ADD R16, POS
+	ADD  R16, POS
 	CSEL NE, R14, LAST, LAST
-	CMP TOK>>2, LAST
-	BLO raiset
+	CMP  TOK>>2, LAST
+	BLO  raiset
 
 clampcheckt:
 	SUBS LAST, DP, R14
 	CCMP HS, R14, DST, $0
-	BLO clampt
+	BLO  clampt
 
 copyt:
 	FLDPQ (R14), (F2, F3)
 	FSTPQ (F2, F3), (DP)
-	CMP $132, TOK
-	BHS longt
+	CMP   $132, TOK
+	BHS   longt
 
 nextt:
-	ADD TOK>>2, DP
+	ADD  TOK>>2, DP
 	SUBS $1, LEFT
-	BNE tailloop
+	BNE  tailloop
 
 done:
-	SUB DST, DP
+	SUB  DST, DP
 	MOVD DP, (ST)
 	MOVD lits+8(FP), R14
-	SUB R14, LITP
+	SUB  R14, LITP
 	MOVD LITP, 8(ST)
 	MOVD LAST, 16(ST)
 	RET
 
 litlong0:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop0:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop0
-	B litback0
+	SUBS    $1, R15
+	BNE     litloop0
+	B       litback0
 
 raise0:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised0
-	CMP $32, LAST
-	BHS clampcheck0
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised0
+	CMP  $32, LAST
+	BHS  clampcheck0
 	MOVD $32, R16
 
 raised0:
 	SUB R16, DP, R14
-	B copy0
+	B   copy0
 
 clamp0:
 	MOVD DST, R14
-	B copy0
+	B    copy0
 
 long0:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop0:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop0
-	B next0
+	SUBS    $1, R15
+	BNE     longloop0
+	B       next0
 
 litlong1:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop1:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop1
-	B litback1
+	SUBS    $1, R15
+	BNE     litloop1
+	B       litback1
 
 raise1:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised1
-	CMP $32, LAST
-	BHS clampcheck1
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised1
+	CMP  $32, LAST
+	BHS  clampcheck1
 	MOVD $32, R16
 
 raised1:
 	SUB R16, DP, R14
-	B copy1
+	B   copy1
 
 clamp1:
 	MOVD DST, R14
-	B copy1
+	B    copy1
 
 long1:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop1:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop1
-	B next1
+	SUBS    $1, R15
+	BNE     longloop1
+	B       next1
 
 litlong2:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop2:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop2
-	B litback2
+	SUBS    $1, R15
+	BNE     litloop2
+	B       litback2
 
 raise2:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised2
-	CMP $32, LAST
-	BHS clampcheck2
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised2
+	CMP  $32, LAST
+	BHS  clampcheck2
 	MOVD $32, R16
 
 raised2:
 	SUB R16, DP, R14
-	B copy2
+	B   copy2
 
 clamp2:
 	MOVD DST, R14
-	B copy2
+	B    copy2
 
 long2:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop2:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop2
-	B next2
+	SUBS    $1, R15
+	BNE     longloop2
+	B       next2
 
 litlong3:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop3:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop3
-	B litback3
+	SUBS    $1, R15
+	BNE     litloop3
+	B       litback3
 
 raise3:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised3
-	CMP $32, LAST
-	BHS clampcheck3
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised3
+	CMP  $32, LAST
+	BHS  clampcheck3
 	MOVD $32, R16
 
 raised3:
 	SUB R16, DP, R14
-	B copy3
+	B   copy3
 
 clamp3:
 	MOVD DST, R14
-	B copy3
+	B    copy3
 
 long3:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop3:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop3
-	B next3
+	SUBS    $1, R15
+	BNE     longloop3
+	B       next3
 
 litlong4:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop4:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop4
-	B litback4
+	SUBS    $1, R15
+	BNE     litloop4
+	B       litback4
 
 raise4:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised4
-	CMP $32, LAST
-	BHS clampcheck4
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised4
+	CMP  $32, LAST
+	BHS  clampcheck4
 	MOVD $32, R16
 
 raised4:
 	SUB R16, DP, R14
-	B copy4
+	B   copy4
 
 clamp4:
 	MOVD DST, R14
-	B copy4
+	B    copy4
 
 long4:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop4:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop4
-	B next4
+	SUBS    $1, R15
+	BNE     longloop4
+	B       next4
 
 litlong5:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop5:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop5
-	B litback5
+	SUBS    $1, R15
+	BNE     litloop5
+	B       litback5
 
 raise5:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised5
-	CMP $32, LAST
-	BHS clampcheck5
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised5
+	CMP  $32, LAST
+	BHS  clampcheck5
 	MOVD $32, R16
 
 raised5:
 	SUB R16, DP, R14
-	B copy5
+	B   copy5
 
 clamp5:
 	MOVD DST, R14
-	B copy5
+	B    copy5
 
 long5:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop5:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop5
-	B next5
+	SUBS    $1, R15
+	BNE     longloop5
+	B       next5
 
 litlong6:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop6:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop6
-	B litback6
+	SUBS    $1, R15
+	BNE     litloop6
+	B       litback6
 
 raise6:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised6
-	CMP $32, LAST
-	BHS clampcheck6
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised6
+	CMP  $32, LAST
+	BHS  clampcheck6
 	MOVD $32, R16
 
 raised6:
 	SUB R16, DP, R14
-	B copy6
+	B   copy6
 
 clamp6:
 	MOVD DST, R14
-	B copy6
+	B    copy6
 
 long6:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop6:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop6
-	B next6
+	SUBS    $1, R15
+	BNE     longloop6
+	B       next6
 
 litlong7:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloop7:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloop7
-	B litback7
+	SUBS    $1, R15
+	BNE     litloop7
+	B       litback7
 
 raise7:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raised7
-	CMP $32, LAST
-	BHS clampcheck7
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raised7
+	CMP  $32, LAST
+	BHS  clampcheck7
 	MOVD $32, R16
 
 raised7:
 	SUB R16, DP, R14
-	B copy7
+	B   copy7
 
 clamp7:
 	MOVD DST, R14
-	B copy7
+	B    copy7
 
 long7:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloop7:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloop7
-	B next7
+	SUBS    $1, R15
+	BNE     longloop7
+	B       next7
 
 litlongt:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, LEN
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, LITP, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, LEN
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, LITP, R14
+	ADD     $32, DP, R16
 
 litloopt:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE litloopt
-	B litbackt
+	SUBS    $1, R15
+	BNE     litloopt
+	B       litbackt
 
 raiset:
-	LSR $2, TOK, R16
-	CMP $33, R16
-	BNE raisedt
-	CMP $32, LAST
-	BHS clampcheckt
+	LSR  $2, TOK, R16
+	CMP  $33, R16
+	BNE  raisedt
+	CMP  $32, LAST
+	BHS  clampcheckt
 	MOVD $32, R16
 
 raisedt:
 	SUB R16, DP, R14
-	B copyt
+	B   copyt
 
 clampt:
 	MOVD DST, R14
-	B copyt
+	B    copyt
 
 longt:
 	MOVBU.P 1(ESCP), R15
-	ADD $33, R15, TOK
-	LSL $2, TOK
-	ADD $32, R15
-	LSR $5, R15
-	ADD $32, R14
-	ADD $32, DP, R16
+	ADD     $33, R15, TOK
+	LSL     $2, TOK
+	ADD     $32, R15
+	LSR     $5, R15
+	ADD     $32, R14
+	ADD     $32, DP, R16
 
 longloopt:
 	FLDPQ.P 32(R14), (F2, F3)
 	FSTPQ.P (F2, F3), 32(R16)
-	SUBS $1, R15
-	BNE longloopt
-	B nextt
+	SUBS    $1, R15
+	BNE     longloopt
+	B       nextt

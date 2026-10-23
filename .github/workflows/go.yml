@@ -90,9 +90,8 @@ jobs:
     - name: fmt
       run: diff <(gofmt -d .) <(printf "")
 
-    # Generated assembly is checked by the generate job instead.
     - name: asmfmt
-      run: diff <(go run github.com/klauspost/asmfmt/cmd/asmfmt@v1.3.2 -d $(grep -L '^// Code generated .* DO NOT EDIT\.$' $(git ls-files '*.s'))) <(printf "")
+      run: diff <(go run github.com/klauspost/asmfmt/cmd/asmfmt@v1.3.2 -d $(git ls-files '*.s')) <(printf "")
 
     - name: fix
       run: diff <(go fix -diff ./...) <(printf "")

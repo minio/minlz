@@ -29,6 +29,7 @@ import (
 )
 
 //go:generate go run . -out ../../decode-simd-batch_arm64.s
+//go:generate go tool asmfmt -w ../../decode-simd-batch_arm64.s
 
 var out = flag.String("out", "decode-simd-batch_arm64.s", "output file")
 

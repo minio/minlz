@@ -15,12 +15,14 @@
 package main
 
 //go:generate go run . -out ../asm_amd64.s -stubs ../asm_amd64.go -pkg=minlz
+//go:generate go tool asmfmt -w ../asm_amd64.s
 //go:generate gofmt -w ../asm_amd64.go
 // avo appends the -arch suffix to -out itself, so ../asm.s is written as
 // ../asm_arm64.s. -stubs takes no such suffix and is spelled in full. The
 // asymmetry is avo's, not a typo: spelling -out with the suffix already on it
 // yields asm_arm64_arm64.s.
 //go:generate go run . -out ../asm.s -stubs ../asm_arm64.go -arch arm64 -arm64gen -arm64-promote-stack-slots -pkg=minlz
+//go:generate go tool asmfmt -w ../asm_arm64.s
 //go:generate gofmt -w ../asm_arm64.go
 
 import (

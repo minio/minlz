@@ -85,16 +85,16 @@ DATA ·simdPermTabNEON+(r*32+24)(SB)/8, d
 GLOBL ·simdPermTabNEON(SB), RODATA|NOPTR, $1056
 
 #define OPS_START \
-	ADD  TOKP, TOKEND                 \
-	MOVD (ST), DP                     \
-	ADD  DST, DP                      \
-	MOVD 8(ST), R14                   \
-	ADD  LITS, R14, LITP              \
-	MOVD 16(ST), LAST                 \
-	MOVD ZR, POS                      \
-	MOVD $·simdOffTabNEON(SB), OFFTAB \
-	MOVD $·simdPermTabNEON(SB), PERMTAB  \
-	CMP  TOKEND, TOKP                 \
+	ADD  TOKP, TOKEND                   \
+	MOVD (ST), DP                       \
+	ADD  DST, DP                        \
+	MOVD 8(ST), R14                     \
+	ADD  LITS, R14, LITP                \
+	MOVD 16(ST), LAST                   \
+	MOVD ZR, POS                        \
+	MOVD $·simdOffTabNEON(SB), OFFTAB   \
+	MOVD $·simdPermTabNEON(SB), PERMTAB \
+	CMP  TOKEND, TOKP                   \
 	BHS  done
 
 // OPS_REST runs the rest of an operation, after its first 32 literals are stored.
