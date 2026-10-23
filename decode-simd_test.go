@@ -774,9 +774,11 @@ func TestSIMDExec(t *testing.T) {
 					}
 					d := l + len(want) - len(e.stored)
 					bits, _ := simdOffStats(v[simdOffc])
-					// ll and offc are read one value ahead, raw 8 bytes at each bit position. simdExec takes &c.esc[0].
-					c := simdChunk{tok: at(0, v[simdTok], len(v[simdTok])), ll: at(1, v[simdLL], len(v[simdLL])+1),
-						offc: at(2, v[simdOffc], len(v[simdOffc])+1), esc: at(3, v[simdEsc], max(len(v[simdEsc]), 1)),
+					// Batches read 8 tokens, and 8 bytes at the literal lengths and offset symbols they use.
+					// raw is read 8 bytes at each bit position. simdExec takes &c.esc[0].
+					nt := len(v[simdTok])
+					c := simdChunk{tok: at(0, v[simdTok], nt+7)[:nt], ll: at(1, v[simdLL], len(v[simdLL])+8),
+						offc: at(2, v[simdOffc], len(v[simdOffc])+8), esc: at(3, v[simdEsc], max(len(v[simdEsc]), 1)),
 						raw: at(4, v[4], bits>>3+8), delta: delta, flat: ex.flat}
 					dst := at(5, nil, d+simdSlack)
 					lits := at(6, e.stored[:l], l+simdSlack)
@@ -897,7 +899,7 @@ func testSIMDExecRandom(t *testing.T) {
 			c.tok = append(c.tok, tok|byte(ml<<2))
 		}
 		c.raw = append(c.raw, byte(acc), 0, 0, 0, 0, 0, 0, 0)
-		c.ll, c.offc, c.esc = pad(c.ll), pad(c.offc), pad(c.esc)
+		c.tok, c.ll, c.offc, c.esc = pad(c.tok)[:len(c.tok)], pad(c.ll), pad(c.offc), pad(c.esc)
 		rng.Read(lits)
 		n := 1 + rng.Intn(len(c.tok))
 		sw, sg := st0, st0

@@ -42,19 +42,30 @@ func minLZDecode(dst, src []byte) int {
 
 // simdOffTabNEON is simdOffTab laid out for simdExecNEON: the mask of the raw bits in the
 // low 32 bits, the number of raw bits in bits 32-39 and the base offset in the top 24 bits.
+// Symbol 0 decodes to offset 0 with no raw bits: the batched loops give it to repeats,
+// which keep the last offset. The other loops ignore the symbol of a repeat.
 var simdOffTabNEON = func() (t [256]uint64) {
-	for s, v := range simdOffTab {
+	for s, v := range simdOffTab[1:] {
 		nb := uint64(v >> 24)
-		t[s] = 1<<nb - 1 | nb<<32 | uint64(v&0xffffff)<<40
+		t[s+1] = 1<<nb - 1 | nb<<32 | uint64(v&0xffffff)<<40
 	}
 	return t
 }()
+
+// simdBatchNEON selects the batched operation loops, which expand the literal lengths and
+// offset symbols of 8 operations at a time. They read up to 7 tokens past n, and 8 bytes past
+// the literal lengths and offset symbols they use.
+var simdBatchNEON = true
 
 // simdExec runs the first n operations of c. See simdExecGo.
 func simdExec(dst, lits []byte, c *simdChunk, n int, st *[4]int) {
 	switch {
 	case !cpu.NEON:
 		simdExecGo(dst, lits, c, n, st)
+	case simdBatchNEON && c.delta:
+		simdExecBatchDeltaNEON(&dst[0], &lits[0], &c.tok[0], &c.ll[0], &c.offc[0], &c.raw[0], &c.esc[0], n, st)
+	case simdBatchNEON:
+		simdExecBatchNEON(&dst[0], &lits[0], &c.tok[0], &c.ll[0], &c.offc[0], &c.raw[0], &c.esc[0], n, st)
 	case c.delta:
 		simdExecDeltaNEON(&dst[0], &lits[0], &c.tok[0], &c.ll[0], &c.offc[0], &c.raw[0], &c.esc[0], n, st)
 	default:
@@ -69,6 +80,10 @@ func simdExecFlat(dst, lits []byte, c *simdChunk, k0, k int, cur [4]int, st *[4]
 	switch {
 	case !cpu.NEON:
 		simdExecFlatGo(dst, lits, c, k0, k, cur, st)
+	case simdBatchNEON && c.delta:
+		simdExecBatchFlatDeltaNEON(&dst[0], &lits[0], tok, ll, offc, &c.raw[0], esc, n, cur[3], st)
+	case simdBatchNEON:
+		simdExecBatchFlatNEON(&dst[0], &lits[0], tok, ll, offc, &c.raw[0], esc, n, cur[3], st)
 	case c.delta:
 		simdExecFlatDeltaNEON(&dst[0], &lits[0], tok, ll, offc, &c.raw[0], esc, n, cur[3], st)
 	default:
@@ -97,6 +112,26 @@ func simdExecNEON(dst, lits, tok, ll, offc, raw, esc *byte, n int, st *[4]int)
 //
 //go:noescape
 func simdExecDeltaNEON(dst, lits, tok, ll, offc, raw, esc *byte, n int, st *[4]int)
+
+// simdExecBatchNEON is simdExecNEON with the batched loop. See simdBatchNEON.
+//
+//go:noescape
+func simdExecBatchNEON(dst, lits, tok, ll, offc, raw, esc *byte, n int, st *[4]int)
+
+// simdExecBatchDeltaNEON is simdExecDeltaNEON with the batched loop.
+//
+//go:noescape
+func simdExecBatchDeltaNEON(dst, lits, tok, ll, offc, raw, esc *byte, n int, st *[4]int)
+
+// simdExecBatchFlatNEON is simdExecFlatNEON with the batched loop.
+//
+//go:noescape
+func simdExecBatchFlatNEON(dst, lits, tok, ll, offc, raw, esc *byte, n, pos int, st *[4]int)
+
+// simdExecBatchFlatDeltaNEON is simdExecFlatDeltaNEON with the batched loop.
+//
+//go:noescape
+func simdExecBatchFlatDeltaNEON(dst, lits, tok, ll, offc, raw, esc *byte, n, pos int, st *[4]int)
 
 // simdTokStatsAsm returns the statistics of a prefix of tok, and its length. See simdTokStats.
 func simdTokStatsAsm(tok []byte) (out, nLit, nRep, nEsc, n int, ok bool) {

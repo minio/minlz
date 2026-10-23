@@ -39,14 +39,14 @@
 #define C32 R21
 #define LITS R22
 
-// simdPermTab holds 33 rows of 32 TBL indexes, indexed by min(offset, 32).
+// simdPermTabNEON holds 33 rows of 32 TBL indexes, indexed by min(offset, 32).
 // Byte i of row r is i % r, and i in row 32. Row 0 is row 1: a delta reference at position 0 repeats dst[0], which is 0.
 // It is not a Go variable, as Go init order cannot see that the assembly reads it.
 #define PERM(r, a, b, c, d) \
-DATA simdPermTab<>+(r*32)(SB)/8, a \
-DATA simdPermTab<>+(r*32+8)(SB)/8, b \
-DATA simdPermTab<>+(r*32+16)(SB)/8, c \
-DATA simdPermTab<>+(r*32+24)(SB)/8, d
+DATA ·simdPermTabNEON+(r*32)(SB)/8, a \
+DATA ·simdPermTabNEON+(r*32+8)(SB)/8, b \
+DATA ·simdPermTabNEON+(r*32+16)(SB)/8, c \
+DATA ·simdPermTabNEON+(r*32+24)(SB)/8, d
 
 	PERM(0, $0, $0, $0, $0)
 	PERM(1, $0, $0, $0, $0)
@@ -82,7 +82,7 @@ DATA simdPermTab<>+(r*32+24)(SB)/8, d
 	PERM(31, $0x0706050403020100, $0x0f0e0d0c0b0a0908, $0x1716151413121110, $0x001e1d1c1b1a1918)
 	PERM(32, $0x0706050403020100, $0x0f0e0d0c0b0a0908, $0x1716151413121110, $0x1f1e1d1c1b1a1918)
 
-GLOBL simdPermTab<>(SB), RODATA|NOPTR, $1056
+GLOBL ·simdPermTabNEON(SB), RODATA|NOPTR, $1056
 
 #define OPS_START \
 	ADD  TOKP, TOKEND                 \
@@ -93,7 +93,7 @@ GLOBL simdPermTab<>(SB), RODATA|NOPTR, $1056
 	MOVD 16(ST), LAST                 \
 	MOVD ZR, POS                      \
 	MOVD $·simdOffTabNEON(SB), OFFTAB \
-	MOVD $simdPermTab<>(SB), PERMTAB  \
+	MOVD $·simdPermTabNEON(SB), PERMTAB  \
 	CMP  TOKEND, TOKP                 \
 	BHS  done
 
@@ -101,7 +101,7 @@ GLOBL simdPermTab<>(SB), RODATA|NOPTR, $1056
 // TOK keeps its flag bits; the match length code is TOK>>2, and codes 33 and up (TOK >= 132) are escapes.
 // A match is copied from r = min(LAST, d) back, from R14 = DP - r. r is LAST unless that reaches
 // before dst, which branches to clamp. When r is below the match length code,
-// the match overlaps itself and r selects a simdPermTab row.
+// the match overlaps itself and r selects a simdPermTabNEON row.
 // Matches longer than 32 bytes with r below 32 set the error flag.
 #define OPS_REST \
 	TST      $2, TOK               \

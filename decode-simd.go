@@ -222,7 +222,8 @@ type simdDecoder struct {
 	h *xxh3.Hasher
 }
 
-// simdChunk holds the streams of a chunk. ll, offc, esc and raw stay readable past their values.
+// simdChunk holds the streams of a chunk. Its streams stay readable past their values: decoded streams
+// have simdPad bytes after them, and stored streams are followed by at least the chunk records and literals.
 type simdChunk struct {
 	tok, ll, offc, esc, raw []byte
 	nLL, nOff, nEsc, bits   int
