@@ -45,6 +45,14 @@ func load64(b []byte, i int) uint64 {
 	return *(*uint64)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(b)), i))
 }
 
+func load256(b []byte, i int) [32]byte {
+	return *(*[32]byte)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(b)), i))
+}
+
+func store256(b []byte, idx int, v [32]byte) {
+	*(*[32]byte)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(b)), idx)) = v
+}
+
 func store8(b []byte, idx int, v uint8) {
 	*(*uint8)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(b)), idx)) = v
 }

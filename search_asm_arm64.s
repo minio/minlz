@@ -7,12 +7,12 @@
 // len(dst) must equal len(src)/8. len(src) must be a multiple of 128.
 // Each input byte must be exactly 0x00 or 0xFF.
 TEXT ·packBitsNEON(SB), NOSPLIT, $0-48
-	MOVD dst_base+0(FP), R0     // dst pointer
-	MOVD src_base+24(FP), R1    // src pointer
-	MOVD src_len+32(FP), R2     // src length
-	LSR  $7, R2                  // R2 = len(src) / 128
+	MOVD dst_base+0(FP), R0  // dst pointer
+	MOVD src_base+24(FP), R1 // src pointer
+	MOVD src_len+32(FP), R2  // src length
+	LSR  $7, R2              // R2 = len(src) / 128
 
-	CBZ  R2, done
+	CBZ R2, done
 
 	// Load bit-position mask: {1,2,4,8,16,32,64,128} repeated twice.
 	MOVD $0x8040201008040201, R3

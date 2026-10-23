@@ -16,6 +16,7 @@ package minlz
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"maps"
@@ -26,6 +27,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
+	"github.com/zeebo/xxh3"
 )
 
 func testOptions(_ testing.TB) map[string][]WriterOption {
@@ -34,6 +36,8 @@ func testOptions(_ testing.TB) map[string][]WriterOption {
 		"fast":    {WriterLevel(LevelFastest)},
 		"best":    {WriterLevel(LevelSmallest)},
 		"none":    {WriterUncompressed()},
+		"simd":    {WriterLevel(LevelBalancedSIMD)},
+		"simd-d":  {WriterLevel(LevelFastestSIMD | LevelSIMDDelta)},
 	}
 
 	x := make(map[string][]WriterOption)
@@ -594,5 +598,277 @@ func TestIndexStreamSmall(t *testing.T) {
 	}
 	if _, err := IndexStream(bytes.NewReader(buf.Bytes())); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// simdTestData returns n bytes of text, with a random part that doesn't compress
+// and a table of numbers for delta literals.
+func simdTestData(n int) []byte {
+	b := makeTestData(n)
+	rng := rand.New(rand.NewSource(0x51))
+	rng.Read(b[n/3 : n/3+min(n/8, 48<<10)])
+	for i := 2 * n / 3; i+4 <= min(n, 2*n/3+64<<10); i += 4 {
+		binary.LittleEndian.PutUint32(b[i:], uint32(i*i>>10))
+	}
+	return b
+}
+
+// streamChunks returns the number of chunks of each type in the MinLZ stream b.
+func streamChunks(t testing.TB, b []byte) (n [256]int) {
+	t.Helper()
+	for len(b) > 0 {
+		if len(b) < 4 {
+			t.Fatal("truncated chunk header")
+		}
+		l := 4 + (int(b[1]) | int(b[2])<<8 | int(b[3])<<16)
+		if l > len(b) {
+			t.Fatal("truncated chunk")
+		}
+		n[b[0]]++
+		b = b[l:]
+	}
+	return n
+}
+
+// testSIMDStreamRead checks that comp decodes to want with every reader API.
+// comp must have an index.
+func testSIMDStreamRead(t *testing.T, comp, want []byte) {
+	t.Helper()
+	type readerOnly struct{ io.Reader }
+	got, err := io.ReadAll(readerOnly{NewReader(bytes.NewReader(comp))})
+	if err != nil || !bytes.Equal(got, want) {
+		t.Fatalf("Read: err %v, equal %v", err, bytes.Equal(got, want))
+	}
+	var buf bytes.Buffer
+	if _, err := NewReader(bytes.NewReader(comp)).DecodeConcurrent(&buf, 4); err != nil || !bytes.Equal(buf.Bytes(), want) {
+		t.Fatalf("DecodeConcurrent: err %v, equal %v", err, bytes.Equal(buf.Bytes(), want))
+	}
+	idx, err := IndexStream(bytes.NewReader(comp))
+	if err != nil {
+		t.Fatal("IndexStream:", err)
+	}
+	var index Index
+	if _, err := index.Load(idx); err != nil {
+		t.Fatal(err)
+	}
+	rs, err := NewReader(bytes.NewReader(comp)).ReadSeeker(nil)
+	if err != nil {
+		t.Fatal("ReadSeeker:", err)
+	}
+	tmp := make([]byte, 1000)
+	for _, off := range []int64{0, int64(len(want)/3 + 7), int64(len(want) / 2), int64(len(want) - 100)} {
+		wantAt := want[off:min(int(off)+len(tmp), len(want))]
+		if _, err := rs.Seek(off, io.SeekStart); err != nil {
+			t.Fatal("Seek:", err)
+		}
+		if n, err := io.ReadFull(rs, tmp[:len(wantAt)]); err != nil || !bytes.Equal(tmp[:n], wantAt) {
+			t.Fatalf("Seek %d: err %v", off, err)
+		}
+		if n, err := rs.ReadAt(tmp[:len(wantAt)], off); (err != nil && err != io.EOF) || !bytes.Equal(tmp[:n], wantAt) {
+			t.Fatalf("ReadAt %d: err %v", off, err)
+		}
+		dec := NewReader(bytes.NewReader(comp))
+		if err := dec.Skip(off); err != nil {
+			t.Fatal("Skip:", err)
+		}
+		if got, err := io.ReadAll(dec); err != nil || !bytes.Equal(got, want[off:]) {
+			t.Fatalf("Skip %d: err %v", off, err)
+		}
+		c, u, err := index.Find(off)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dec = NewReader(bytes.NewReader(comp[c:]), ReaderIgnoreStreamIdentifier())
+		if err := dec.Skip(off - u); err != nil {
+			t.Fatal("Skip from index:", err)
+		}
+		if n, err := io.ReadFull(dec, tmp[:len(wantAt)]); err != nil || !bytes.Equal(tmp[:n], wantAt) {
+			t.Fatalf("read from index %d: err %v", off, err)
+		}
+	}
+}
+
+func TestWriterSIMD(t *testing.T) {
+	n := 3 << 20
+	if testing.Short() {
+		n = 600 << 10
+	}
+	data := simdTestData(n)
+	type readerOnly struct{ io.Reader }
+	writes := []struct {
+		name string
+		opts []WriterOption
+		fn   func(w *Writer) error
+	}{
+		{"write", []WriterOption{WriterPadding(1000)}, func(w *Writer) error {
+			rng := rand.New(rand.NewSource(1))
+			for p := data; len(p) > 0; {
+				k := min(len(p), rng.Intn(200<<10)+1)
+				if _, err := w.Write(p[:k]); err != nil {
+					return err
+				}
+				p = p[k:]
+			}
+			return nil
+		}},
+		{"readfrom-buffer", nil, func(w *Writer) error {
+			_, err := w.ReadFrom(bytes.NewBuffer(data))
+			return err
+		}},
+		{"readfrom-reader", nil, func(w *Writer) error {
+			_, err := w.ReadFrom(readerOnly{bytes.NewReader(data)})
+			return err
+		}},
+		{"encodebuffer-flush", nil, func(w *Writer) error {
+			if err := w.EncodeBuffer(data[:n/2]); err != nil {
+				return err
+			}
+			if err := w.Flush(); err != nil {
+				return err
+			}
+			return w.EncodeBuffer(data[n/2:])
+		}},
+	}
+	var k int
+	for _, level := range simdLevels {
+		for _, bs := range []int{4 << 10, 64 << 10, 1 << 20, 8 << 20} {
+			for _, conc := range []int{1, 4} {
+				for _, wr := range writes {
+					// -short runs every fifth case. 5 shares no factor with the loop sizes, so every pair of settings still runs.
+					if k++; testing.Short() && k%5 != 0 {
+						continue
+					}
+					t.Run(fmt.Sprintf("level-%d/bs-%d/c-%d/%s", level, bs, conc, wr.name), func(t *testing.T) {
+						var buf bytes.Buffer
+						w := NewWriter(&buf, append(wr.opts, WriterLevel(level), WriterBlockSize(bs), WriterConcurrency(conc), WriterAddIndex(true))...)
+						if err := wr.fn(w); err != nil {
+							t.Fatal(err)
+						}
+						if err := w.Close(); err != nil {
+							t.Fatal(err)
+						}
+						comp := buf.Bytes()
+						if in, out := w.Written(); in != int64(n) || out != int64(len(comp)) {
+							t.Fatalf("Written: %d, %d", in, out)
+						}
+						if comp[len(magicChunk)]&streamFlagSIMD == 0 {
+							t.Fatal("stream identifier has no SIMD flag")
+						}
+						if c := streamChunks(t, comp); c[chunkTypeMinLZSIMD] == 0 || c[chunkTypeMinLZCompressedData] != 0 {
+							t.Fatalf("got %d SIMD and %d MinLZ chunks", c[chunkTypeMinLZSIMD], c[chunkTypeMinLZCompressedData])
+						}
+						testSIMDStreamRead(t, comp, data)
+					})
+				}
+			}
+		}
+	}
+}
+
+// TestWriterSIMDChunks checks the layout of SIMD chunks against the block encoder.
+func TestWriterSIMDChunks(t *testing.T) {
+	data := simdTestData(300 << 10)
+	for _, level := range simdLevels {
+		// Concurrent EncodeBuffer gives the encoder the smallest output buffer.
+		for _, conc := range []int{1, 2} {
+			var buf bytes.Buffer
+			w := NewWriter(&buf, WriterLevel(level), WriterBlockSize(16<<10), WriterConcurrency(conc))
+			if err := w.EncodeBuffer(data); err != nil {
+				t.Fatal(err)
+			}
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			comp := buf.Bytes()[len(magicChunk)+1:]
+			var types [256]int
+			for off := 0; len(comp) > 0; {
+				l := int(comp[1]) | int(comp[2])<<8 | int(comp[3])<<16
+				payload := comp[4 : 4+l]
+				types[comp[0]]++
+				src := data[off:min(off+16<<10, len(data))]
+				switch comp[0] {
+				case chunkTypeMinLZSIMD:
+					block := TryEncode(nil, src, level)
+					if binary.LittleEndian.Uint64(payload) != xxh3.Hash(src) || !bytes.Equal(payload[simdHashSize:], block[1:]) {
+						t.Fatalf("level %d: SIMD chunk at %d differs from TryEncode", level, off)
+					}
+					off += len(src)
+				case chunkTypeUncompressedData:
+					if TryEncode(nil, src, level) != nil {
+						t.Fatalf("level %d: uncompressed chunk at %d compresses with TryEncode", level, off)
+					}
+					off += l - checksumSize
+				}
+				comp = comp[4+l:]
+			}
+			if types[chunkTypeMinLZSIMD] == 0 || types[chunkTypeUncompressedData] == 0 {
+				t.Fatalf("level %d: got %d SIMD and %d uncompressed chunks", level, types[chunkTypeMinLZSIMD], types[chunkTypeUncompressedData])
+			}
+		}
+	}
+}
+
+// TestWriterSIMDIdentifier checks that the stream identifier and the sidecar identifier
+// have the SIMD flag exactly for SIMD levels, and that WriterLevel takes the levels Encode takes.
+func TestWriterSIMDIdentifier(t *testing.T) {
+	data := makeTestData(10 << 10)
+	for level := -2; level <= LevelSIMDDelta|LevelSmallestSIMD+1; level++ {
+		_, encErr := Encode(nil, data, level)
+		// A user chunk first makes AddUserChunk write the identifier.
+		for i := range 4 {
+			userFirst, conc := i&1 != 0, 1+i>>1
+			var main, side bytes.Buffer
+			w := NewWriter(&main, WriterLevel(level), WriterConcurrency(conc), WriterSearchTable(NewSearchTableConfig()), WriterSidecar(&side))
+			var err error
+			if userFirst {
+				err = w.AddUserChunk(MinUserSkippableChunk, []byte("user"))
+			}
+			if err == nil {
+				_, err = w.Write(data)
+			}
+			if err == nil {
+				err = w.Close()
+			}
+			if (err == nil) != (encErr == nil) {
+				t.Fatalf("level %d: writer error %v, Encode error %v", level, err, encErr)
+			}
+			if err != nil {
+				if err != ErrInvalidLevel {
+					t.Fatalf("level %d: %v", level, err)
+				}
+				continue
+			}
+			simd := level >= LevelSuperFastSIMD
+			for _, b := range [][]byte{main.Bytes(), side.Bytes()} {
+				if got := b[len(magicChunk)]&streamFlagSIMD != 0; got != simd {
+					t.Fatalf("level %d, user chunk %v, concurrency %d: SIMD flag %v", level, userFirst, conc, got)
+				}
+			}
+			if got, err := io.ReadAll(NewReader(&main)); err != nil || !bytes.Equal(got, data) {
+				t.Fatalf("level %d: %v", level, err)
+			}
+		}
+	}
+}
+
+// TestWriterSIMDHash checks the hash of SIMD chunks against XXH3 64 bit, seed 0, values of the C implementation.
+func TestWriterSIMDHash(t *testing.T) {
+	for n, want := range map[int]uint64{1000: 0x30e4c5246f300d11, 4095: 0x268198759d7bdf74} {
+		data := make([]byte, n)
+		for i := range data {
+			data[i] = byte((i + 1) % 251)
+		}
+		var buf bytes.Buffer
+		w := NewWriter(&buf, WriterLevel(LevelFastestSIMD))
+		if _, err := w.Write(data); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		chunk := buf.Bytes()[len(magicChunk)+1:]
+		if chunk[0] != chunkTypeMinLZSIMD || binary.LittleEndian.Uint64(chunk[4:]) != want {
+			t.Fatalf("%d bytes: chunk type %#x, hash %#x, want %#x", n, chunk[0], binary.LittleEndian.Uint64(chunk[4:]), want)
+		}
 	}
 }
