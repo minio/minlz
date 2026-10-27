@@ -22,6 +22,8 @@ import (
 	"io"
 	"math/rand"
 	"testing"
+
+	"github.com/klauspost/compress/s2"
 )
 
 // crcTestChunk constructs a compressed chunk with the checksum coverage selected by kind.
@@ -312,6 +314,61 @@ func TestSearchCompressedCRCLazyPrevious(t *testing.T) {
 		})
 		if err != nil || found != 1 {
 			t.Fatalf("search: %v; matches %d", err, found)
+		}
+	}
+}
+
+// TestReaderSkipCRC checks that chunk data kept after Skip is CRC-checked like Read.
+func TestReaderSkipCRC(t *testing.T) {
+	random := make([]byte, 16<<10)
+	rand.New(rand.NewSource(0)).Read(random)
+	text := bytes.Repeat([]byte("compressible text "), 1<<10)
+	for _, legacy := range []bool{false, true} {
+		for _, data := range [][]byte{random, text} {
+			var buf bytes.Buffer
+			var w io.WriteCloser = NewWriter(&buf, WriterBlockSize(4<<10), WriterConcurrency(1))
+			if legacy {
+				w = s2.NewWriter(&buf, s2.WriterBlockSize(4<<10), s2.WriterConcurrency(1))
+			}
+			if _, err := w.Write(data); err != nil {
+				t.Fatal(err)
+			}
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			b := buf.Bytes()
+			// Find the second data chunk, which holds offset 4096.
+			chunk, seen := 0, 0
+			for ; ; chunk += chunkHeaderSize + (int(b[chunk+1]) | int(b[chunk+2])<<8 | int(b[chunk+3])<<16) {
+				if b[chunk] <= chunkTypeMinLZCompressedDataCompCRC {
+					if seen++; seen == 2 {
+						break
+					}
+				}
+			}
+			typ := b[chunk]
+			b[chunk+chunkHeaderSize] ^= 1
+
+			r := NewReader(bytes.NewReader(b), ReaderFallback(true))
+			err := r.Skip(4096 + 100)
+			if err == nil {
+				_, err = io.ReadAll(r)
+			}
+			if err != ErrCRC {
+				t.Errorf("chunk %#x: Skip+Read: want %v, got %v", typ, ErrCRC, err)
+			}
+
+			r = NewReader(bytes.NewReader(b), ReaderFallback(true), ReaderIgnoreCRC())
+			if err := r.Skip(4096 + 100); err != nil {
+				t.Errorf("chunk %#x: Skip with ReaderIgnoreCRC: %v", typ, err)
+			}
+			got, err := io.ReadAll(r)
+			if err != nil {
+				t.Errorf("chunk %#x: Read with ReaderIgnoreCRC: %v", typ, err)
+			}
+			if !bytes.Equal(got, data[4096+100:]) {
+				t.Errorf("chunk %#x: Read with ReaderIgnoreCRC: wrong data", typ)
+			}
 		}
 	}
 }
