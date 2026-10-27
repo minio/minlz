@@ -350,12 +350,8 @@ func TestReaderSkipCRC(t *testing.T) {
 			b[chunk+chunkHeaderSize] ^= 1
 
 			r := NewReader(bytes.NewReader(b), ReaderFallback(true))
-			err := r.Skip(4096 + 100)
-			if err == nil {
-				_, err = io.ReadAll(r)
-			}
-			if err != ErrCRC {
-				t.Errorf("chunk %#x: Skip+Read: want %v, got %v", typ, ErrCRC, err)
+			if err := r.Skip(4096 + 100); err != ErrCRC {
+				t.Errorf("chunk %#x: Skip: want %v, got %v", typ, ErrCRC, err)
 			}
 
 			r = NewReader(bytes.NewReader(b), ReaderFallback(true), ReaderIgnoreCRC())
