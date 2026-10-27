@@ -326,7 +326,7 @@ func TestReaderSkipCRC(t *testing.T) {
 	for _, legacy := range []bool{false, true} {
 		for _, data := range [][]byte{random, text} {
 			var buf bytes.Buffer
-			var w io.WriteCloser = NewWriter(&buf, WriterBlockSize(4<<10), WriterConcurrency(1))
+			var w io.WriteCloser = NewWriter(&buf, WriterBlockSize(4<<10), WriterConcurrency(1), WriterAddIndex(true))
 			if legacy {
 				w = s2.NewWriter(&buf, s2.WriterBlockSize(4<<10), s2.WriterConcurrency(1))
 			}
@@ -364,6 +364,22 @@ func TestReaderSkipCRC(t *testing.T) {
 			}
 			if !bytes.Equal(got, data[4096+100:]) {
 				t.Errorf("chunk %#x: Read with ReaderIgnoreCRC: wrong data", typ)
+			}
+
+			if legacy {
+				continue
+			}
+			// Skipping to the exact end of the corrupted chunk must not leave
+			// it in the buffer for a later seek back into it.
+			rs, err := NewReader(bytes.NewReader(b)).ReadSeeker(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := rs.Seek(8192, io.SeekStart); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := rs.ReadAt(make([]byte, 100), 4096); err != ErrCRC {
+				t.Errorf("chunk %#x: ReadAt after Seek: want %v, got %v", typ, ErrCRC, err)
 			}
 		}
 	}

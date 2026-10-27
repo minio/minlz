@@ -1225,7 +1225,12 @@ func (r *Reader) Skip(n int64) error {
 			if !r.readFull(r.decoded[:n2], false) {
 				return r.err
 			}
-			if int64(n2) > n && !r.ignoreCRC && crc(r.decoded[:n2]) != checksum {
+			if int64(n2) <= n {
+				// Skip block completely
+				n -= int64(n2)
+				r.blockStart += int64(n2)
+				n2 = 0
+			} else if !r.ignoreCRC && crc(r.decoded[:n2]) != checksum {
 				r.err = ErrCRC
 				return r.err
 			}
