@@ -1290,7 +1290,7 @@ func (r *Reader) Skip(n int64) error {
 				}
 				buf = buf[hdrSize:]
 				if ret := minLZDecode(r.decoded[:dLen], buf); ret != 0 {
-					r.err = ErrTooLarge
+					r.err = ErrCorrupt
 					return r.err
 				}
 				toCRC := r.decoded[:dLen]
@@ -1391,7 +1391,7 @@ func (r *Reader) Skip(n int64) error {
 					return r.err
 				}
 				if !r.ignoreCRC && crc(r.decoded[:dLen]) != checksum {
-					r.err = ErrCorrupt
+					r.err = ErrCRC
 					return r.err
 				}
 			} else {
@@ -1432,8 +1432,13 @@ func (r *Reader) Skip(n int64) error {
 			if !r.readFull(r.decoded[:n2], false) {
 				return r.err
 			}
-			if !r.ignoreCRC && crc(r.decoded[:n2]) != checksum {
-				r.err = ErrCorrupt
+			if int64(n2) <= n {
+				// Skip block completely
+				n -= int64(n2)
+				r.blockStart += int64(n2)
+				n2 = 0
+			} else if !r.ignoreCRC && crc(r.decoded[:n2]) != checksum {
+				r.err = ErrCRC
 				return r.err
 			}
 			r.i, r.j = 0, n2
