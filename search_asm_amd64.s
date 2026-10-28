@@ -2,48 +2,17 @@
 
 #include "textflag.h"
 
-// func cpuidAVX2() bool
-// Returns true if AVX2 is supported.
-TEXT ·cpuidAVX2(SB), NOSPLIT, $0-1
-	// Check OSXSAVE (CPUID.1:ECX bit 27) first.
-	MOVL $1, AX
-	XORL CX, CX
-	CPUID
-	BTL  $27, CX       // OSXSAVE?
-	JCC  noavx2
-
-	// Check OS has enabled AVX state (XGETBV XCR0 bits 1+2).
-	XORL CX, CX
-	XGETBV
-	ANDL $0x06, AX
-	CMPL AX, $0x06
-	JNE  noavx2
-
-	// Check AVX2 (CPUID.7:EBX bit 5).
-	MOVL $7, AX
-	XORL CX, CX
-	CPUID
-	BTL  $5, BX         // AVX2?
-	JCC  noavx2
-
-	MOVB $1, ret+0(FP)
-	RET
-
-noavx2:
-	MOVB $0, ret+0(FP)
-	RET
-
 // func packBitsSSE2(dst []byte, src []byte)
 // Packs byte-per-entry src (0x00/0xFF) into bit-packed dst using PMOVMSKB.
 // len(dst) must equal len(src)/8. len(src) must be a multiple of 256.
 // Requires: SSE2
 TEXT ·packBitsSSE2(SB), NOSPLIT, $0-48
-	MOVQ dst_base+0(FP), DI
-	MOVQ src_base+24(FP), SI
-	MOVQ src_len+32(FP), CX
-	SHRQ $8, CX         // CX = len(src) / 256
+	MOVQ  dst_base+0(FP), DI
+	MOVQ  src_base+24(FP), SI
+	MOVQ  src_len+32(FP), CX
+	SHRQ  $8, CX              // CX = len(src) / 256
 	TESTQ CX, CX
-	JZ   sse2done
+	JZ    sse2done
 
 sse2loop:
 	MOVOU 0*16(SI), X0
@@ -113,12 +82,12 @@ sse2done:
 // len(dst) must equal len(src)/8. len(src) must be a multiple of 256.
 // Requires: AVX2
 TEXT ·packBitsAVX2(SB), NOSPLIT, $0-48
-	MOVQ dst_base+0(FP), DI
-	MOVQ src_base+24(FP), SI
-	MOVQ src_len+32(FP), CX
-	SHRQ $8, CX         // CX = len(src) / 256
+	MOVQ  dst_base+0(FP), DI
+	MOVQ  src_base+24(FP), SI
+	MOVQ  src_len+32(FP), CX
+	SHRQ  $8, CX              // CX = len(src) / 256
 	TESTQ CX, CX
-	JZ   done
+	JZ    done
 
 loop:
 	VMOVDQU 0*32(SI), Y0

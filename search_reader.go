@@ -235,6 +235,7 @@ type lazyBlock struct {
 	main       io.ReaderAt
 	mainOffset int64
 	maxBlock   int
+	simd       bool // the stream identifier allows SIMD chunks
 
 	decompLen int    // decompressed size; avoids decode to get length
 	decoded   []byte // cached result; nil until first decode
@@ -246,7 +247,7 @@ func (lb *lazyBlock) decode() []byte {
 		return lb.decoded
 	}
 	if lb.main != nil {
-		d, err := readAndDecodeMainBlock(lb.main, lb.mainOffset, lb.decompLen, lb.maxBlock, lb.ignoreCRC)
+		d, err := readAndDecodeMainBlock(lb.main, lb.mainOffset, lb.decompLen, lb.maxBlock, lb.simd, lb.ignoreCRC)
 		if err != nil {
 			return nil
 		}
@@ -267,8 +268,18 @@ func (lb *lazyBlock) decode() []byte {
 		}
 		lb.decoded = make([]byte, len(buf))
 		copy(lb.decoded, buf)
+	case chunkTypeMinLZSIMD:
+		n, block, err := simdChunkHeader(lb.chunkData, maxBlockSize)
+		if err != nil || n != lb.decompLen {
+			return nil
+		}
+		dst := make([]byte, n)
+		if decodeSIMDChunk(dst, lb.chunkData, block, lb.ignoreCRC) != nil {
+			return nil
+		}
+		lb.decoded = dst
 	default:
-		n, hdrLen, err := decodedLen(buf)
+		n, hdrLen, err := minLZChunkLen(buf)
 		if err != nil || n != lb.decompLen {
 			return nil
 		}
@@ -355,6 +366,7 @@ type BlockSearcher struct {
 	infoCallback  func(SearchTableConfig)
 	maxBlock      int
 	readHeader    bool
+	simd          bool // the stream identifier allows SIMD chunks
 	ignoreCRC     bool
 	bail          bool // return error if tables can't answer query
 	collectStats  bool
@@ -506,10 +518,9 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if string(s.tmp[:len(magicBody)]) != magicBody {
 				return ErrUnsupported
 			}
-			logSize := int(s.tmp[magicBodyLen-1]) + 10
-			blockSize := 1 << logSize
-			if blockSize > maxBlockSize {
-				return ErrCorrupt
+			blockSize, err := streamBlockSizeFromHeaderByte(s.tmp[magicBodyLen-1])
+			if err != nil {
+				return err
 			}
 			// A concatenated stream starts here. Scan any held-back tail block
 			// from the prior stream, flush any pending forward-context dispatch,
@@ -524,6 +535,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				}
 			}
 			s.maxBlock = blockSize
+			s.simd = s.tmp[magicBodyLen-1]&streamFlagSIMD != 0
 			s.blockStart = 0
 			s.pending = nil
 			s.prevBlock = nil
@@ -696,8 +708,8 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			}
 			continue
 
-		case chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC:
-			if chunkLen < checksumSize {
+		case chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC, chunkTypeMinLZSIMD:
+			if chunkLen < checksumSize || chunkType == chunkTypeMinLZSIMD && !s.simd {
 				return ErrCorrupt
 			}
 			// Resolve any pending block that wasn't resolved at table arrival.
@@ -802,32 +814,11 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if !s.readFull(s.buf[:chunkLen]) {
 				return s.err
 			}
-			buf := s.buf[:chunkLen]
-			checksum := uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16 | uint32(buf[3])<<24
-			buf = buf[checksumSize:]
-
-			n, hdrLen, err := decodedLen(buf)
+			blk, err := s.decodeChunk(chunkType, s.buf[:chunkLen])
 			if err != nil {
 				return err
 			}
-			if n > s.maxBlock {
-				return ErrTooLarge
-			}
-			di := s.decIdx ^ 1
-			if n > len(s.decoded[di]) {
-				s.decoded[di] = make([]byte, n)
-			}
-			buf = buf[hdrLen:]
-			if ret := minLZDecode(s.decoded[di][:n], buf); ret != 0 {
-				return ErrCorrupt
-			}
-			toCRC := s.decoded[di][:n]
-			if chunkType == chunkTypeMinLZCompressedDataCompCRC {
-				toCRC = buf
-			}
-			if !s.ignoreCRC && crc(toCRC) != checksum {
-				return ErrCRC
-			}
+			n := len(blk)
 
 			if s.collectStats {
 				s.stats.BlocksSearched++
@@ -836,8 +827,6 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			s.blockMatches = 0
 			blockOff := s.blockStart
 			s.blockStart += int64(n)
-			blk := s.decoded[di][:n]
-			s.decIdx = di
 			if s.deferred != nil {
 				if err := s.flushDeferred(blk, fn); err != nil {
 					return err
@@ -1237,9 +1226,57 @@ func (s *BlockSearcher) ensureBuf(n int) {
 	s.buf = s.buf[:n]
 }
 
+// decodeChunk decompresses the payload of a MinLZ or SIMD data chunk using one of the alternating buffers.
+func (s *BlockSearcher) decodeChunk(chunkType byte, buf []byte) ([]byte, error) {
+	di := s.decIdx ^ 1
+	if chunkType == chunkTypeMinLZSIMD {
+		n, block, err := simdChunkHeader(buf, s.maxBlock)
+		if err != nil {
+			return nil, err
+		}
+		if n > len(s.decoded[di]) {
+			s.decoded[di] = make([]byte, n)
+		}
+		if err := decodeSIMDChunk(s.decoded[di][:n], buf, block, s.ignoreCRC); err != nil {
+			return nil, err
+		}
+		s.decIdx = di
+		return s.decoded[di][:n], nil
+	}
+	checksum := uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16 | uint32(buf[3])<<24
+	buf = buf[checksumSize:]
+
+	n, hdrLen, err := minLZChunkLen(buf)
+	if err != nil {
+		return nil, err
+	}
+	if n > s.maxBlock {
+		return nil, ErrTooLarge
+	}
+	if n > len(s.decoded[di]) {
+		s.decoded[di] = make([]byte, n)
+	}
+	buf = buf[hdrLen:]
+	if ret := minLZDecode(s.decoded[di][:n], buf); ret != 0 {
+		return nil, ErrCorrupt
+	}
+	toCRC := s.decoded[di][:n]
+	if chunkType == chunkTypeMinLZCompressedDataCompCRC {
+		toCRC = buf
+	}
+	if !s.ignoreCRC && crc(toCRC) != checksum {
+		return nil, ErrCRC
+	}
+	s.decIdx = di
+	return s.decoded[di][:n], nil
+}
+
 // decodePending decompresses a pending block using one of the alternating buffers.
 func (s *BlockSearcher) decodePending(p *pendingBlock) ([]byte, error) {
 	lb := &p.lazy
+	if lb.chunkType == chunkTypeMinLZSIMD {
+		return s.decodeChunk(lb.chunkType, lb.chunkData)
+	}
 	buf := lb.chunkData
 	if len(buf) < checksumSize {
 		return nil, ErrCorrupt
@@ -1261,7 +1298,7 @@ func (s *BlockSearcher) decodePending(p *pendingBlock) ([]byte, error) {
 		return s.decoded[di][:n], nil
 	}
 
-	n, hdrLen, err := decodedLen(buf)
+	n, hdrLen, err := minLZChunkLen(buf)
 	if err != nil {
 		return nil, err
 	}
@@ -1396,10 +1433,21 @@ func (s *BlockSearcher) bufferSkippedBlock(chunkType byte, chunkLen int) (decomp
 	if !s.readFull(s.buf[:chunkLen]) {
 		return 0, s.err
 	}
-	if chunkType == chunkTypeUncompressedData {
+	switch chunkType {
+	case chunkTypeUncompressedData:
 		decompLen = chunkLen - checksumSize
-	} else {
-		n, _, _ := decodedLen(s.buf[checksumSize : checksumSize+min(chunkLen-checksumSize, 10)])
+	case chunkTypeMinLZSIMD:
+		if decompLen, _, err = simdChunkHeader(s.buf[:chunkLen], s.maxBlock); err != nil {
+			return 0, err
+		}
+	default:
+		n, _, err := minLZChunkLen(s.buf[checksumSize : checksumSize+min(chunkLen-checksumSize, 10)])
+		if err != nil {
+			return 0, ErrCorrupt
+		}
+		if n > s.maxBlock {
+			return 0, ErrTooLarge
+		}
 		decompLen = n
 	}
 	// Hand s.buf to the lazy block and reclaim the previous lazy block's buffer.

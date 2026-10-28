@@ -30,6 +30,7 @@ import (
 	"unicode"
 
 	"github.com/minio/minlz/cmd/internal/shttp"
+	"github.com/minio/minlz/internal/cpu"
 )
 
 var (
@@ -49,12 +50,16 @@ var debugErrs bool
 
 func main() {
 	var cpuprofile, memprofile, traceprofile string
+	avx2, avx512, neon := cpu.AVX2, cpu.AVX512, cpu.NEON
 	if true {
 		flag.StringVar(&cpuprofile, "cpuprof", "", "write cpu profile to file")
 		flag.StringVar(&memprofile, "memprof", "", "write mem profile to file")
 		flag.StringVar(&traceprofile, "traceprof", "", "write trace profile to file")
 		flag.Bool("help", false, "print usage")
 		flag.BoolVar(&debugErrs, "debug", false, "trace errors")
+		flag.BoolVar(&cpu.AVX2, "avx2", cpu.AVX2, "use AVX2")
+		flag.BoolVar(&cpu.AVX512, "avx512", cpu.AVX512, "use AVX-512")
+		flag.BoolVar(&cpu.NEON, "neon", cpu.NEON, "use NEON")
 	}
 	flag.Usage = func() {
 		w := flag.CommandLine.Output()
@@ -75,6 +80,10 @@ func main() {
 		// Don't print flags.
 	}
 	flag.Parse()
+	// The flags may only turn features off, and AVX-512 needs AVX2.
+	cpu.AVX2 = cpu.AVX2 && avx2
+	cpu.AVX512 = cpu.AVX512 && avx512 && cpu.AVX2
+	cpu.NEON = cpu.NEON && neon
 
 	if cpuprofile != "" {
 		f, err := os.Create(cpuprofile)

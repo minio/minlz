@@ -214,3 +214,121 @@ func matchLen(a []byte, b []byte) int
 //
 //go:noescape
 func decodeBlockAsm(dst []byte, src []byte) int
+
+// simdExecAVX2 runs the first n operations of a chunk. st holds the output position,
+// the literal position, the repeat offset and an error flag.
+//
+//go:noescape
+func simdExecAVX2(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, esc *byte, n int, st *[4]int)
+
+// simdExecDeltaAVX2 runs the first n operations of a chunk. st holds the output position,
+// the literal position, the repeat offset and an error flag.
+//
+//go:noescape
+func simdExecDeltaAVX2(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, esc *byte, n int, st *[4]int)
+
+// simdTokStatsAVX2 returns the token statistics of n bytes, a multiple of 32.
+// lit and esc are counted 2 and 4 times.
+//
+//go:noescape
+func simdTokStatsAVX2(b *byte, n int) (out int, lit int, rep int, esc int, ok bool)
+
+// simdLLStatsAVX2 returns the sum of n bytes, a multiple of 32, and how many are 33.
+// ok is false if a byte is outside 1-33.
+//
+//go:noescape
+func simdLLStatsAVX2(b *byte, n int) (sum int, esc int, ok bool)
+
+// simdOffStatsAVX2 returns the sum of b>>3 over n bytes, a multiple of 32, and how often it is 0.
+// ok is false if a byte is outside 1-175.
+//
+//go:noescape
+func simdOffStatsAVX2(b *byte, n int) (sum int, zeros int, ok bool)
+
+// simdExecAVX512 runs the first n operations of a chunk. st holds the output position,
+// the literal position, the repeat offset and an error flag. nraw is the readable size of raw.
+//
+//go:noescape
+func simdExecAVX512(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, nraw int, esc *byte, n int, st *[4]int)
+
+// simdExecDeltaAVX512 runs the first n operations of a chunk. st holds the output position,
+// the literal position, the repeat offset and an error flag. nraw is the readable size of raw.
+//
+//go:noescape
+func simdExecDeltaAVX512(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, nraw int, esc *byte, n int, st *[4]int)
+
+// simdTokStatsAVX512 returns the token statistics of n bytes, n > 0.
+// lit and esc are counted 2 and 4 times.
+//
+//go:noescape
+func simdTokStatsAVX512(b *byte, n int) (out int, lit int, rep int, esc int, ok bool)
+
+// simdLLStatsAVX512 returns the sum of n bytes, n > 0, and how many are 33.
+// ok is false if a byte is outside 1-33.
+//
+//go:noescape
+func simdLLStatsAVX512(b *byte, n int) (sum int, esc int, ok bool)
+
+// simdOffStatsAVX512 returns the sum of b>>3 over n bytes, n > 0, and how often it is 0.
+// ok is false if a byte is outside 1-175.
+//
+//go:noescape
+func simdOffStatsAVX512(b *byte, n int) (sum int, zeros int, ok bool)
+
+// simdExecFlatAVX2 runs the first n operations of a chunk with the no-overlap flag, from bit pos of raw.
+// Their operations must start at position 32 or later. st holds the output position,
+// the literal position, the repeat offset and an error flag.
+//
+//go:noescape
+func simdExecFlatAVX2(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, esc *byte, n int, pos int, st *[4]int)
+
+// simdExecFlatDeltaAVX2 runs the first n operations of a chunk with the no-overlap flag, from bit pos of raw.
+// Their operations must start at position 32 or later. st holds the output position,
+// the literal position, the repeat offset and an error flag.
+//
+//go:noescape
+func simdExecFlatDeltaAVX2(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, esc *byte, n int, pos int, st *[4]int)
+
+// simdExecFlatAVX512 runs the first n operations of a chunk with the no-overlap flag, from bit pos of raw.
+// Their operations must start at position 32 or later. st holds the output position,
+// the literal position, the repeat offset and an error flag. nraw is the readable size of raw.
+//
+//go:noescape
+func simdExecFlatAVX512(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, nraw int, esc *byte, n int, pos int, st *[4]int)
+
+// simdExecFlatDeltaAVX512 runs the first n operations of a chunk with the no-overlap flag, from bit pos of raw.
+// Their operations must start at position 32 or later. st holds the output position,
+// the literal position, the repeat offset and an error flag. nraw is the readable size of raw.
+//
+//go:noescape
+func simdExecFlatDeltaAVX512(dst *byte, lits *byte, tok *byte, ll *byte, offc *byte, raw *byte, nraw int, esc *byte, n int, pos int, st *[4]int)
+
+// encodeFastBlockSIMDAsm parses src into st until it returns to Go, see parseAsm.
+//
+//go:noescape
+func encodeFastBlockSIMDAsm(st *simdStreams, src []byte, tab *[32768]byte) int
+
+// encodeBlockSIMDAsm parses src into st until it returns to Go, see parseAsm.
+//
+//go:noescape
+func encodeBlockSIMDAsm(st *simdStreams, src []byte, tab *[131072]byte) int
+
+// encodeBetterBlockSIMDAsm parses src into st until it returns to Go, see parseAsm.
+//
+//go:noescape
+func encodeBetterBlockSIMDAsm(st *simdStreams, src []byte, tab *[589824]byte, maxOff4 int, maxOff5 int) int
+
+// encodeFastBlockSIMDAsm64K parses src into st until it returns to Go, see parseAsm.
+//
+//go:noescape
+func encodeFastBlockSIMDAsm64K(st *simdStreams, src []byte, tab *[16384]byte) int
+
+// encodeBlockSIMDAsm64K parses src into st until it returns to Go, see parseAsm.
+//
+//go:noescape
+func encodeBlockSIMDAsm64K(st *simdStreams, src []byte, tab *[32768]byte) int
+
+// encodeBetterBlockSIMDAsm64K parses src into st until it returns to Go, see parseAsm.
+//
+//go:noescape
+func encodeBetterBlockSIMDAsm64K(st *simdStreams, src []byte, tab *[147456]byte, maxOff4 int, maxOff5 int) int

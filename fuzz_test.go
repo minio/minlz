@@ -16,6 +16,7 @@ package minlz
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -25,7 +26,9 @@ import (
 
 	"github.com/klauspost/compress/s2"
 	"github.com/minio/minlz/internal/fuzz"
+	"github.com/minio/minlz/internal/guard"
 	"github.com/minio/minlz/internal/reference"
+	"github.com/zeebo/xxh3"
 )
 
 func FuzzEncodingBlocks(f *testing.F) {
@@ -51,32 +54,29 @@ func FuzzEncodingBlocks(f *testing.F) {
 		maxSize = MaxBlockSize
 	)
 
+	srcG, compG, decG := fuzzGuard(f, maxSize), fuzzGuard(f, MaxEncodedLen(maxSize)), fuzzGuard(f, maxSize)
+	eg, ea := new(simdEncoder), new(simdEncoder)
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if len(data) > maxSize {
 			return
 		}
-		writeDst := make([]byte, MaxEncodedLen(len(data)), MaxEncodedLen(len(data))+4)
-		writeDst = append(writeDst, 1, 2, 3, 4)
-		defer func() {
-			got := writeDst[MaxEncodedLen(len(data)):]
-			want := []byte{1, 2, 3, 4}
-			if !bytes.Equal(got, want) {
-				t.Fatalf("want %v, got %v - dest modified outside cap", want, got)
+		// Encoders read ahead and extend matches backwards, so put the input against either guard page.
+		src := srcG.Slice(len(data), len(data)&1 == 0)
+		copy(src, data)
+		if hasAsm && len(data) >= minNonLiteralBlockSize {
+			for _, p := range simdAsmParsers {
+				if len(data) > p.max {
+					continue
+				}
+				if d := simdParseDiff(simdParseRun(eg, src, p, false), simdParseRun(ea, src, p, true)); d != "" {
+					t.Errorf("%s: %s", p.name, d)
+				}
 			}
-		}()
-		compDst := writeDst[:MaxEncodedLen(len(data)):MaxEncodedLen(len(data))] // Hard cap
-
-		decDst := make([]byte, len(data), len(data)+4)
-		decDst = append(decDst, 1, 2, 3, 4)
-		defer func(got []byte) {
-			want := []byte{1, 2, 3, 4}
-			if !bytes.Equal(got, want) {
-				t.Fatalf("want %v, got %v - decode dest modified outside cap", want, got)
-			}
-		}(decDst[len(decDst)-4:])
-		decDst = decDst[:len(data):len(data)]
-		const levelReference = LevelSmallest + 1
-		for l := LevelSuperFast; l <= levelReference; l++ {
+		}
+		compDst := compG.Slice(MaxEncodedLen(len(data)), true)
+		decDst := decG.Slice(len(data), true)
+		const levelReference = LevelSmallestSIMD + 1
+		for _, l := range append(append([]int{LevelSuperFast, LevelUncompressed, LevelFastest, LevelBalanced, LevelSmallest}, simdLevels...), levelReference) {
 			for i := range decDst {
 				decDst[i] = 0xfe
 			}
@@ -84,10 +84,10 @@ func FuzzEncodingBlocks(f *testing.F) {
 				compDst[i] = 0xff
 			}
 			var comp []byte
-			if l < levelReference {
-				comp, _ = Encode(nil, data, l)
+			if l != levelReference {
+				comp, _ = Encode(compDst, src, l)
 			} else {
-				comp, _ = reference.EncodeBlock(data)
+				comp, _ = reference.EncodeBlock(src)
 			}
 			decoded, err := decodeGo(decDst, comp)
 			if err != nil {
@@ -110,12 +110,13 @@ func FuzzEncodingBlocks(f *testing.F) {
 				t.Errorf("roundtrip Go mismatch at byte %d, output written to %q", n, name)
 				return
 			}
+			if _, _, simd, _, _, err := isMinLZ(comp); simd && err == nil {
+				if ref, err := reference.DecodeSIMDBlockStrict(comp); err != nil || !bytes.Equal(ref, data) {
+					t.Errorf("level %d: reference: %v", l, err)
+				}
+			}
 			if mel := MaxEncodedLen(len(data)); len(comp) > mel {
 				t.Error(fmt.Errorf("MaxEncodedLen Exceed: input: %d, mel: %d, got %d", len(data), mel, len(comp)))
-				return
-			}
-			if !bytes.Equal(writeDst[len(writeDst)-4:], []byte{1, 2, 3, 4}) {
-				t.Error("overwritten", writeDst[len(writeDst)-4:])
 				return
 			}
 		}
@@ -129,37 +130,29 @@ func FuzzDecodeBlock(f *testing.F) {
 			f.Add(encoded)
 		}
 	}
-	enc := NewWriter(nil, WriterBlockSize(8<<10))
+	// Streams are fuzzed by FuzzStreamDecode.
 	addCompressed := func(b []byte) {
-		if b2, err := Encode(nil, b, LevelBalanced); err == nil {
-			f.Add(b2)
+		for _, l := range []int{LevelBalanced, LevelBalancedSIMD, LevelSmallestSIMD} {
+			if b2, err := Encode(nil, b, l); err == nil {
+				f.Add(b2)
+			}
 		}
 		f.Add(s2.EncodeBetter(nil, b))
-		var buf bytes.Buffer
-		enc.Reset(&buf)
-		enc.Write(b)
-		enc.Close()
-		f.Add(buf.Bytes())
 	}
-	fuzz.ReturnFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, addCompressed)
-	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, addCompressed)
-	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, addCompressed)
+	fuzz.ReturnFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, false, addCompressed)
+	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, testing.Short(), addCompressed)
+	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, testing.Short(), addCompressed)
 	fuzz.AddFromZip(f, "testdata/dec-block-regressions.zip", fuzz.TypeRaw, false)
 	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-dec.zip", fuzz.TypeGoFuzz, false)
 
-	dec := NewReader(nil, ReaderIgnoreCRC())
+	// MinLZ blocks are never larger than their output, which is at most MaxBlockSize.
+	maxIn := MaxEncodedLen(MaxBlockSize)
+	srcG, dstG := fuzzGuard(f, maxIn), fuzzGuard(f, MaxBlockSize)
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if t.Failed() {
 			return
 		}
-		if bytes.HasPrefix(data, []byte(magicChunk)) {
-			dec.Reset(bytes.NewReader(data))
-			_, err := io.Copy(io.Discard, dec)
-			dec.Reset(bytes.NewReader(data))
-			_, cErr := dec.DecodeConcurrent(io.Discard, 2)
-			if (err == nil) != (cErr == nil) {
-				t.Error("error mismatch", err, cErr)
-			}
+		if len(data) > maxIn {
 			return
 		}
 		dCopy := append([]byte{}, data...)
@@ -173,23 +166,33 @@ func FuzzDecodeBlock(f *testing.F) {
 			t.Fatal("data was changed")
 		}
 		hasErr := baseErr != nil
-		dataCapped := make([]byte, 0, len(data)+1024)
-		dataCapped = append(dataCapped, data...)
-		dataCapped = append(dataCapped, bytes.Repeat([]byte{0xff, 0xff, 0xff, 0xff}, 1024/4)...)
-		dataCapped = dataCapped[:len(data):len(data)]
-		dst2 := bytes.Repeat([]byte{0xfe}, dlen+1024)
-		got, err := Decode(dst2[:dlen:dlen], dataCapped[:len(data)])
-		if !bytes.Equal(dataCapped[:len(data)], dCopy) {
+		// Reads past the input fault, and writes past the output when it is against the guard page
+		// after it. Otherwise it is against the page before it, where offsets reaching back too far fault.
+		src := srcG.Slice(len(data), true)
+		copy(src, data)
+		dst := dstG.Slice(dlen, len(data)&1 == 0)
+		for i := range dst {
+			dst[i] = 0xfe
+		}
+		got, err := Decode(dst, src)
+		if !bytes.Equal(src, dCopy) {
 			t.Fatal("data was changed")
 		}
 		if err != nil && !hasErr {
 			t.Fatalf("base err: %v, capped: %v", baseErr, err)
 		}
-		for i, v := range dst2[dlen:] {
-			if v != 0xfe {
-				t.Errorf("DST overwritten beyond cap! index %d: got 0x%02x, want 0x%02x, err:%v", i, v, 0xfe, err)
-				break
+		if _, _, simd, _, _, _ := isMinLZ(data); simd {
+			ref, refErr := reference.DecodeSIMDBlock(data)
+			if hasErr != (refErr != nil) {
+				t.Fatalf("base err: %v, reference: %v", baseErr, refErr)
 			}
+			if !hasErr && (!bytes.Equal(base, ref) || !bytes.Equal(base, got)) {
+				t.Fatal("SIMD block mismatch")
+			}
+			if n, err := DecodedLen(data); !hasErr && (err != nil || n != len(base)) {
+				t.Errorf("DecodedLen: %d, %v, want %d", n, err, len(base))
+			}
+			return
 		}
 		if hasErr {
 			if hasAsm {
@@ -247,27 +250,69 @@ func FuzzDecodeBlock(f *testing.F) {
 	})
 }
 
+// FuzzDecodeSIMD decodes SIMD blocks with a valid header and compares with the reference decoder.
+// body is the block from its flags byte. The decoded size is len(body) plus the 64 bytes
+// the format requires, plus extra.
+func FuzzDecodeSIMD(f *testing.F) {
+	add := func(b []byte) {
+		for _, l := range []int{LevelSuperFastSIMD, LevelBalancedSIMD, LevelSmallestSIMD, LevelFastestSIMD | LevelSIMDDelta} {
+			enc, _ := Encode(nil, b, l)
+			if _, _, simd, body, size, err := isMinLZ(enc); simd && err == nil {
+				f.Add(uint32(size-len(body)-4-simdMinSaving), body)
+			}
+		}
+	}
+	fuzz.ReturnFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, false, add)
+	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, testing.Short(), add)
+	// Larger blocks only cost memory: every check is per chunk or per literal block.
+	const maxN = 1 << 20
+	srcG, dstG := fuzzGuard(f, maxN+binary.MaxVarintLen64+1), fuzzGuard(f, maxN)
+	f.Fuzz(func(t *testing.T, extra uint32, body []byte) {
+		n := len(body) + 4 + simdMinSaving + int(extra)
+		if len(body) == 0 || n > maxN {
+			return
+		}
+		hdr := binary.AppendUvarint([]byte{0}, simdBlockType<<24|uint64(n))
+		src := srcG.Slice(len(hdr)+len(body), true)
+		copy(src[copy(src, hdr):], body)
+		want, wantErr := reference.DecodeSIMDBlock(src)
+		// Output must not depend on what dst held before. A nonzero fill catches reads of
+		// unwritten output unless it equals the wanted byte, so vary it between inputs.
+		fill := 0xfe ^ byte(extra)
+		// Against the guard page after dst, writes past it fault. Against the one before, offsets reaching back too far fault.
+		dst := dstG.Slice(n, len(body)&1 == 0)
+		simdTiers(t, func(t *testing.T) {
+			for i := range dst {
+				dst[i] = fill
+			}
+			got, err := Decode(dst[:0], src)
+			if (err == nil) != (wantErr == nil) {
+				t.Fatalf("err: %v, reference: %v", err, wantErr)
+			}
+			if err == nil && !bytes.Equal(got, want) {
+				t.Fatal("reference mismatch")
+			}
+		})
+	})
+}
+
 func FuzzStreamEncode(f *testing.F) {
 	fuzz.AddFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, false)
-	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, false)
-	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, false)
+	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, testing.Short())
+	fuzz.AddFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, testing.Short())
 	for delta := 1; delta <= 2; delta++ {
 		if b := buildMaxOffsetBoundary(0, delta); b != nil {
 			f.Add(b)
 		}
 	}
 
-	var encoders []*Writer
-	for l := LevelSuperFast; l <= LevelSmallest; l++ {
-		encoders = append(encoders, NewWriter(nil, WriterLevel(l), WriterConcurrency(1), WriterBlockSize(128<<10)))
-		if !testing.Short() && l == LevelFastest {
-			// Try some combinations...
-			encoders = append(encoders, NewWriter(nil, WriterLevel(l), WriterConcurrency(1), WriterBlockSize(8<<20)))
-			encoders = append(encoders, NewWriter(nil, WriterLevel(l), WriterConcurrency(1), WriterBlockSize(4<<10), WriterAddIndex(true)))
-			encoders = append(encoders, NewWriter(nil, WriterLevel(l), WriterConcurrency(2), WriterBlockSize(16<<10), WriterPadding(1<<10)))
-			encoders = append(encoders, NewWriter(nil, WriterLevel(l), WriterConcurrency(2), WriterBlockSize(128<<10), WriterPadding(1<<10), WriterAddIndex(true)))
-		}
-		break
+	// FuzzEncodingBlocks covers every level, so vary the stream options instead.
+	// The small block sizes give several chunks, including uncompressed ones, for typical fuzz inputs.
+	encoders := []*Writer{
+		NewWriter(nil, WriterLevel(LevelSuperFast), WriterConcurrency(1), WriterBlockSize(128<<10)),
+		NewWriter(nil, WriterLevel(LevelFastestSIMD), WriterConcurrency(1), WriterBlockSize(4<<10)),
+		NewWriter(nil, WriterLevel(LevelBalancedSIMD|LevelSIMDDelta), WriterConcurrency(2), WriterBlockSize(16<<10), WriterPadding(1<<10), WriterAddIndex(true)),
+		NewWriter(nil, WriterLevel(LevelSuperFastSIMD), WriterConcurrency(2), WriterBlockSize(64<<10), WriterAddIndex(true)),
 	}
 	dec := NewReader(nil, ReaderFallback(false))
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -277,7 +322,7 @@ func FuzzStreamEncode(f *testing.F) {
 			comp.Reset()
 			enc.Reset(&comp)
 			var err error
-			writeMethod := (len(data) + i) % 3
+			writeMethod := (len(data) + i) % 4
 			switch writeMethod {
 			// Pure Write
 			case 0:
@@ -288,6 +333,19 @@ func FuzzStreamEncode(f *testing.F) {
 				// ReadFrom
 			case 2:
 				_, err = enc.ReadFrom(bytes.NewReader(data))
+				// EncodeBuffer after buffered data, and a Flush: short blocks.
+			case 3:
+				k := len(data) / 3
+				_, err = enc.Write(data[:k])
+				if err == nil {
+					err = enc.EncodeBuffer(data[k : 2*k])
+				}
+				if err == nil {
+					err = enc.Flush()
+				}
+				if err == nil {
+					_, err = enc.Write(data[2*k:])
+				}
 			}
 			if err != nil {
 				t.Fatalf("encoder %d, write: %d, encode err %v", i, writeMethod, err)
@@ -328,6 +386,7 @@ func FuzzStreamEncode(f *testing.F) {
 func FuzzStreamDecode(f *testing.F) {
 	enc := NewWriter(nil, WriterBlockSize(8<<10))
 	encu := NewWriter(nil, WriterBlockSize(8<<10), WriterUncompressed(), WriterAddIndex(true))
+	encSIMD := NewWriter(nil, WriterBlockSize(8<<10), WriterLevel(LevelBalancedSIMD), WriterAddIndex(true))
 	addCompressed := func(b []byte) {
 		var buf bytes.Buffer
 		enc.Reset(&buf)
@@ -335,55 +394,96 @@ func FuzzStreamDecode(f *testing.F) {
 		enc.Close()
 		f.Add(buf.Bytes())
 		buf = bytes.Buffer{}
+		encSIMD.Reset(&buf)
+		encSIMD.EncodeBuffer(b)
+		encSIMD.Close()
+		f.Add(buf.Bytes())
+		buf = bytes.Buffer{}
 		encu.Reset(&buf)
-		enc.EncodeBuffer(b)
-		enc.Close()
+		encu.EncodeBuffer(b)
+		encu.Close()
 		f.Add(buf.Bytes())
 	}
 	type readerOnly struct {
 		io.Reader
 	}
-	fuzz.ReturnFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, addCompressed)
-	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, addCompressed)
-	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, addCompressed)
+	fuzz.ReturnFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, false, addCompressed)
+	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, testing.Short(), addCompressed)
+	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-enc.zip", fuzz.TypeGoFuzz, testing.Short(), addCompressed)
 	dec := NewReader(nil, ReaderIgnoreCRC(), ReaderMaxBlockSize(1<<20))
 	f.Fuzz(func(t *testing.T, data []byte) {
+		// Skip offset, sometimes past the end.
+		skip := int64(len(data) / 2)
 		// Using Read
+		read := splitHash{at: skip, all: xxh3.New(), tail: xxh3.New()}
 		dec.Reset(bytes.NewReader(data))
-		rN, rErr := io.Copy(io.Discard, readerOnly{dec})
+		rN, rErr := io.Copy(&read, readerOnly{dec})
 		// Using DecodeConcurrent
+		conc := xxh3.New()
 		dec.Reset(bytes.NewReader(data))
-		cN, cErr := dec.DecodeConcurrent(io.Discard, 2)
+		cN, cErr := dec.DecodeConcurrent(conc, 2)
 		if (rErr == nil) != (cErr == nil) {
 			t.Error("error mismatch", rErr, cErr)
 		}
-		if rErr == nil && rN != cN {
-			t.Error("length mismatch", rN, cN)
+		if rErr == nil && (rN != cN || read.all.Sum64() != conc.Sum64()) {
+			t.Error("output mismatch", rN, cN)
 		}
 
-		if testing.Short() {
+		// Skip doesn't decode skipped blocks, so it only must match Read on valid streams.
+		if testing.Short() || rErr != nil {
 			return
 		}
 		dec.Reset(bytes.NewReader(data))
-		// Use ByteReader.
-		dec.Reset(bytes.NewReader(data))
-		var bN int64
-		var bErr error
-		for {
-			_, err := dec.ReadByte()
-			if err != nil {
-				if err != io.EOF {
-					bErr = err
-				}
-				break
+		err := dec.Skip(skip)
+		if skip > rN {
+			if err == nil {
+				t.Error("skip past end", skip, rN)
 			}
-			bN++
+			return
 		}
-		if (rErr == nil) != (bErr == nil) {
-			t.Error("error mismatch", rErr, "!=", bErr)
+		if err != nil {
+			t.Fatal("skip", skip, rN, err)
 		}
-		if rErr == nil && rN != bN {
-			t.Error("length mismatch", rN, bN)
+		b, err := dec.ReadByte()
+		if skip == rN {
+			if err != io.EOF {
+				t.Error("ReadByte at end", err)
+			}
+			return
+		}
+		if err != nil {
+			t.Fatal("ReadByte", err)
+		}
+		tail := xxh3.New()
+		tail.Write([]byte{b})
+		n, err := io.Copy(tail, readerOnly{dec})
+		if err != nil || skip+1+n != rN || tail.Sum64() != read.tail.Sum64() {
+			t.Error("skip mismatch", skip, n, rN, err)
 		}
 	})
+}
+
+// splitHash hashes everything written to all and everything after the first at bytes to tail.
+type splitHash struct {
+	at        int64
+	all, tail *xxh3.Hasher
+}
+
+func (s *splitHash) Write(p []byte) (int, error) {
+	s.all.Write(p)
+	if s.at < int64(len(p)) {
+		s.tail.Write(p[max(s.at, 0):])
+	}
+	s.at -= int64(len(p))
+	return len(p), nil
+}
+
+// fuzzGuard returns a guard.Buffer with room for size bytes, mapped once for all inputs of f.
+func fuzzGuard(f *testing.F, size int) *guard.Buffer {
+	g, err := guard.New(size)
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Cleanup(g.Free)
+	return g
 }

@@ -43,6 +43,38 @@ const (
 	// There is no speed target for this level.
 	LevelSmallest = 3
 
+	// The SIMD levels write SIMD blocks (SPEC_SIMD.md), which need a decoder for MinLZ format specification v1.1 or later.
+	// They can be used for blocks and for streams with WriterLevel.
+
+	// LevelSuperFastSIMD is the fastest compression level.
+	// This will take significant shortcuts and usually provide much worse compression.
+	// Use only if LevelFastestSIMD is confirmed to be too slow.
+	LevelSuperFastSIMD = 4
+
+	// LevelFastestSIMD is the fastest compression level.
+	// SIMD will provide better compression AND decompress faster
+	// on platforms where SIMD is available.
+	LevelFastestSIMD = 5
+
+	// LevelBalancedSIMD is the balanced compression level.
+	// This is targeted to be approximately half the speed of LevelFastestSIMD.
+	// SIMD will provide better compression AND decompress faster
+	// on platforms where SIMD is available.
+	LevelBalancedSIMD = 6
+
+	// LevelSmallestSIMD will attempt the best possible compression.
+	// There is no speed target for this level.
+	// SIMD will provide better compression AND decompress faster
+	// on platforms where SIMD is available.
+	LevelSmallestSIMD = 7
+
+	// LevelSIMDDelta will encode delta literals in SIMD mode.
+	// This is mainly useful for binary encoded data and has a small decode penalty.
+	// Use as a flag, ie LevelSIMDDelta | LevelBalancedSIMD.
+	// LevelSmallestSIMD will always try both modes.
+	// Valid with LevelSuperFastSIMD, LevelFastestSIMD and LevelBalancedSIMD.
+	LevelSIMDDelta = 256
+
 	// Internal use only
 	copyLitBits = 2
 
@@ -101,7 +133,11 @@ func Encode(dst, src []byte, level int) ([]byte, error) {
 	case LevelBalanced:
 		n = encodeBlockBetter(dst[d:], src)
 	case LevelSmallest:
-		n = encodeBlockBest(dst[d:], src, nil)
+		n = encodeBlockBest(dst[d:], src)
+	case LevelSuperFastSIMD, LevelFastestSIMD, LevelBalancedSIMD, LevelSmallestSIMD,
+		LevelSuperFastSIMD | LevelSIMDDelta, LevelFastestSIMD | LevelSIMDDelta, LevelBalancedSIMD | LevelSIMDDelta:
+		d = 1
+		n = encodeBlockSIMD(dst[d:], src, level)
 	default:
 		return nil, ErrInvalidLevel
 	}
@@ -118,7 +154,14 @@ func Encode(dst, src []byte, level int) ([]byte, error) {
 
 			block := dst[d : d+n]
 			dst := make([]byte, len(src))
-			ret := minLZDecode(dst, block)
+			ret := 0
+			if level >= LevelSuperFastSIMD {
+				if _, b, err := simdHeader(block); err != nil || decodeSIMD(dst, b) != nil {
+					ret = 1
+				}
+			} else {
+				ret = minLZDecode(dst, block)
+			}
 			if !bytes.Equal(dst, src) {
 				n := matchLen(dst, src)
 				x := crc32.ChecksumIEEE(src)
@@ -193,7 +236,11 @@ func TryEncode(dst, src []byte, level int) []byte {
 	case LevelBalanced:
 		n = encodeBlockBetter(dst[d:], src)
 	case LevelSmallest:
-		n = encodeBlockBest(dst[d:], src, nil)
+		n = encodeBlockBest(dst[d:], src)
+	case LevelSuperFastSIMD, LevelFastestSIMD, LevelBalancedSIMD, LevelSmallestSIMD,
+		LevelSuperFastSIMD | LevelSIMDDelta, LevelFastestSIMD | LevelSIMDDelta, LevelBalancedSIMD | LevelSIMDDelta:
+		d = 1
+		n = encodeBlockSIMD(dst[d:], src, level)
 	default:
 		return nil
 	}
@@ -228,6 +275,31 @@ var (
 	encPools       [7]sync.Pool
 	encBetterPools [6]sync.Pool
 )
+
+// The hash tables of the Go encoders, by entry size and bits. Pooled tables don't grow goroutine stacks,
+// and the GC can reclaim them.
+var (
+	u32Tables13 tablePool[[1 << 13]uint32]
+	u32Tables14 tablePool[[1 << 14]uint32]
+	u32Tables15 tablePool[[1 << 15]uint32]
+	u16Tables12 tablePool[[1 << 12]uint16]
+	u16Tables13 tablePool[[1 << 13]uint16]
+	u16Tables14 tablePool[[1 << 14]uint16]
+)
+
+// tablePool holds hash tables of type T, which must be at most 128 KB:
+// get's zero value would be allocated on the heap otherwise.
+type tablePool[T any] struct{ sync.Pool }
+
+// get returns a zeroed table.
+func (p *tablePool[T]) get() *T {
+	if t, ok := p.Get().(*T); ok {
+		var zero T
+		*t = zero
+		return t
+	}
+	return new(T)
+}
 
 // encodeUncompressed will append src to dst as uncompressed data and return it.
 func encodeUncompressed(dst, src []byte) []byte {

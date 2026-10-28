@@ -48,7 +48,7 @@ var (
 //
 // The dst and src must not overlap. It is valid to pass a nil dst.
 func Decode(dst, src []byte) ([]byte, error) {
-	isMLZ, lits, block, dLen, err := isMinLZ(src)
+	isMLZ, lits, simd, block, dLen, err := isMinLZ(src)
 	if err != nil {
 		return nil, err
 	}
@@ -70,6 +70,9 @@ func Decode(dst, src []byte) ([]byte, error) {
 		dst = dst[:dLen]
 	} else {
 		dst = make([]byte, dLen)
+	}
+	if simd {
+		return dst, decodeSIMD(dst, block)
 	}
 	if minLZDecode(dst, block) != 0 {
 		return dst, ErrCorrupt
@@ -105,19 +108,20 @@ func AppendDecoded(dst, src []byte) ([]byte, error) {
 // DecodedLen returns the length of the decoded block.
 // This length will never be exceeded when decoding a block.
 func DecodedLen(src []byte) (int, error) {
-	_, _, _, v, err := isMinLZ(src)
+	_, _, _, _, v, err := isMinLZ(src)
 	return v, err
 }
 
 // IsMinLZ returns whether the block is a minlz block
 // and returns the size of the decompressed block.
 func IsMinLZ(src []byte) (ok bool, size int, err error) {
-	ok, _, _, size, err = isMinLZ(src)
+	ok, _, _, _, size, err = isMinLZ(src)
 	return
 }
 
 // IsMinLZ returns true if the block is a minlz block.
-func isMinLZ(src []byte) (ok, literals bool, block []byte, size int, err error) {
+// SIMD blocks are returned from their flags byte.
+func isMinLZ(src []byte) (ok, literals, simd bool, block []byte, size int, err error) {
 	if len(src) <= 1 {
 		if len(src) == 0 {
 			err = ErrCorrupt
@@ -125,34 +129,38 @@ func isMinLZ(src []byte) (ok, literals bool, block []byte, size int, err error) 
 		}
 		if src[0] == 0 {
 			// Size 0 block. Could be MinLZ.
-			return true, true, src[1:], 0, nil
+			return true, true, false, src[1:], 0, nil
 		}
 	}
 	if src[0] != 0 {
 		// Older - Snappy or S2...
 		v, _, err := decodedLen(src)
-		return false, false, src, v, err
+		return false, false, false, src, v, err
 	}
 	src = src[1:]
+	if v, n := binary.Uvarint(src); n > 0 && v >= 1<<24 {
+		size, block, err = simdHeader(src)
+		return err == nil, false, err == nil, block, size, err
+	}
 	v, headerLen, err := decodedLen(src)
 	if err != nil {
-		return false, false, nil, 0, err
+		return false, false, false, nil, 0, err
 	}
 	if v > MaxBlockSize {
-		return false, false, nil, 0, ErrTooLarge
+		return false, false, false, nil, 0, ErrTooLarge
 	}
 	src = src[headerLen:]
 	if len(src) == 0 {
-		return false, false, nil, 0, ErrCorrupt
+		return false, false, false, nil, 0, ErrCorrupt
 	}
 	if v == 0 {
 		// Literals, rest of block...
-		return true, true, src, len(src), nil
+		return true, true, false, src, len(src), nil
 	}
 	if v < len(src) {
-		return false, false, src, v, ErrCorrupt
+		return false, false, false, src, v, ErrCorrupt
 	}
-	return true, false, src, v, nil
+	return true, false, false, src, v, nil
 }
 
 // decodedLen returns the length of the decoded block and the number of bytes
