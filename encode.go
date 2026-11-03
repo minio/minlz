@@ -52,20 +52,23 @@ const (
 	LevelSuperFastSIMD = 4
 
 	// LevelFastestSIMD is the fastest compression level.
-	// SIMD will provide better compression AND decompress faster
-	// on platforms where SIMD is available.
+	// SIMD blocks typically compress better, and decompress faster
+	// on platforms where SIMD is available when blocks are 64KB or more.
+	// See the README for details.
 	LevelFastestSIMD = 5
 
 	// LevelBalancedSIMD is the balanced compression level.
 	// This is targeted to be approximately half the speed of LevelFastestSIMD.
-	// SIMD will provide better compression AND decompress faster
-	// on platforms where SIMD is available.
+	// SIMD blocks typically compress better, and decompress faster
+	// on platforms where SIMD is available when blocks are 64KB or more.
+	// See the README for details.
 	LevelBalancedSIMD = 6
 
 	// LevelSmallestSIMD will attempt the best possible compression.
 	// There is no speed target for this level.
-	// SIMD will provide better compression AND decompress faster
-	// on platforms where SIMD is available.
+	// SIMD blocks typically compress better, and decompress faster
+	// on platforms where SIMD is available when blocks are 64KB or more.
+	// See the README for details.
 	LevelSmallestSIMD = 7
 
 	// LevelSIMDDelta will encode delta literals in SIMD mode.

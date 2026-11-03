@@ -305,7 +305,8 @@ However, if software produces them they should use the `.mzb` extension.
 ### 3. Checksum format
 
 Some chunks have data protected by a checksum (the ones that do will say so
-explicitly). The checksums are always masked CRC-32Cs.
+explicitly). The checksums are masked CRC-32Cs, as described below,
+except for SIMD blocks (chunk type 0x10), which use an unmasked 8-byte XXH3 (see 4.5B).
 
 A description of CRC-32C can be found in [RFC 3720](https://datatracker.ietf.org/doc/html/rfc3720),
 section 12.1, with examples in section B.4.
@@ -324,7 +325,7 @@ uint32_t mask_checksum(uint32_t x) {
 
 Note that the masking is reversible.
 
-The checksum is always stored as a four-byte long integer, in little-endian.
+A CRC-32C checksum is always stored as a four-byte long integer, in little-endian.
 
 ### 4. Chunk types
 
@@ -426,7 +427,7 @@ A [SIMD block](SPEC_SIMD.md) *without* the MinLZ indicator (initial 0 byte).
 The block type (see 1.1) must be 1.
 
 An [xxhash3](https://github.com/Cyan4973/xxHash#xxhash---extremely-fast-hash-algorithm)
-(XXH3 64-bit, seed 0) of the *uncompressed* data is stored as little endian value at the start of the block.
+(XXH3 64-bit, seed 0) of the *uncompressed* data is stored unmasked, as an 8-byte little endian value, at the start of the block.
 
 The stream identifier *must* indicate that SIMD blocks are present (bit 6 set).
 Otherwise, the decoder should reject the stream.

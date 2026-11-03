@@ -107,17 +107,17 @@ Each stream type has its own current table, and so do the literals. Mode 1 needs
 A block starts without current tables; they never carry over from another block.
 Mode 4 is only used for literals, in any literal block.
 
-With modes 1-4, the stored data holds a pivco block (PIVCO_SPEC.md 3) that codes exactly the stream's values.
+With modes 1-4, the stored data holds a pivco block ([SPEC_PIVCO.md 3](SPEC_PIVCO.md#3-block-layout)) that codes exactly the stream's values.
 A pivco block does not store how many values it holds.
 Tokens and literal blocks store their number of values as 2 bytes little endian, followed by the pivco block.
 The other streams store only the pivco block: their number of values follows from the chunk's tokens and literal lengths (4.1).
 Either way, the data fills the stored size of the entry.
-A pivco block holds 1 to 65535 values (PIVCO_SPEC.md 1.1), so a stream without values, or with more than 65535, uses mode 0.
+A pivco block holds 1 to 65535 values ([SPEC_PIVCO.md 1.1](SPEC_PIVCO.md#11-values)), so a stream without values, or with more than 65535, uses mode 0.
 
 ### 2.3 Huffman Tables
 
 A Huffman table gives each value a code length of 0 to 11 bits; 0 means the value has no code.
-Pivco blocks are coded with these code lengths (PIVCO_SPEC.md 1.2).
+Pivco blocks are coded with these code lengths ([SPEC_PIVCO.md 1.2](SPEC_PIVCO.md#12-huffman-table)).
 They must form a complete code, or give a single value length 1,
 and must not have codes for values outside the stream's range.
 
@@ -659,7 +659,7 @@ Nor are offsets below the match length in chunks with the no-overlap flag; they 
 * Class lengths whose padding nibble (2.3) is not 0.
 * Token class lengths whose group lengths or flag codes are not complete codes (A.4).
 * A number of values of tokens or of a literal block (2.2) that runs past the stored size.
-* A pivco block that does not decode to exactly the expected number of values using exactly the rest of the stored size (PIVCO_SPEC.md 6),
+* A pivco block that does not decode to exactly the expected number of values using exactly the rest of the stored size ([SPEC_PIVCO.md 6](SPEC_PIVCO.md#6-validation)),
   including one for a stream without values or with more than 65535.
 * Uncompressed values outside the stream's range.
 
