@@ -601,6 +601,61 @@ func TestIndexStreamSmall(t *testing.T) {
 	}
 }
 
+// TestWriterConcurrencyIndex checks that the index, like the rest of the stream,
+// doesn't depend on the concurrency: entries point at the blocks, not at the stream
+// header, user chunks or search tables before them.
+func TestWriterConcurrencyIndex(t *testing.T) {
+	const bs = 256 << 10
+	data := makeTestData(5 << 20)
+	search := WriterSearchTable(NewSearchTableConfig().WithMatchLen(6).WithBytePrefix(' '))
+	for _, api := range []string{"write", "buffer", "readfrom", "user", "search"} {
+		t.Run(api, func(t *testing.T) {
+			var want []byte
+			for _, conc := range []int{1, 4} {
+				var buf bytes.Buffer
+				opts := []WriterOption{WriterConcurrency(conc), WriterBlockSize(bs), WriterAddIndex(true)}
+				if api == "search" {
+					opts = append(opts, search)
+				}
+				w := NewWriter(&buf, opts...)
+				var err error
+				switch api {
+				case "write", "search":
+					_, err = w.Write(data)
+				case "buffer":
+					err = w.EncodeBuffer(bytes.Clone(data))
+				case "readfrom":
+					_, err = w.ReadFrom(bytes.NewReader(data))
+				case "user":
+					for i, part := range [][]byte{data[:4*bs], data[4*bs:]} {
+						if err = w.AddUserChunk(MinUserSkippableChunk+byte(i), []byte("user")); err == nil {
+							_, err = w.Write(part)
+						}
+					}
+				}
+				if err == nil {
+					err = w.Close()
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				var idx Index
+				if err := idx.LoadStream(bytes.NewReader(buf.Bytes())); err != nil {
+					t.Fatal(err)
+				}
+				if len(idx.Offsets) < 3 || idx.Offsets[0].CompressedOffset == 0 {
+					t.Fatalf("concurrency %d: index %+v", conc, idx.Offsets)
+				}
+				if want == nil {
+					want = buf.Bytes()
+				} else if !bytes.Equal(buf.Bytes(), want) {
+					t.Fatalf("concurrency %d: %d bytes differ from concurrency 1 (%d bytes)", conc, buf.Len(), len(want))
+				}
+			}
+		})
+	}
+}
+
 // simdTestData returns n bytes of text, with a random part that doesn't compress
 // and a table of numbers for delta literals.
 func simdTestData(n int) []byte {

@@ -147,6 +147,8 @@ type result struct {
 	pooled []byte
 	// Uncompressed start offset
 	startOffset int64
+	// indexAt is the offset of the data chunk in b, after its search table.
+	indexAt int
 
 	// Sidecar fields (only populated when Writer.sidecar != nil).
 	// sidecarPre holds the 0x45/0x46 search-table chunk to write to the
@@ -238,7 +240,7 @@ func (w *Writer) Reset(writer io.Writer) {
 						err = io.ErrShortBuffer
 					}
 					_ = w.err(err)
-					w.err(w.index.add(w.written, input.startOffset))
+					w.err(w.index.add(w.written+int64(input.indexAt), input.startOffset))
 					w.written += int64(n)
 				}
 			}
@@ -536,6 +538,7 @@ func (w *Writer) EncodeBuffer(buf []byte) (err error) {
 				start := smc - searchLen
 				copy(obuf[start:], obuf[:searchLen])
 				res.b = obuf[start : smc+len(dbuf)]
+				res.indexAt = searchLen
 			} else {
 				res.b = dbuf
 			}
@@ -746,6 +749,7 @@ func (w *Writer) write(p []byte, final, omitTrailing bool) (nRet int, errRet err
 				start := smc - searchLen
 				copy(obuf[start:], obuf[:searchLen])
 				res.b = obuf[start : smc+len(dbuf)]
+				res.indexAt = searchLen
 			} else {
 				res.b = dbuf
 			}
@@ -845,6 +849,7 @@ func (w *Writer) writeFull(inbuf []byte) (errRet error) {
 			start := smc - searchLen
 			copy(obuf[start:], obuf[:searchLen])
 			res.b = obuf[start : smc+len(dbuf)]
+			res.indexAt = searchLen
 		} else {
 			res.b = dbuf
 		}

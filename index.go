@@ -84,6 +84,12 @@ func (i *Index) add(compressedOffset, uncompressedOffset int64) error {
 	lastIdx := len(i.Offsets) - 1
 	if lastIdx >= 0 {
 		latest := i.Offsets[lastIdx]
+		if uncompressedOffset == latest.UncompressedOffset {
+			// The stream header, user chunks and search tables come before the block
+			// at the same offset; point at the block, wherever the writer adds them.
+			i.Offsets[lastIdx].CompressedOffset = compressedOffset
+			return nil
+		}
 		if uncompressedOffset-latest.UncompressedOffset < i.estBlockUncomp {
 			// Don't add until we have i.estBlockUncomp
 			return nil
