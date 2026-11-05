@@ -270,6 +270,24 @@ func TestSeeking(t *testing.T) {
 	})
 }
 
+// TestIndexFindNoZeroEntry checks that offsets before the first entry of an index that
+// doesn't start at 0 map to the implied (0, 0) entry, on both the linear and the binary search path.
+func TestIndexFindNoZeroEntry(t *testing.T) {
+	for _, n := range []int64{200, 201} {
+		idx := minlz.Index{TotalUncompressed: (n + 1) << 20, TotalCompressed: (n + 1) * 1000}
+		for i := int64(1); i <= n; i++ {
+			idx.Offsets = append(idx.Offsets, minlz.OffsetPair{CompressedOffset: i * 1000, UncompressedOffset: i << 20})
+		}
+		for _, off := range []int64{0, 100, 1<<20 - 1, 1 << 20, 5<<20 + 7, n << 20} {
+			blk := off >> 20
+			c, u, err := idx.Find(off)
+			if err != nil || c != blk*1000 || u != blk<<20 {
+				t.Errorf("%d entries: Find(%d) = (%d, %d, %v), want (%d, %d, nil)", n, off, c, u, err, blk*1000, blk<<20)
+			}
+		}
+	}
+}
+
 func TestSeekingStreamIndex(t *testing.T) {
 	compressed := bytes.Buffer{}
 
