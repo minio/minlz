@@ -135,5 +135,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
 
+      # FuzzEncodingBlocks skips itself without these files, which still reports PASS.
+      - name: Cache benchmark data
+        if: matrix.tests == 'FuzzEncodingBlocks'
+        uses: actions/cache@v6.1.0
+        with:
+          path: testdata/bench
+          key: benchdata-v1
+
       - name: mz/${{ matrix.tests }}/${{ matrix.tags }}
-        run: go test -tags=${{ matrix.tags }} -run=none -fuzz=${{ matrix.tests }} -fuzztime=3m -test.fuzzminimizetime=100ms
+        run: go test -tags=${{ matrix.tags }} -run=none -fuzz=${{ matrix.tests }} -fuzztime=3m -test.fuzzminimizetime=100ms -download
