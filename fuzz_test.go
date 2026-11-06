@@ -264,6 +264,18 @@ func FuzzDecodeSIMD(f *testing.F) {
 	}
 	fuzz.ReturnFromZip(f, "testdata/enc_regressions.zip", fuzz.TypeRaw, false, add)
 	fuzz.ReturnFromZip(f, "testdata/fuzz/block-corpus-raw.zip", fuzz.TypeRaw, testing.Short(), add)
+	// A chunk of the most operations, which the encoders don't write.
+	ops := make([]simdTestOp, simdMaxChunk)
+	for i := range ops {
+		ops[i] = simdTestOp{ll: 1, ml: 4}
+	}
+	ops[0].off = 4
+	e, _ := newSIMDTestBuilder(f).build(simdTestBlock{ops: ops, lits: bytes.Repeat([]byte("abc"), len(ops)/3+1), limit: 6})
+	if _, _, simd, body, size, err := isMinLZ(e.bytes()); simd && err == nil {
+		f.Add(uint32(size-len(body)-4-simdMinSaving), body)
+	} else {
+		f.Fatal("chunk limit 6 seed:", err)
+	}
 	// Larger blocks only cost memory: every check is per chunk or per literal block.
 	const maxN = 1 << 20
 	srcG, dstG := fuzzGuard(f, maxN+binary.MaxVarintLen64+1), fuzzGuard(f, maxN)

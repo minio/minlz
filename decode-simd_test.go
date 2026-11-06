@@ -1376,16 +1376,36 @@ func testSIMDValidation(t *testing.T) {
 	})
 	t.Run("65535 operations", func(t *testing.T) {
 		// Value 6 is 65535 operations, not 1024<<6: a stored token stream could hold 65536.
+		// Escapes are stored: two per operation don't fit a pivco block.
+		coded := []int{simdCodeLens, simdCodeLens, simdCodeLens, simdStored}
+		check := func(t *testing.T, e *simdTestEnc, want []byte, coded bool) {
+			t.Helper()
+			if len(e.chunks[0].ops) != simdMaxChunk {
+				t.Fatalf("first chunk has %d operations", len(e.chunks[0].ops))
+			}
+			for k := range simdEsc {
+				if coded && e.chunks[0].s[k].mode == simdStored {
+					t.Fatalf("stream %d is stored", k)
+				}
+			}
+			block := e.bytes()
+			simdTestDecode(t, block, want)
+			if ref, err := reference.DecodeSIMDBlock(block); err != nil || !bytes.Equal(ref, want) {
+				t.Fatal("reference:", err)
+			}
+		}
 		for _, tc := range []struct {
 			name   string
 			n      int
 			ll, ml int
+			modes  []int
 			ok     bool
 		}{
-			{"at limit", simdMaxChunk, 1, 4, true},
-			{"above limit", simdMaxChunk + 1, 1, 4, false},
-			// Two escapes per operation, stored as they don't fit a pivco block.
-			{"most escapes", simdMaxChunk, simdMaxLen + 1, simdMaxLen + 1, true},
+			{"at limit", simdMaxChunk, 1, 4, nil, true},
+			{"above limit", simdMaxChunk + 1, 1, 4, nil, false},
+			{"at limit coded", simdMaxChunk, 1, 4, coded, true},
+			// Two escapes of 30 per operation: 8257410 bytes of matches and literals.
+			{"most escapes", simdMaxChunk, simdMaxLen + 31, simdMaxLen + 31, coded, true},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				ops := make([]simdTestOp, tc.n)
@@ -1393,21 +1413,62 @@ func testSIMDValidation(t *testing.T) {
 					ops[i] = simdTestOp{ll: tc.ll, ml: tc.ml}
 				}
 				ops[0].off = max(tc.ml, 3)
-				e, want := b.build(simdTestBlock{ops: ops, lits: bytes.Repeat([]byte("abc"), tc.n*tc.ll/3+1), limit: 6, chunk: tc.n})
-				block := e.bytes()
-				ref, rerr := reference.DecodeSIMDBlock(block)
+				e, want := b.build(simdTestBlock{ops: ops, lits: bytes.Repeat([]byte("abc"), tc.n*tc.ll/3+1), limit: 6, chunk: tc.n,
+					modes: tc.modes, litModes: tc.modes})
 				if tc.ok {
-					simdTestDecode(t, block, want)
-					if rerr != nil || !bytes.Equal(ref, want) {
-						t.Fatal("reference:", rerr)
+					check(t, e, want, tc.modes != nil)
+					if tc.ml <= simdMaxLen {
+						return
+					}
+					// Escapes of 255 add up to far more than the decoded size.
+					esc := e.chunks[0].s[simdEsc].data
+					if len(esc) != 2*simdMaxChunk {
+						t.Fatalf("%d escapes", len(esc))
+					}
+					for i := range esc {
+						esc[i] = 255
+					}
+					dst := bytes.Repeat([]byte{0xfe}, len(want)+64)
+					_, err := Decode(dst[:0:len(want)], e.bytes())
+					if _, rerr := reference.DecodeSIMDBlock(e.bytes()); !errors.Is(err, ErrCorrupt) || rerr == nil {
+						t.Fatalf("escapes of 255: %v, reference %v", err, rerr)
+					}
+					if !bytes.Equal(dst[len(want):], bytes.Repeat([]byte{0xfe}, 64)) {
+						t.Fatal("wrote past dst")
 					}
 					return
 				}
-				if _, err := Decode(nil, block); !errors.Is(err, ErrCorrupt) || rerr == nil {
+				_, rerr := reference.DecodeSIMDBlock(e.bytes())
+				if _, err := Decode(nil, e.bytes()); !errors.Is(err, ErrCorrupt) || rerr == nil {
 					t.Fatalf("%v, reference %v", err, rerr)
 				}
 			})
 		}
+		// Coded streams with offset bits and escapes, in every loop.
+		for i, modes := range [][]int{{simdCodeLens}, {simdClassLens}, {simdCodeLens, simdCurrent}, {simdClassLens, simdCurrent}} {
+			t.Run(fmt.Sprint("random ", i), func(t *testing.T) {
+				ops, lits := simdTestOps(rand.New(rand.NewSource(int64(i))), simdMaxChunk, "aaabbcdef\x00\xff", 40, 1<<22)
+				tb := simdTestBlock{ops: ops, lits: lits, limit: 6, chunk: simdMaxChunk, delta: uint64(i & 1), flat: uint64(i >> 1),
+					modes: modes, litModes: modes}
+				e, want := simdTestPad(b, &tb)
+				check(t, e, want, true)
+			})
+		}
+		t.Run("stats", func(t *testing.T) {
+			out, nLit, nOff, nEsc, ok := simdTokStats(bytes.Repeat([]byte{135}, simdMaxChunk))
+			if !ok || out != 33*simdMaxChunk || nLit != simdMaxChunk || nOff != 0 || nEsc != simdMaxChunk {
+				t.Error("tokens:", out, nLit, nOff, nEsc, ok)
+			}
+			if sum, n, ok := simdLLStats(bytes.Repeat([]byte{33}, simdMaxChunk)); !ok || sum != 33*simdMaxChunk || n != simdMaxChunk {
+				t.Error("literal lengths:", sum, n, ok)
+			}
+			if sum, _, _ := simdLLStats(bytes.Repeat([]byte{255}, 2*simdMaxChunk)); sum != 255*2*simdMaxChunk {
+				t.Error("escapes:", sum)
+			}
+			if n, ok := simdOffStats(bytes.Repeat([]byte{175}, simdMaxChunk)); !ok || n != 20*simdMaxChunk {
+				t.Error("offset symbols:", n, ok)
+			}
+		})
 	})
 	t.Run("max size", func(t *testing.T) {
 		ops := []simdTestOp{{ll: 40, ml: 288, off: 32}}

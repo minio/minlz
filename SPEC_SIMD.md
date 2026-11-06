@@ -34,18 +34,25 @@ A flags byte follows the varint:
 
 | Bits | Meaning                                                             |
 |------|---------------------------------------------------------------------|
-| 0-2  | Chunk limit (4.2): chunks have at most `1024 << value` operations   |
+| 0-2  | Chunk limit (4.2): the most operations a chunk has                  |
 | 3-4  | Reserved hints, must be ignored                                     |
 | 5-7  | Reserved, must be 0                                                 |
 
-Chunk limit value 7 is invalid. Value 6 is a limit of 65535 operations, the most a pivco block holds (2.2). Encoders set the reserved hints to 0.
+| Chunk limit value | Operations                                          |
+|-------------------|-----------------------------------------------------|
+| 0-5               | `1024 << value`: 1024 to 32768                      |
+| 6                 | 65535, the most a pivco block holds (2.2)           |
+| 7                 | Invalid                                             |
+
+Decoders *must* accept every valid chunk limit: chunks of up to 65535 operations.
+Encoders set the reserved hints to 0.
 
 ## 1.1 Size Limits
 
 The decoded size is at most 8 MiB = 8,388,608 bytes.
 
 A block has at most 128 chunks (4).
-With 16384 operations per chunk, that is an average of 4 bytes per operation in an 8 MiB block.
+Encoders that write chunks of 16384 operations (chunk limit 4) need an average of 4 bytes per operation to fit an 8 MiB block.
 
 The encoded block, everything after the indicator byte, must be at least 64 bytes smaller than the decoded size.
 
@@ -113,6 +120,7 @@ Tokens and literal blocks store their number of values as 2 bytes little endian,
 The other streams store only the pivco block: their number of values follows from the chunk's tokens and literal lengths (4.1).
 Either way, the data fills the stored size of the entry.
 A pivco block holds 1 to 65535 values ([SPEC_PIVCO.md 1.1](SPEC_PIVCO.md#11-values)), so a stream without values, or with more than 65535, uses mode 0.
+Only escapes can have more: up to 131070 in a chunk of 65535 operations (4.1).
 
 ### 2.3 Huffman Tables
 
@@ -690,12 +698,12 @@ A decoder can avoid checks per operation by checking each chunk before running i
 
 Every operation then stays inside these buffers, whatever the block holds:
 
-| Buffer                                  | Size                                                     |
-|-----------------------------------------|----------------------------------------------------------|
-| Tokens, literal lengths, offset symbols | The chunk limit                                          |
-| Escapes                                 | Twice the chunk limit: an operation can have two         |
-| Literals                                | The decoded size, which the literals may not fill        |
-| Output                                  | The decoded size                                         |
+| Buffer                                  | Size                                                             |
+|-----------------------------------------|------------------------------------------------------------------|
+| Tokens, literal lengths, offset symbols | The chunk limit, at most 65535                                   |
+| Escapes                                 | Twice the chunk limit, at most 131070: an operation can have two |
+| Literals                                | The decoded size, which the literals may not fill                |
+| Output                                  | The decoded size                                                 |
 
 A decoder that copies 32 bytes at a time needs 32 readable bytes after each buffer it reads,
 and 32 bytes after each operation it writes. The last operations of a block can copy exactly instead.
