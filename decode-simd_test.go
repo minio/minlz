@@ -316,7 +316,7 @@ func simdTestValues(ops []simdTestOp) (s [5][]byte) {
 func (b *simdTestBuilder) build(tb simdTestBlock) (*simdTestEnc, []byte) {
 	b.cur = [len(b.cur)]*pivco.Table{}
 	if tb.chunk == 0 {
-		tb.chunk = 1024 << tb.limit
+		tb.chunk = min(1024<<tb.limit, simdMaxChunk)
 	}
 	out := simdTestRun(tb.ops, tb.lits, tb.chunk, tb.flat)
 	if tb.litBlock == 0 {
@@ -621,7 +621,7 @@ func testSIMDDecodeBuilt(t *testing.T) {
 	litModes := []int{simdStored, simdCodeLens, simdCurrent, simdClassLens, simdDeltaLens}
 	for i := range 40 {
 		ops, lits := simdTestOps(rng, 1+rng.Intn(5000), "aaabbcdef\x00\xff", 288, 1<<rng.Intn(25))
-		tb := simdTestBlock{ops: ops, lits: lits, limit: rng.Intn(6), chunk: 1 + rng.Intn(1500), litBlock: 1 + rng.Intn(9000),
+		tb := simdTestBlock{ops: ops, lits: lits, limit: rng.Intn(7), chunk: 1 + rng.Intn(1500), litBlock: 1 + rng.Intn(9000),
 			modes: modes[:1+i%len(modes)], litModes: litModes[:1+i%len(litModes)]}
 		tb.chunk = min(tb.chunk, 1024<<tb.limit)
 		if i%3 == 1 {
@@ -1108,7 +1108,7 @@ func testSIMDValidation(t *testing.T) {
 	// escapes returns a block of one chunk with 65536 escapes, stored or coded.
 	escapes := func(coded bool) func(e *simdTestEnc, want []byte) []byte {
 		return func(e *simdTestEnc, _ []byte) []byte {
-			ops := make([]simdTestOp, simdMaxChunk)
+			ops := make([]simdTestOp, 1<<15)
 			for i := range ops {
 				ops[i] = simdTestOp{ll: simdMaxLen + 1, ml: simdMaxLen + 1}
 			}
@@ -1116,7 +1116,7 @@ func testSIMDValidation(t *testing.T) {
 			ne, want := b.build(simdTestBlock{ops: ops, lits: bytes.Repeat([]byte("abc"), 11*len(ops)), limit: 5})
 			*e = *ne
 			if coded {
-				*chunk(e, simdEsc) = simdTestStream{mode: simdCodeLens, table: escapeTable, data: make([]byte, 2*simdMaxChunk/8)}
+				*chunk(e, simdEsc) = simdTestStream{mode: simdCodeLens, table: escapeTable, data: make([]byte, 1<<16/8)}
 			}
 			return want
 		}
@@ -1134,7 +1134,7 @@ func testSIMDValidation(t *testing.T) {
 		{name: "flags bit 6", change: same(func(e *simdTestEnc) { e.flags |= 1 << 6 })},
 		{name: "flags bit 7", change: same(func(e *simdTestEnc) { e.flags |= 1 << 7 })},
 		{name: "chunk limit 5", ok: true, change: same(func(e *simdTestEnc) { e.flags |= 5 })},
-		{name: "chunk limit 6", change: same(func(e *simdTestEnc) { e.flags |= 6 })},
+		{name: "chunk limit 6", ok: true, change: same(func(e *simdTestEnc) { e.flags |= 6 })},
 		{name: "chunk limit 7", change: same(func(e *simdTestEnc) { e.flags |= 7 })},
 		{name: "hint bits", ok: true, change: same(func(e *simdTestEnc) { e.flags |= 3 << 3 })},
 		{name: "no flags", raw: func(b []byte) []byte { return b[:5] }},
@@ -1372,6 +1372,41 @@ func testSIMDValidation(t *testing.T) {
 			if _, err := Decode(nil, block); !errors.Is(err, ErrCorrupt) || rerr == nil {
 				t.Fatalf("%d chunks: %v, reference %v", n, err, rerr)
 			}
+		}
+	})
+	t.Run("65535 operations", func(t *testing.T) {
+		// Value 6 is 65535 operations, not 1024<<6: a stored token stream could hold 65536.
+		for _, tc := range []struct {
+			name   string
+			n      int
+			ll, ml int
+			ok     bool
+		}{
+			{"at limit", simdMaxChunk, 1, 4, true},
+			{"above limit", simdMaxChunk + 1, 1, 4, false},
+			// Two escapes per operation, stored as they don't fit a pivco block.
+			{"most escapes", simdMaxChunk, simdMaxLen + 1, simdMaxLen + 1, true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				ops := make([]simdTestOp, tc.n)
+				for i := range ops {
+					ops[i] = simdTestOp{ll: tc.ll, ml: tc.ml}
+				}
+				ops[0].off = max(tc.ml, 3)
+				e, want := b.build(simdTestBlock{ops: ops, lits: bytes.Repeat([]byte("abc"), tc.n*tc.ll/3+1), limit: 6, chunk: tc.n})
+				block := e.bytes()
+				ref, rerr := reference.DecodeSIMDBlock(block)
+				if tc.ok {
+					simdTestDecode(t, block, want)
+					if rerr != nil || !bytes.Equal(ref, want) {
+						t.Fatal("reference:", rerr)
+					}
+					return
+				}
+				if _, err := Decode(nil, block); !errors.Is(err, ErrCorrupt) || rerr == nil {
+					t.Fatalf("%v, reference %v", err, rerr)
+				}
+			})
 		}
 	})
 	t.Run("max size", func(t *testing.T) {
@@ -1625,10 +1660,10 @@ func testSIMDReference(t *testing.T) {
 			}
 			lits = bytes.Repeat([]byte("a"), len(ops))
 		}
-		tb := simdTestBlock{ops: ops, lits: lits, limit: rng.Intn(6), chunk: 32 + rng.Intn(300), litBlock: 64 + rng.Intn(2000),
+		tb := simdTestBlock{ops: ops, lits: lits, limit: rng.Intn(7), chunk: 32 + rng.Intn(300), litBlock: 64 + rng.Intn(2000),
 			modes: modes[:1+i%len(modes)], litModes: litModes[:1+i%len(litModes)], delta: rng.Uint64()}
 		if i%4 == 1 {
-			tb.chunk = 1024 << tb.limit
+			tb.chunk = min(1024<<tb.limit, simdMaxChunk)
 		}
 		pad, _ := simdTestPad(b, &tb)
 		orig := pad.bytes()

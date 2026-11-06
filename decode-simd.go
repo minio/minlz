@@ -30,7 +30,8 @@ import (
 const (
 	simdBlockType = 1
 	simdMinSaving = 64
-	simdMaxChunk  = 1024 << 5
+	// simdMaxChunk is the most operations of a chunk: a chunk limit value of 6, capped to what a pivco block holds.
+	simdMaxChunk = pivco.MaxBlockSize
 	// simdMaxChunks is the most chunks of a block.
 	simdMaxChunks = 128
 	simdMaxLen    = 32
@@ -203,7 +204,7 @@ func simdHeader(src []byte) (size int, block []byte, err error) {
 		return 0, nil, ErrTooLarge
 	}
 	size = int(v & (1<<24 - 1))
-	if f := src[n]; len(src)+simdMinSaving > size || f&0xe0 != 0 || f&7 > 5 {
+	if f := src[n]; len(src)+simdMinSaving > size || f&0xe0 != 0 || f&7 > 6 {
 		return 0, nil, ErrCorrupt
 	}
 	return size, src[n:], nil
@@ -282,7 +283,7 @@ func decodeSIMDHash(dst, block []byte, hash bool) (uint64, error) {
 
 // decode decodes block into dst, and adds dst to h unless h is nil.
 func (s *simdDecoder) decode(dst, block []byte, h *xxh3.Hasher) bool {
-	limit := 1024 << (block[0] & 7)
+	limit := min(1024<<(block[0]&7), simdMaxChunk)
 	body := block[1:]
 	lz, n := rvarint(body)
 	if n == 0 || lz > uint64(len(body)-n) {

@@ -331,7 +331,7 @@ func decodeSIMDBlock(src []byte, strict bool, w *SIMDWalker) ([]byte, error) {
 		return nil, errors.New("no flags byte")
 	}
 	flags := src[n]
-	if flags&0xe0 != 0 || flags&7 > 5 {
+	if flags&0xe0 != 0 || flags&7 > 6 {
 		return nil, fmt.Errorf("invalid block flags %#x", flags)
 	}
 	lzSize, body, err := rvarint(src[n+1:])
@@ -347,7 +347,7 @@ func decodeSIMDBlock(src []byte, strict bool, w *SIMDWalker) ([]byte, error) {
 		return nil, err
 	}
 	if lz > 0 {
-		if err := d.chunks(body[:lz], 1024<<(flags&7)); err != nil {
+		if err := d.chunks(body[:lz], min(1024<<(flags&7), 65535)); err != nil {
 			return nil, err
 		}
 	}

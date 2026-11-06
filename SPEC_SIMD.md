@@ -38,7 +38,7 @@ A flags byte follows the varint:
 | 3-4  | Reserved hints, must be ignored                                     |
 | 5-7  | Reserved, must be 0                                                 |
 
-Chunk limit values 6 and 7 are invalid. Encoders set the reserved hints to 0.
+Chunk limit value 7 is invalid. Value 6 is a limit of 65535 operations, the most a pivco block holds (2.2). Encoders set the reserved hints to 0.
 
 ## 1.1 Size Limits
 
@@ -637,7 +637,7 @@ Nor are offsets below the match length in chunks with the no-overlap flag; they 
 * A reserved block type, or a header varint above 32 bits.
 * A decoded size above 8 MiB.
 * An encoded block that is not at least 64 bytes smaller than the decoded size.
-* Header flag bits that must be 0 are set, or a chunk limit value of 6 or 7.
+* Header flag bits that must be 0 are set, or a chunk limit value of 7.
 
 ## B.2 Framing
 
