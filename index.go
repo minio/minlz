@@ -135,7 +135,8 @@ func (i *Index) Find(offset int64) (compressedOff, uncompressedOff int64, err er
 			return i.Offsets[n].UncompressedOffset > offset
 		})
 		if n == 0 {
-			n = 1
+			// The index may omit the (0, 0) entry, so it is implied.
+			return 0, 0, nil
 		}
 		return i.Offsets[n-1].CompressedOffset, i.Offsets[n-1].UncompressedOffset, nil
 	}
