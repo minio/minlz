@@ -504,7 +504,7 @@ func IndexStream(r io.Reader) ([]byte, error) {
 				dLen, _, err = simdChunkHeader(buf[:chunkLen], maxBlockSize)
 			} else if chunkType == chunkTypeLegacyCompressedData {
 				// Skip checksum.
-				dLen, err = DecodedLen(buf[checksumSize:])
+				dLen, err = DecodedLen(buf[checksumSize:chunkLen])
 			} else {
 				dLen, _, err = minLZChunkLen(buf[checksumSize:chunkLen])
 				if err == nil && dLen > maxBlockSize {
@@ -516,6 +516,10 @@ func IndexStream(r io.Reader) ([]byte, error) {
 			}
 			if dLen > maxBlockSize {
 				return nil, ErrCorrupt
+			}
+			if dLen == 0 {
+				// Empty chunks would give a 0 estimate and entries at duplicate offsets.
+				continue
 			}
 			if i.estBlockUncomp == 0 {
 				// Use first block for estimate...
@@ -531,6 +535,9 @@ func IndexStream(r io.Reader) ([]byte, error) {
 			n2 := chunkLen - checksumSize
 			if n2 < 0 || n2 > maxBlockSize {
 				return nil, ErrCorrupt
+			}
+			if n2 == 0 {
+				continue
 			}
 			if i.estBlockUncomp == 0 {
 				// Use first block for estimate...
