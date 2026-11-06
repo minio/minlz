@@ -74,3 +74,6 @@ func encodeBlockBetter(dst, src []byte) (d int) {
 	}
 	return encodeBlockBetterGo(dst, src)
 }
+
+// parseAsm is not called, as simdEncAsm is false.
+func (e *simdEncoder) parseAsm(src []byte, k int) {}

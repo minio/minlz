@@ -16,6 +16,7 @@ package minlz
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -1433,5 +1434,87 @@ func TestSidecarSearchWindowStatsConfigDrift(t *testing.T) {
 	}
 	if denom > st.BlocksTotal {
 		t.Fatalf("window denominator %d exceeds %d blocks — incompatible configs were mixed into the counts", denom, st.BlocksTotal)
+	}
+}
+
+// TestSidecarSIMD builds and extracts sidecars of streams with SIMD chunks.
+func TestSidecarSIMD(t *testing.T) {
+	data := makeTestData(300 << 10)
+	pat := []byte("needle in the haystack")
+	want := countOccurrences(data, pat)
+	cfg := NewSearchTableConfig().WithMatchLen(6)
+	// search checks the sidecar of main, which has streams copies of data.
+	search := func(t *testing.T, main, side []byte, streams int) {
+		t.Helper()
+		if side[len(magicChunk)]&streamFlagSIMD == 0 {
+			t.Fatal("sidecar identifier has no SIMD flag")
+		}
+		got := 0
+		if err := NewSidecarSearcher(bytes.NewReader(main), bytes.NewReader(side)).Search(pat, func(SearchResult) error {
+			got++
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if got != streams*want {
+			t.Fatalf("got %d matches, want %d", got, streams*want)
+		}
+		// A block size in the sidecar that differs from the SIMD chunk's is invalid.
+		// The first block is full, so the last byte of its 0x47 chunk, the size below the block size, is 0.
+		bad := bytes.Clone(side)
+		i := 0
+		for bad[i] != chunkTypeRemoteBlockRef {
+			i += 4 + (int(bad[i+1]) | int(bad[i+2])<<8 | int(bad[i+3])<<16)
+		}
+		bad[i+4+int(bad[i+1])-1] = 1
+		if err := NewSidecarSearcher(bytes.NewReader(main), bytes.NewReader(bad)).Search(pat, func(SearchResult) error { return nil }); !errors.Is(err, ErrSidecarInvalid) {
+			t.Fatal("sidecar with wrong block size: got", err)
+		}
+		// Without the flag in the last stream, its SIMD chunks in main must be rejected.
+		side = bytes.Clone(side)
+		side[bytes.LastIndex(side, []byte(magicChunk))+len(magicChunk)] &^= streamFlagSIMD
+		if err := NewSidecarSearcher(bytes.NewReader(main), bytes.NewReader(side)).Search(pat, func(SearchResult) error { return nil }); !errors.Is(err, ErrCorrupt) {
+			t.Fatal("sidecar without SIMD flag: got", err)
+		}
+	}
+	for _, level := range []int{LevelFastestSIMD, LevelSmallestSIMD, LevelBalancedSIMD | LevelSIMDDelta} {
+		t.Run(fmt.Sprint("level-", level), func(t *testing.T) {
+			var plain, tabled bytes.Buffer
+			for _, x := range []struct {
+				dst  *bytes.Buffer
+				opts []WriterOption
+			}{{&plain, nil}, {&tabled, []WriterOption{WriterSearchTable(cfg)}}} {
+				w := NewWriter(x.dst, append(x.opts, WriterLevel(level), WriterBlockSize(32<<10), WriterConcurrency(1))...)
+				if _, err := w.Write(data); err != nil {
+					t.Fatal(err)
+				}
+				if err := w.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var side bytes.Buffer
+			if err := BuildSidecar(&side, bytes.NewReader(plain.Bytes()), SidecarSearchTable(cfg)); err != nil {
+				t.Fatal("BuildSidecar:", err)
+			}
+			search(t, plain.Bytes(), side.Bytes(), 1)
+
+			concat := append(bytes.Clone(plain.Bytes()), plain.Bytes()...)
+			side.Reset()
+			if err := BuildSidecar(&side, bytes.NewReader(concat), SidecarSearchTable(cfg)); err != nil {
+				t.Fatal("BuildSidecar:", err)
+			}
+			search(t, concat, side.Bytes(), 2)
+
+			var stripped bytes.Buffer
+			side.Reset()
+			if err := ExtractSidecar(&side, &stripped, bytes.NewReader(tabled.Bytes())); err != nil {
+				t.Fatal("ExtractSidecar:", err)
+			}
+			if stripped.Bytes()[len(magicChunk)]&streamFlagSIMD == 0 {
+				t.Fatal("stripped stream identifier has no SIMD flag")
+			}
+			search(t, stripped.Bytes(), side.Bytes(), 1)
+			testSIMDStreamRead(t, stripped.Bytes(), data)
+		})
 	}
 }

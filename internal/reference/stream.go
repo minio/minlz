@@ -16,9 +16,12 @@ package reference
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
+
+	"github.com/zeebo/xxh3"
 )
 
 const (
@@ -26,6 +29,7 @@ const (
 	ChunkUncompressed     = 0x01
 	ChunkMinLZBlock       = 0x02
 	ChunkMinLZCompCRC     = 0x03
+	ChunkMinLZSIMD        = 0x10
 	ChunkIndex            = 0x40
 	ChunkEOF              = 0x20
 	ChunkPadding          = 0xfe
@@ -59,6 +63,8 @@ func ReadStream(r io.Reader, debugOut io.Writer) error {
 	readMaxBlockSize := 0
 	var tmp [8]byte
 	decompressedSize := 0
+	inStream := false // a stream identifier was read, and no EOF since
+	simd := false     // bit 6 of the stream identifier
 	for {
 		// Read the next byte from the stream.
 		// This is the chunk type.
@@ -89,10 +95,18 @@ func ReadStream(r io.Reader, debugOut io.Writer) error {
 			return err
 		}
 
+		// The stream identifier comes first; an EOF chunk alone is an empty stream.
+		if !inStream && chunkType <= maxNonSkippableChunk && chunkType != ChunkEOF {
+			err := fmt.Errorf("chunk type %d outside a stream", chunkType)
+			println(err)
+			return err
+		}
+
 		switch chunkType {
 		case ChunkLegacyCompressed:
-			println("Legacy compressed data")
-			continue
+			err := errors.New("legacy compressed data is not allowed")
+			println(err)
+			return err
 		case ChunkUncompressed:
 			if len(chunkData) < 4 {
 				println("Error: uncompressed data too short")
@@ -123,20 +137,24 @@ func ReadStream(r io.Reader, debugOut io.Writer) error {
 			// First 4 bytes are the CRC checksum.
 			checksum := uint32(chunkData[0]) | uint32(chunkData[1])<<8 | uint32(chunkData[2])<<16 | uint32(chunkData[3])<<24
 			chunkData = chunkData[4:]
-			decoded, err := DecodeBlock(chunkData)
+			// The chunk stores a type 0 block without its indicator byte.
+			// DecodeBlock rejects other types: their header is above the maximum size.
+			decoded, err := DecodeBlock(append([]byte{0}, chunkData...))
 			if err != nil {
 				println("Error decoding MinLZ compressed data:", err)
 				return err
 			}
 			println("block decoded to", len(decoded), "bytes")
-			if len(chunkData) > len(decoded) {
-				err := fmt.Errorf("compressed data size %d larger than compressed size %d", len(decoded), len(chunkData))
+			// The compressed size excludes the size header. A size of 0 is not allowed, even with literals.
+			size, hdrLen := binary.Uvarint(chunkData)
+			if size == 0 || len(chunkData)-hdrLen > len(decoded) {
+				err := fmt.Errorf("decompressed size %d is 0 or less than compressed size %d", size, len(chunkData)-hdrLen)
 				println(err)
 				return err
 			}
 
 			if len(decoded) > readMaxBlockSize {
-				err := fmt.Errorf("uncompressed data too large: %d > %d", len(chunkData), readMaxBlockSize)
+				err := fmt.Errorf("uncompressed data too large: %d > %d", len(decoded), readMaxBlockSize)
 				println(err)
 				return err
 			}
@@ -164,28 +182,65 @@ func ReadStream(r io.Reader, debugOut io.Writer) error {
 				return err
 			}
 			println("Checksum verified")
-			// Decode the compressed data.
-			decoded, err := DecodeBlock(chunkData)
+			// Decode the compressed data, a type 0 block stored without its indicator byte.
+			decoded, err := DecodeBlock(append([]byte{0}, chunkData...))
 			if err != nil {
 				println("Error decoding MinLZ compressed data:", err)
 				return err
 			}
 			println("block decoded to", len(decoded), "bytes")
-			if len(chunkData) > len(decoded) {
-				err := fmt.Errorf("compressed data size %d larger than compressed size %d", len(decoded), len(chunkData))
+			// The compressed size excludes the size header. A size of 0 is not allowed, even with literals.
+			size, hdrLen := binary.Uvarint(chunkData)
+			if size == 0 || len(chunkData)-hdrLen > len(decoded) {
+				err := fmt.Errorf("decompressed size %d is 0 or less than compressed size %d", size, len(chunkData)-hdrLen)
 				println(err)
 				return err
 			}
 			if len(decoded) > readMaxBlockSize {
-				err := fmt.Errorf("uncompressed data too large: %d > %d", len(chunkData), readMaxBlockSize)
+				err := fmt.Errorf("uncompressed data too large: %d > %d", len(decoded), readMaxBlockSize)
 				println(err)
 				return err
 			}
 			decompressedSize += len(decoded)
 			continue
 
+		case ChunkMinLZSIMD:
+			if !simd {
+				err := errors.New("SIMD block in a stream without the SIMD flag")
+				println(err)
+				return err
+			}
+			if len(chunkData) < 8 {
+				println("Error: SIMD data too short")
+				return fmt.Errorf("SIMD data too short")
+			}
+			println("MinLZ SIMD block")
+			// First 8 bytes are the XXH3 hash.
+			hash := binary.LittleEndian.Uint64(chunkData)
+			chunkData = chunkData[8:]
+			// The chunk stores a type 1 block without its indicator byte; DecodeSIMDBlock rejects other types.
+			decoded, err := DecodeSIMDBlock(append([]byte{0}, chunkData...))
+			if err != nil {
+				println("Error decoding SIMD block:", err)
+				return err
+			}
+			println("block decoded to", len(decoded), "bytes")
+			if len(decoded) > readMaxBlockSize {
+				err := fmt.Errorf("uncompressed data too large: %d > %d", len(decoded), readMaxBlockSize)
+				println(err)
+				return err
+			}
+			if got := xxh3.Hash(decoded); got != hash {
+				err := fmt.Errorf("hash mismatch: got %016x, want %016x", got, hash)
+				println(err)
+				return err
+			}
+			println("Hash verified")
+			decompressedSize += len(decoded)
+			continue
+
 		case ChunkEOF:
-			println("MinLZ compressed data")
+			println("EOF")
 			if chunkLen > binary.MaxVarintLen64 {
 				println("Error: EOF chunk length too large")
 				return fmt.Errorf("EOF chunk length too large (%d)", chunkLen)
@@ -205,12 +260,15 @@ func ReadStream(r io.Reader, debugOut io.Writer) error {
 				}
 				println("Stream size verified")
 			}
+			inStream = false
+			// An EOF chunk that follows is an empty stream.
+			decompressedSize = 0
 			// We continue since multiple streams can be concatenated.
 			continue
 		case ChunkStreamID:
 			println("Stream identifier")
 			const magicBody = "MinLz"
-			if len(chunkData) != len(magicBody)-1 {
+			if len(chunkData) != len(magicBody)+1 {
 				err := fmt.Errorf("stream identifier length mismatch: got %d, want %d", chunkLen, len(magicBody)+1)
 				println(err)
 				return err
@@ -220,24 +278,27 @@ func ReadStream(r io.Reader, debugOut io.Writer) error {
 				println(err)
 				return err
 			}
-			// Trim off the magic
-			chunkData = chunkData[:len(magicBody)]
+			// The stream info follows the magic.
+			info := chunkData[len(magicBody)]
 
-			// Upper 2 bits most be 0
-			if chunkData[0]>>6 != 0 {
-				err := fmt.Errorf("reserved bits set: %d", chunkData[0]>>6)
+			// Bit 7 must be 0. Bits 4-5 are ignored.
+			if info&0x80 != 0 {
+				err := errors.New("reserved bit 7 set")
 				println(err)
 				return err
 			}
 
 			// Read max block size
-			readMaxBlockSize = 1 << ((uint)(chunkData[0]&15) + 10)
-			if readMaxBlockSize > maxBlockSize {
-				err := fmt.Errorf("invalid max block size: %d", readMaxBlockSize)
+			if info&15 > 13 {
+				err := fmt.Errorf("invalid max block size indicator: %d", info&15)
 				println(err)
 				return err
 			}
-			println("Max Block Size:", readMaxBlockSize)
+			readMaxBlockSize = 1 << (info&15 + 10)
+			simd = info&0x40 != 0
+			decompressedSize = 0
+			inStream = true
+			println("Max Block Size:", readMaxBlockSize, "SIMD:", simd)
 
 		case ChunkIndex:
 			// Optional index.
@@ -268,10 +329,11 @@ func ReadStream(r io.Reader, debugOut io.Writer) error {
 				println("Found user skippable chunk with id", chunkType, "length", len(chunkData))
 				continue
 			}
-			// 0xc0 -> 0xbf
+			// 0xc0 -> 0xfd
 			if chunkType >= minUserNonSkippableChunk && chunkType <= maxUserNonSkippableChunk {
-				println("Found user non-skippable chunk with id", chunkType, "length", len(chunkData))
-				continue
+				err := fmt.Errorf("unknown user non-skippable chunk found. id: %d", chunkType)
+				println(err)
+				return err
 			}
 
 			if chunkType == ChunkPadding {

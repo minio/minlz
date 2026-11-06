@@ -182,6 +182,21 @@ func benchDecode(b *testing.B, src []byte) {
 		}
 		b.ReportMetric(100*float64(len(encoded))/float64(len(src)), "pct")
 	})
+	for level := LevelSuperFastSIMD; level <= LevelSmallestSIMD; level++ {
+		b.Run(fmt.Sprintf("level-%d", level), func(b *testing.B) {
+			encoded, _ := Encode(nil, src, level)
+			b.SetBytes(int64(len(src)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, err := Decode(src[:0], encoded)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+			b.ReportMetric(100*float64(len(encoded))/float64(len(src)), "pct")
+		})
+	}
 }
 
 func benchEncode(b *testing.B, src []byte) {
@@ -224,6 +239,17 @@ func benchEncode(b *testing.B, src []byte) {
 		enc, _ := Encode(dst, src, LevelSmallest)
 		b.ReportMetric(100*float64(len(enc))/float64(len(src)), "pct")
 	})
+	for level := LevelSuperFastSIMD; level <= LevelSmallestSIMD; level++ {
+		b.Run(fmt.Sprintf("level-%d", level), func(b *testing.B) {
+			b.SetBytes(int64(len(src)))
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				Encode(dst, src, level)
+			}
+			enc, _ := Encode(dst, src, level)
+			b.ReportMetric(100*float64(len(enc))/float64(len(src)), "pct")
+		})
+	}
 	/*
 		b.Run("snappy", func(b *testing.B) {
 			dst := snappy.Encode(dst, src)

@@ -23,6 +23,11 @@ and a 0x47 Remote Block Reference per data block, followed by the stream's EOF c
 Other chunk types from the original stream (raw / compressed data, seek index, padding, etc.)
 are NOT carried over — the sidecar references the data via the 0x47 offsets instead.
 
+The stream identifiers of a sidecar match those of the main stream, including the SIMD flag
+(bit 6, see [SPEC.md section 4.1](SPEC.md#41-stream-identifier-chunk-type-0xff)).
+Searchers read the referenced blocks without the main stream identifier,
+so they only accept SIMD blocks (chunk type 0x10) if the sidecar stream identifier has the flag.
+
 This allows the index to be stored separately from the data.
 
 ## 2 New Chunks

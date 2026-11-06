@@ -2,8 +2,7 @@
 
 package minlz
 
-//go:noescape
-func cpuidAVX2() bool
+import "github.com/minio/minlz/internal/cpu"
 
 //go:noescape
 func packBitsSSE2(dst []byte, src []byte)
@@ -11,10 +10,8 @@ func packBitsSSE2(dst []byte, src []byte)
 //go:noescape
 func packBitsAVX2(dst []byte, src []byte)
 
-var hasAVX2 = cpuidAVX2()
-
 func packBits(dst, src []byte) {
-	if hasAVX2 {
+	if cpu.AVX2 {
 		packBitsAVX2(dst, src)
 		return
 	}

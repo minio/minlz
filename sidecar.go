@@ -125,10 +125,10 @@ func SidecarIgnoreCRC() SidecarOption {
 
 // streamBlockSizeFromHeaderByte decodes the header's final byte (after the
 // magic body) into the max block size (in bytes). It checks the same
-// constraints as the runtime decoder: upper 2 bits must be zero, log2 must
+// constraints as the runtime decoder: upper bit must be zero, log2 must
 // be within range.
 func streamBlockSizeFromHeaderByte(b byte) (int, error) {
-	if b&(3<<6) != 0 {
+	if b&(1<<7) != 0 {
 		return 0, ErrCorrupt
 	}
 	n := int(b&15) + 10
@@ -162,6 +162,7 @@ type chunkReader struct {
 	bytesConsumed int64
 	maxBlockSize  int
 	ignoreCRC     bool
+	simd          bool   // the stream identifier allows SIMD chunks
 	chunkBuf      []byte // scratch for reading chunk payloads
 }
 
@@ -170,7 +171,7 @@ type dataBlock struct {
 	decoded     []byte // newly-allocated decoded bytes
 	chunkOffset int64  // absolute offset of the chunk header in src
 	chunkLen    int    // wire-format chunk length (excluding the 4-byte header)
-	chunkType   byte   // chunkTypeUncompressedData / chunkTypeMinLZCompressedData / *CompCRC
+	chunkType   byte   // chunkTypeUncompressedData / chunkTypeMinLZCompressedData / *CompCRC / chunkTypeMinLZSIMD
 	chunkBytes  []byte // verbatim chunk payload (for re-emission); same backing as cr.chunkBuf
 }
 
@@ -200,6 +201,7 @@ func (cr *chunkReader) readStreamHeader() (int, error) {
 	}
 	cr.bytesConsumed = 4 + int64(magicBodyLen)
 	cr.maxBlockSize = bs
+	cr.simd = body[magicBodyLen-1]&streamFlagSIMD != 0
 	return bs, nil
 }
 
@@ -262,7 +264,7 @@ func (cr *chunkReader) decodeBlockInto(chunkType byte, chunkLen int, dst []byte)
 		copy(dst, body)
 		return dst, nil
 	case chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC:
-		n, hdrSize, err := decodedLen(body)
+		n, hdrSize, err := minLZChunkLen(body)
 		if err != nil {
 			return nil, err
 		}
@@ -284,6 +286,22 @@ func (cr *chunkReader) decodeBlockInto(chunkType byte, chunkLen int, dst []byte)
 			return nil, ErrCRC
 		}
 		return dst, nil
+	case chunkTypeMinLZSIMD:
+		if !cr.simd {
+			return nil, ErrCorrupt
+		}
+		n, block, err := simdChunkHeader(payload, cr.maxBlockSize)
+		if err != nil {
+			return nil, err
+		}
+		if cap(dst) < n {
+			dst = make([]byte, n)
+		}
+		dst = dst[:n]
+		if err := decodeSIMDChunk(dst, payload, block, cr.ignoreCRC); err != nil {
+			return nil, err
+		}
+		return dst, nil
 	}
 	return nil, ErrUnsupported
 }
@@ -292,7 +310,8 @@ func (cr *chunkReader) decodeBlockInto(chunkType byte, chunkLen int, dst []byte)
 func isDataChunk(chunkType byte) bool {
 	return chunkType == chunkTypeUncompressedData ||
 		chunkType == chunkTypeMinLZCompressedData ||
-		chunkType == chunkTypeMinLZCompressedDataCompCRC
+		chunkType == chunkTypeMinLZCompressedDataCompCRC ||
+		chunkType == chunkTypeMinLZSIMD
 }
 
 // emitEOFChunk writes a chunk-type-0x20 chunk with the encoded uncompressed
@@ -315,7 +334,7 @@ func emitEOFChunk(dst io.Writer, uncompSize uint64) (int, error) {
 // produce multiple 0x44 info chunks and per-block 0x45/0x46 chunks; the
 // SidecarSearcher tries each config independently and ANDs the skip results.
 //
-// Compression-only blocks in src (chunk types 0x02 / 0x03) are decoded to
+// Compression-only blocks in src (chunk types 0x02 / 0x03 / 0x10) are decoded to
 // build the tables; uncompressed blocks (0x01) are also indexed. Other
 // chunks (existing 0x45/0x46 in src, padding, index, user) are skipped.
 func BuildSidecar(dst io.Writer, src io.Reader, opts ...SidecarOption) error {
@@ -355,7 +374,7 @@ func BuildSidecar(dst io.Writer, src io.Reader, opts ...SidecarOption) error {
 	}
 
 	// Write sidecar stream header + 0x44 info chunks (one per config).
-	if _, err := dst.Write(makeHeader(maxBlock)); err != nil {
+	if _, err := dst.Write(makeHeader(maxBlock, cr.simd)); err != nil {
 		return err
 	}
 	for i := range o.cfgs {
@@ -510,6 +529,7 @@ func BuildSidecar(dst io.Writer, src io.Reader, opts ...SidecarOption) error {
 			}
 			maxBlock = newBs
 			cr.maxBlockSize = newBs
+			cr.simd = payload[magicBodyLen-1]&streamFlagSIMD != 0
 			for i := range o.cfgs {
 				o.cfgs[i].baseTableSize = autoTableSize(newBs)
 				if o.cfgs[i].baseTableSize < searchTableMinLog2 {
@@ -517,7 +537,7 @@ func BuildSidecar(dst io.Writer, src io.Reader, opts ...SidecarOption) error {
 				}
 				o.cfgs[i].resolveDefaults()
 			}
-			if _, err := dst.Write(makeHeader(newBs)); err != nil {
+			if _, err := dst.Write(makeHeader(newBs, cr.simd)); err != nil {
 				return err
 			}
 			for i := range o.cfgs {
@@ -572,12 +592,12 @@ func ExtractSidecar(sidecarDst, newStreamDst io.Writer, src io.Reader, opts ...S
 	}
 
 	// Write sidecar header (no 0x44 yet — we copy 0x44 from src if present).
-	if _, err := sidecarDst.Write(makeHeader(maxBlock)); err != nil {
+	if _, err := sidecarDst.Write(makeHeader(maxBlock, cr.simd)); err != nil {
 		return err
 	}
 	// Write new-stream header.
 	if newStreamDst != nil {
-		if _, err := newStreamDst.Write(makeHeader(maxBlock)); err != nil {
+		if _, err := newStreamDst.Write(makeHeader(maxBlock, cr.simd)); err != nil {
 			return err
 		}
 	}
@@ -636,18 +656,28 @@ func ExtractSidecar(sidecarDst, newStreamDst io.Writer, src io.Reader, opts ...S
 					return ErrCorrupt
 				}
 				uncomp = chunkLen - checksumSize
+			case chunkTypeMinLZSIMD:
+				if !cr.simd {
+					return ErrCorrupt
+				}
+				if uncomp, _, err = simdChunkHeader(payload, maxBlock); err != nil {
+					return err
+				}
 			default:
 				if chunkLen < checksumSize {
 					return ErrCorrupt
 				}
-				n, _, err := decodedLen(payload[checksumSize:])
+				n, _, err := minLZChunkLen(payload[checksumSize:])
 				if err != nil {
 					return err
 				}
 				uncomp = n
 			}
-			if uncomp <= 0 || uncomp > maxBlock {
+			if uncomp <= 0 {
 				return ErrCorrupt
+			}
+			if uncomp > maxBlock {
+				return ErrTooLarge
 			}
 			// Decide reference offset.
 			refOffset := chunkOffset
@@ -735,11 +765,12 @@ func ExtractSidecar(sidecarDst, newStreamDst io.Writer, src io.Reader, opts ...S
 			}
 			maxBlock = newBs
 			cr.maxBlockSize = newBs
-			if _, err := sidecarDst.Write(makeHeader(newBs)); err != nil {
+			cr.simd = payload[magicBodyLen-1]&streamFlagSIMD != 0
+			if _, err := sidecarDst.Write(makeHeader(newBs, cr.simd)); err != nil {
 				return err
 			}
 			if newStreamDst != nil {
-				if _, err := newStreamDst.Write(makeHeader(newBs)); err != nil {
+				if _, err := newStreamDst.Write(makeHeader(newBs, cr.simd)); err != nil {
 					return err
 				}
 				newStreamWritten += int64(magicChunk1Len())

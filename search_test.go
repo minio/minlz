@@ -3,10 +3,12 @@ package minlz
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -965,6 +967,32 @@ func TestBlockSearcherBail(t *testing.T) {
 	})
 	if err != ErrSearchTablesUnusable {
 		t.Fatalf("expected ErrSearchTablesUnusable, got %v", err)
+	}
+}
+
+// TestBlockSearcherSkippedTooLarge checks that blocks the tables skip are still limited to the identifier's block size.
+func TestBlockSearcherSkippedTooLarge(t *testing.T) {
+	data := bytes.Repeat([]byte("Hello SIMD chunk, hello SIMD stream. "), 200)
+	pattern := []byte("0123456789")
+	for _, level := range []int{LevelBalanced, LevelBalancedSIMD} {
+		var buf bytes.Buffer
+		w := NewWriter(&buf, WriterLevel(level), WriterSearchTable(NewSearchTableConfig()), WriterBlockSize(8<<10), WriterConcurrency(1))
+		if _, err := w.Write(data); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		s := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
+		if err := s.Search(pattern, func(SearchResult) error { return nil }); err != nil || s.Stats().BlocksSkipped != 1 {
+			t.Fatalf("level %d: got error %v, %d blocks skipped", level, err, s.Stats().BlocksSkipped)
+		}
+		// The block is above this identifier's block size.
+		stream := bytes.Clone(buf.Bytes())
+		copy(stream, makeHeader(4<<10, level >= LevelSuperFastSIMD))
+		if err := NewBlockSearcher(bytes.NewReader(stream)).Search(pattern, func(SearchResult) error { return nil }); err != ErrTooLarge {
+			t.Errorf("level %d: got error %v, want %v", level, err, ErrTooLarge)
+		}
 	}
 }
 
@@ -2354,6 +2382,8 @@ func FuzzSearchRoundtrip(f *testing.F) {
 	// data[2] odd selects the prefix-only arm (long prefix == whole pattern);
 	// "co64" appears mid-data and at the very end (final-block tail rescue).
 	f.Add([]byte("xx\x01 a co64 box here and one final co64"), []byte("co64"), 6, true)
+	// data[0] >= 0x80 selects a SIMD level.
+	f.Add([]byte("\x8a hello world, this is a SIMD test with NEEDLE inside, hello world, NEEDLE"), []byte("NEEDLE"), 4, false)
 	f.Fuzz(func(t *testing.T, data, pattern []byte, matchLen int, usePrefix bool) {
 		if len(data) < 32 || len(pattern) < 1 || len(pattern) > 100 {
 			return
@@ -2394,6 +2424,10 @@ func FuzzSearchRoundtrip(f *testing.F) {
 		if mode&1 != 0 {
 			cpu = 4
 		}
+		level := LevelBalanced
+		if mode&0x80 != 0 {
+			level = simdLevels[int(mode>>1)%len(simdLevels)]
+		}
 		// writeMode replays the selected writer mode onto w. Shared so the same
 		// mode drives both the inline stream and the sidecar stream below.
 		writeMode := func(w *Writer) error {
@@ -2431,7 +2465,7 @@ func FuzzSearchRoundtrip(f *testing.F) {
 		}
 
 		var buf bytes.Buffer
-		w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(cpu))
+		w := NewWriter(&buf, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(cpu), WriterLevel(level))
 		if werr := writeMode(w); werr != nil {
 			return // some data may cause issues
 		}
@@ -2542,7 +2576,7 @@ func FuzzSearchRoundtrip(f *testing.F) {
 		// That gives it a distinct skip/defer/boundary path, so it must
 		// independently find every match and the main stream must still decode.
 		var main, side bytes.Buffer
-		ws := NewWriter(&main, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(cpu), WriterSidecar(&side))
+		ws := NewWriter(&main, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(cpu), WriterLevel(level), WriterSidecar(&side))
 		if werr := writeMode(ws); werr != nil {
 			t.Fatalf("sidecar write failed (mode %d, inline succeeded): %v", (mode>>1)%5, werr)
 		}
@@ -4388,12 +4422,12 @@ func TestSearchFlushOmitsTable(t *testing.T) {
 
 // buildPrefixOnlyStreams encodes data with a long-prefix("co64") search table,
 // returning the inline stream and the (main, sidecar) pair.
-func buildPrefixOnlyStreams(t *testing.T, data []byte, blockSize int) (inline, main, side []byte) {
+func buildPrefixOnlyStreams(t *testing.T, data []byte, blockSize, level int) (inline, main, side []byte) {
 	t.Helper()
 	cfg := NewSearchTableConfig().WithMatchLen(6).WithLongPrefix([]byte("co64"))
 
 	var ib bytes.Buffer
-	w := NewWriter(&ib, WriterBlockSize(blockSize), WriterConcurrency(1), WriterSearchTable(cfg))
+	w := NewWriter(&ib, WriterBlockSize(blockSize), WriterConcurrency(1), WriterSearchTable(cfg), WriterLevel(level))
 	if _, err := w.Write(data); err != nil {
 		t.Fatal(err)
 	}
@@ -4403,7 +4437,7 @@ func buildPrefixOnlyStreams(t *testing.T, data []byte, blockSize int) (inline, m
 
 	var mb, sb bytes.Buffer
 	w2 := NewWriter(&mb, WriterBlockSize(blockSize), WriterConcurrency(1),
-		WriterSearchTable(cfg), WriterSidecar(&sb))
+		WriterSearchTable(cfg), WriterSidecar(&sb), WriterLevel(level))
 	if _, err := w2.Write(data); err != nil {
 		t.Fatal(err)
 	}
@@ -4456,7 +4490,7 @@ func TestPrefixOnlySkip(t *testing.T) {
 		t.Fatalf("setup: final co64 not at stream end (%d != %d)", want[len(want)-1], len(data)-4)
 	}
 
-	inline, main, side := buildPrefixOnlyStreams(t, data, blockSize)
+	inline, main, side := buildPrefixOnlyStreams(t, data, blockSize, LevelBalanced)
 
 	collect := func(search func([]byte, func(SearchResult) error) error) []int64 {
 		seen := map[int64]bool{}
@@ -4493,6 +4527,13 @@ func TestPrefixOnlySkip(t *testing.T) {
 	t.Run("SidecarSearcher", func(t *testing.T) {
 		check("sidecar", collect(NewSidecarSearcher(bytes.NewReader(main), bytes.NewReader(side)).Search))
 	})
+	// SIMD chunks take the same skip and EOF rescue paths.
+	simdInline, simdMain, simdSide := buildPrefixOnlyStreams(t, data, blockSize, LevelBalancedSIMD)
+	if streamChunks(t, simdMain)[chunkTypeMinLZSIMD] == 0 {
+		t.Fatal("no SIMD chunks")
+	}
+	check("simd inline", collect(NewBlockSearcher(bytes.NewReader(simdInline)).Search))
+	check("simd sidecar", collect(NewSidecarSearcher(bytes.NewReader(simdMain), bytes.NewReader(simdSide)).Search))
 
 	// Interior empty-table blocks must be skipped and no table marked unusable;
 	// population stats must now be computed (bitmap decoded), not left at zero.
@@ -4641,4 +4682,130 @@ func TestWriterSearchTableIncompressiblePrefix(t *testing.T) {
 			t.Fatalf("BlocksSkipped=%d, want 0: no-prefix tables must not exist for incompressible blocks", st.BlocksSkipped)
 		}
 	})
+}
+
+// TestSearchSIMD searches streams with SIMD chunks, with inline search tables and with sidecars.
+func TestSearchSIMD(t *testing.T) {
+	data := tomSawyerCorpus(t, 24)
+	patterns := []string{" the ", " Tom Sawyer", " whitewash", "\nCHAPTER", "not in the book"}
+	cfgs := []SearchTableConfig{
+		NewSearchTableConfig().WithMatchLen(6),
+		NewSearchTableConfig().WithMatchLen(6).WithBytePrefix(' ', '\n'),
+	}
+	for _, level := range simdLevels {
+		for _, cpu := range []int{1, 4} {
+			for ci, cfg := range cfgs {
+				var inline, main, side bytes.Buffer
+				opts := []WriterOption{WriterLevel(level), WriterSearchTable(cfg), WriterBlockSize(16 << 10), WriterConcurrency(cpu)}
+				for _, w := range []*Writer{NewWriter(&inline, opts...), NewWriter(&main, append(opts, WriterSidecar(&side))...)} {
+					if _, err := w.Write(data); err != nil {
+						t.Fatal(err)
+					}
+					if err := w.Close(); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if streamChunks(t, inline.Bytes())[chunkTypeMinLZSIMD] == 0 || streamChunks(t, main.Bytes())[chunkTypeMinLZSIMD] == 0 {
+					t.Fatal("no SIMD chunks")
+				}
+				for _, ps := range patterns {
+					pat := []byte(ps)
+					want := bruteOffsets(data, pat)
+					name := fmt.Sprintf("level-%d/cpu-%d/cfg-%d/%q", level, cpu, ci, ps)
+					var got []int64
+					fn := func(r SearchResult) error {
+						got = append(got, r.StreamOffset)
+						if prev := r.PrevBlock(); len(prev) != r.PrevBlockLen || !bytes.Equal(prev, data[r.BlockStart:r.BlockStart+int64(len(prev))]) {
+							t.Errorf("%s: PrevBlock mismatch", name)
+						}
+						return nil
+					}
+					if err := NewBlockSearcher(bytes.NewReader(inline.Bytes())).Search(pat, fn); err != nil {
+						t.Fatal(name, err)
+					}
+					if !slices.Equal(got, want) {
+						t.Fatalf("%s: inline found %d, want %d", name, len(got), len(want))
+					}
+					got = got[:0]
+					if err := NewSidecarSearcher(bytes.NewReader(main.Bytes()), bytes.NewReader(side.Bytes())).Search(pat, fn); err != nil {
+						t.Fatal(name, err)
+					}
+					if !slices.Equal(got, want) {
+						t.Fatalf("%s: sidecar found %d, want %d", name, len(got), len(want))
+					}
+				}
+			}
+		}
+	}
+}
+
+// TestSearchBlockTypeMismatch checks that the searcher rejects a block whose type doesn't match its chunk type
+// as corrupt, whether the search table makes it search, skip or defer the block.
+func TestSearchBlockTypeMismatch(t *testing.T) {
+	data := tomSawyerCorpus(t, 1)
+	var buf bytes.Buffer
+	w := NewWriter(&buf, WriterSearchTable(NewSearchTableConfig().WithMatchLen(6)), WriterLevel(LevelBalancedSIMD), WriterBlockSize(64<<10), WriterConcurrency(1))
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Split the stream around its data chunk, which follows its search table.
+	var head, tail []byte
+	for in := buf.Bytes(); len(in) > 0; {
+		l := 4 + (int(in[1]) | int(in[2])<<8 | int(in[3])<<16)
+		if isDataChunk(in[0]) {
+			if head != nil {
+				t.Fatal("more than one data chunk")
+			}
+			head, tail = buf.Bytes()[:buf.Len()-len(in)], in[l:]
+		}
+		in = in[l:]
+	}
+	if head == nil {
+		t.Fatal("no data chunk")
+	}
+	paths := []struct {
+		name    string
+		pattern []byte
+		blocks  func(SearchStats) int
+	}{
+		{"searched", data[1000:1020], func(s SearchStats) int { return s.BlocksSearched }},
+		{"skipped", []byte("not in the book"), func(s SearchStats) int { return s.BlocksSkipped }},
+		// The first window is in the block, so a match could continue into a next block.
+		{"deferred", append(bytes.Clone(data[1000:1006]), "QXZJKVWQXZJ"...), func(s SearchStats) int { return s.BlocksDeferred }},
+	}
+	for _, m := range blockTypeMismatches(t, data) {
+		good := slices.Concat(head, m.good, tail)
+		bad := slices.Concat(head, m.bad, tail)
+		for _, p := range paths {
+			s := NewBlockSearcher(bytes.NewReader(good), BlockSearchCollectStats())
+			if err := s.Search(p.pattern, func(SearchResult) error { return nil }); err != nil || p.blocks(s.Stats()) != 1 {
+				t.Fatalf("%s/%s: valid stream: %v, %+v", m.name, p.name, err, s.Stats())
+			}
+			if err := NewBlockSearcher(bytes.NewReader(bad)).Search(p.pattern, func(SearchResult) error { return nil }); !errors.Is(err, ErrCorrupt) {
+				t.Errorf("%s/%s: got error %v, want %v", m.name, p.name, err, ErrCorrupt)
+			}
+		}
+		// Searches only decode lazy and pending blocks that bufferSkippedBlock has checked, so call them directly.
+		lazy := func(c []byte) lazyBlock {
+			return lazyBlock{chunkType: c[0], chunkData: c[4 : 4+(int(c[1])|int(c[2])<<8|int(c[3])<<16)], decompLen: len(data)}
+		}
+		lb := lazy(m.good)
+		if !bytes.Equal(lb.decode(), data) {
+			t.Fatalf("%s/lazy: valid block not decoded", m.name)
+		}
+		lb = lazy(m.bad)
+		if lb.decode() != nil {
+			t.Errorf("%s/lazy: decoded", m.name)
+		}
+		s := NewBlockSearcher(nil)
+		if got, err := s.decodePending(&pendingBlock{lazy: lazy(m.good)}); err != nil || !bytes.Equal(got, data) {
+			t.Fatalf("%s/pending: valid block: %v", m.name, err)
+		}
+		if _, err := s.decodePending(&pendingBlock{lazy: lazy(m.bad)}); !errors.Is(err, ErrCorrupt) {
+			t.Errorf("%s/pending: got error %v, want %v", m.name, err, ErrCorrupt)
+		}
+	}
 }

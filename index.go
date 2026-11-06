@@ -84,6 +84,12 @@ func (i *Index) add(compressedOffset, uncompressedOffset int64) error {
 	lastIdx := len(i.Offsets) - 1
 	if lastIdx >= 0 {
 		latest := i.Offsets[lastIdx]
+		if uncompressedOffset == latest.UncompressedOffset {
+			// The stream header, user chunks and search tables come before the block
+			// at the same offset; point at the block, wherever the writer adds them.
+			i.Offsets[lastIdx].CompressedOffset = compressedOffset
+			return nil
+		}
 		if uncompressedOffset-latest.UncompressedOffset < i.estBlockUncomp {
 			// Don't add until we have i.estBlockUncomp
 			return nil
@@ -456,7 +462,7 @@ func (i *Index) LoadStream(rs io.ReadSeeker) error {
 func IndexStream(r io.Reader) ([]byte, error) {
 	var i Index
 	var buf [MaxUserChunkSize]byte
-	var readHeader bool
+	var readHeader, simd bool
 	for {
 		_, err := io.ReadFull(r, buf[:4])
 		if err != nil {
@@ -485,13 +491,26 @@ func IndexStream(r io.Reader) ([]byte, error) {
 		}
 
 		switch chunkType {
-		case chunkTypeLegacyCompressedData, chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC:
+		case chunkTypeLegacyCompressedData, chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC, chunkTypeMinLZSIMD:
 			// Section 4.2. Compressed data (chunk type 0x00).
 			if chunkLen < checksumSize {
 				return nil, ErrCorrupt
 			}
-			// Skip checksum.
-			dLen, err := DecodedLen(buf[checksumSize:chunkLen])
+			var dLen int
+			if chunkType == chunkTypeMinLZSIMD {
+				if !simd {
+					return nil, ErrCorrupt
+				}
+				dLen, _, err = simdChunkHeader(buf[:chunkLen], maxBlockSize)
+			} else if chunkType == chunkTypeLegacyCompressedData {
+				// Skip checksum.
+				dLen, err = DecodedLen(buf[checksumSize:chunkLen])
+			} else {
+				dLen, _, err = minLZChunkLen(buf[checksumSize:chunkLen])
+				if err == nil && dLen > maxBlockSize {
+					err = ErrTooLarge
+				}
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -543,6 +562,7 @@ func IndexStream(r io.Reader) ([]byte, error) {
 					}
 				}
 			}
+			simd = string(buf[:len(magicBody)]) == magicBody && buf[magicBodyLen-1]&streamFlagSIMD != 0
 			continue
 		case chunkTypeEOF:
 			continue
