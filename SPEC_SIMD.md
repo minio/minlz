@@ -46,6 +46,8 @@ A flags byte follows the varint:
 
 Decoders *must* accept every valid chunk limit: chunks of up to 65535 operations.
 Encoders set the reserved hints to 0.
+Hints, here and in the chunk flags (4.1), never change the decoded output:
+a later version may only define hints that a decoder can ignore.
 
 ## 1.1 Size Limits
 
@@ -649,11 +651,12 @@ Nor are offsets below the match length in chunks with the no-overlap flag; they 
 
 ## B.2 Framing
 
-* A varint or reverse varint that runs past its bytes.
+* A varint or reverse varint that runs past its bytes, is longer than 10 bytes, or has a value above 64 bits (2.1).
 * `L` larger than the bytes before it, or an `R` larger than the rest of its section.
 * Records that do not end exactly at their `R`.
 * Entry sizes that do not add up exactly to the data before the records.
 * A literal section without literal blocks, a literal block without literals, or one with more than 65535.
+* More literals than the decoded size (3).
 * A chunk without operations, or with more than the chunk limit.
 * More than 128 chunks.
 * Chunk flag bits that must be 0 are set.
