@@ -450,9 +450,11 @@ Encoders should always emit this chunk.
 Decoders can optionally reject streams that do not have this chunk.
 
 If this is the first chunk in the stream, the stream is empty.
+An EOF chunk directly after another EOF chunk, with no Stream identifier between them, is also an empty stream, and its size must be 0.
 
 If there are multiple Stream identifier (chunk type 0xff) chunks in the stream,
 each must have a corresponding EOF chunk and the count resets to 0 at each Stream identifier.
+A decoder that starts at an index entry (see 4.12) does not know where the stream started, and cannot check the size exactly.
 
 ### 4.7. Padding (chunk type 0xfe)
 
@@ -596,6 +598,11 @@ To decode from any given uncompressed offset `(wantOffset)`:
 * Iterate entries until `entry[n].UncompressedOffset > wantOffset`.
 * Start decoding from `entry[n-1].CompressedOffset`.
 * Discard `entry[n-1].UncompressedOffset - wantOffset` bytes from the decoded stream.
+
+A decoder that starts at an index entry has not read the stream identifier of the stream the entry is in,
+which may not be the first one when streams are concatenated.
+Until it reads a stream identifier, it should accept blocks up to its own maximum block size (see 4.1.1) and SIMD blocks (see 4.5B),
+and it cannot check the size in the EOF chunk (see 4.6) exactly, since the size counts from the identifier.
 
 This is similar to S2, except the ID is 0x40 instead of 0x99.
 

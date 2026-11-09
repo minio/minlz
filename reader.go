@@ -135,7 +135,8 @@ type Reader struct {
 	buf         []byte
 	tmp         [16]byte
 	skippableCB [MaxUserNonSkippableChunk - MinUserSkippableChunk + 1]func(r io.Reader) error
-	blockStart  int64 // Uncompressed offset at start of current.
+	blockStart  int64 // Uncompressed offset at start of current, counted across streams as in an index.
+	streamStart int64 // Uncompressed offset at start of the current stream; after an index jump, its upper bound.
 	index       *Index
 
 	// decoded[i:j] contains decoded bytes that have not yet been passed on.
@@ -143,6 +144,8 @@ type Reader struct {
 	// maximum block size allowed.
 	maxBlock    int
 	maxBlockOrg int
+	// After an index jump, the block size of the last stream identifier read, until the next one.
+	jumpBlock int
 	// maximum expected buffer size.
 	maxBufSize     int
 	readHeader     bool
@@ -190,6 +193,7 @@ func (r *Reader) Reset(reader io.Reader) {
 	r.i = 0
 	r.j = 0
 	r.blockStart = 0
+	r.streamStart, r.jumpBlock = 0, 0
 	r.readHeader = r.ignoreStreamID
 	r.simd = r.ignoreStreamID
 	r.wantEOF = false
@@ -225,13 +229,19 @@ func (r *Reader) readFullCRC(p []byte) (c uint32, ok bool) {
 	return crcMask(c), true
 }
 
-// streamSize returns the decoded size of the current stream, which an EOF chunk must match.
+// streamSize returns the range of the decoded size of the current stream, which an EOF chunk must match.
 // An EOF chunk with no stream identifier since the last one is an empty stream.
-func (r *Reader) streamSize() uint64 {
+// After an index jump, the stream started anywhere up to streamStart.
+func (r *Reader) streamSize() (lo, hi uint64) {
 	if !r.readHeader {
-		return 0
+		return 0, 0
 	}
-	return uint64(r.blockStart + int64(r.j))
+	end := r.blockStart + int64(r.j)
+	lo = uint64(end - r.streamStart)
+	if r.jumpBlock != 0 {
+		return lo, uint64(end)
+	}
+	return lo, lo
 }
 
 // skippable will skip n bytes.
@@ -548,15 +558,15 @@ func (r *Reader) Read(p []byte) (int, error) {
 						r.err = ErrCorrupt
 						return 0, r.err
 					}
-					if wantSize != r.streamSize() {
+					if lo, hi := r.streamSize(); wantSize < lo || wantSize > hi {
 						if debug {
-							fmt.Println("ERR: EOF data length mismatch", wantSize, r.streamSize())
+							fmt.Println("ERR: EOF data length mismatch", wantSize, lo, hi)
 						}
 						r.err = ErrCorrupt
 						return 0, r.err
 					}
 					if debug {
-						fmt.Println("EOF length verified", wantSize, "==", r.streamSize(), r.blockStart, r.j)
+						fmt.Println("EOF length verified", wantSize, r.blockStart, r.j, r.streamStart)
 					}
 				}
 			}
@@ -572,8 +582,9 @@ func (r *Reader) Read(p []byte) (int, error) {
 			if !r.readFull(r.tmp[:magicBodyLen], false) {
 				return 0, r.err
 			}
-			r.blockStart = 0
+			r.blockStart += int64(r.j)
 			r.i, r.j = 0, 0
+			r.streamStart, r.jumpBlock = r.blockStart, 0
 			if string(r.tmp[:len(magicBody)]) == magicBody {
 				if !r.minLzHeader(r.tmp[:magicBodyLen]) {
 					return 0, r.err
@@ -710,7 +721,9 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 	// We are more likely that decompressed data will be in local cache.
 	var wg sync.WaitGroup
 	wg.Add(1)
-	writeBuf := func(buf []byte, entry chan io.Writer) {
+	// writeBuf takes the error of its block, so errors are set in stream order,
+	// and no block is written after one that failed.
+	writeBuf := func(buf []byte, entry chan io.Writer, err error) {
 		// Wait until our turn
 		w := <-entry
 		defer func() {
@@ -728,6 +741,9 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 			// Forward writer
 			next <- w
 		}()
+		if !setErr(err) {
+			return
+		}
 		n, err := w.Write(buf)
 		if err != nil {
 			setErr(err)
@@ -743,21 +759,20 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 
 	// Seed writer
 	seed := <-reUse
-	go writeBuf(nil, seed)
+	go writeBuf(nil, seed, nil)
 	seed <- w
 
 	// Cleanup
 	defer func() {
+		close(queue)
+		wg.Wait()
+		// Queued blocks come before a read error in the stream, so they are written, and their errors come first.
 		if r.err != nil {
 			setErr(r.err)
 		} else if err != nil {
 			setErr(err)
 		}
-		close(queue)
-		wg.Wait()
-		if err == nil {
-			err = aErr
-		}
+		err = aErr
 		written = aWritten
 	}()
 
@@ -771,6 +786,12 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 		}
 		chunkType := r.tmp[0]
 		chunkLen := int(r.tmp[1]) | int(r.tmp[2])<<8 | int(r.tmp[3])<<16
+		// After an index jump the limits are the caller's maximum until the next identifier,
+		// but the buffers keep the size for the last one read, so a seek doesn't raise them.
+		bufSize, blockSize := r.maxBufSize, r.maxBlock
+		if r.jumpBlock != 0 {
+			bufSize, blockSize = MaxEncodedLen(r.jumpBlock)+checksumSize, r.jumpBlock
+		}
 		if !r.readHeader {
 			if chunkType == ChunkTypeStreamIdentifier {
 				r.readHeader = true
@@ -804,7 +825,7 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 			}
 			orgBuf := <-toRead
 			if cap(orgBuf) < chunkLen {
-				orgBuf = make([]byte, r.maxBufSize)
+				orgBuf = make([]byte, max(chunkLen, bufSize))
 			}
 			buf := orgBuf[:chunkLen]
 
@@ -833,7 +854,7 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 
 			decoded := <-writtenBlocks
 			if cap(decoded) < n {
-				decoded = make([]byte, r.maxBlock)
+				decoded = make([]byte, max(n, blockSize))
 			}
 			entry := <-reUse
 			queue <- entry
@@ -845,17 +866,15 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 				toRead <- orgBuf
 				if err != nil {
 					writtenBlocks <- decoded
-					setErr(err)
-					writeBuf(nil, entry)
+					writeBuf(nil, entry, err)
 					return
 				}
 				if !r.ignoreCRC && crc(decoded) != checksum {
 					writtenBlocks <- decoded
-					setErr(ErrCRC)
-					writeBuf(nil, entry)
+					writeBuf(nil, entry, ErrCRC)
 					return
 				}
-				writeBuf(decoded, entry)
+				writeBuf(decoded, entry, nil)
 			}()
 			continue
 		case chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC:
@@ -873,7 +892,7 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 			}
 			orgBuf := <-toRead
 			if cap(orgBuf) < chunkLen {
-				orgBuf = make([]byte, r.maxBufSize)
+				orgBuf = make([]byte, max(chunkLen, bufSize))
 			}
 			buf := orgBuf[:chunkLen]
 
@@ -905,7 +924,7 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 
 			decoded := <-writtenBlocks
 			if cap(decoded) < n {
-				decoded = make([]byte, r.maxBlock)
+				decoded = make([]byte, max(n, blockSize))
 			}
 			entry := <-reUse
 			queue <- entry
@@ -924,8 +943,7 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 						fmt.Println("ERR: Decoder returned error code:", ret)
 					}
 					writtenBlocks <- decoded
-					setErr(ErrCorrupt)
-					writeBuf(nil, entry)
+					writeBuf(nil, entry, ErrCorrupt)
 					return
 				}
 				if !r.ignoreCRC && chunkType != chunkTypeMinLZCompressedDataCompCRC {
@@ -936,11 +954,10 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 						fmt.Println("ERR: CRC mismatch", crc(decoded), checksum)
 					}
 					writtenBlocks <- decoded
-					setErr(ErrCRC)
-					writeBuf(nil, entry)
+					writeBuf(nil, entry, ErrCRC)
 					return
 				}
-				writeBuf(decoded, entry)
+				writeBuf(decoded, entry, nil)
 			}()
 			continue
 		case chunkTypeMinLZSIMD:
@@ -952,7 +969,7 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 			}
 			orgBuf := <-toRead
 			if cap(orgBuf) < chunkLen {
-				orgBuf = make([]byte, r.maxBufSize)
+				orgBuf = make([]byte, max(chunkLen, bufSize))
 			}
 			buf := orgBuf[:chunkLen]
 			if !r.readFull(buf, false) {
@@ -968,7 +985,7 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 			wg.Add(1)
 			decoded := <-writtenBlocks
 			if cap(decoded) < n {
-				decoded = make([]byte, r.maxBlock)
+				decoded = make([]byte, max(n, blockSize))
 			}
 			entry := <-reUse
 			queue <- entry
@@ -979,11 +996,10 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 				toRead <- orgBuf
 				if err != nil {
 					writtenBlocks <- decoded
-					setErr(err)
-					writeBuf(nil, entry)
+					writeBuf(nil, entry, err)
 					return
 				}
-				writeBuf(decoded, entry)
+				writeBuf(decoded, entry, nil)
 			}()
 			continue
 		case chunkTypeUncompressedData:
@@ -1001,7 +1017,7 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 			// Grab write buffer
 			orgBuf := <-writtenBlocks
 			if cap(orgBuf) < chunkLen {
-				orgBuf = make([]byte, r.maxBufSize)
+				orgBuf = make([]byte, max(chunkLen, bufSize))
 			}
 			buf := orgBuf[:checksumSize]
 			if !r.readFull(buf, false) {
@@ -1034,11 +1050,10 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 				defer wg.Done()
 				if !r.ignoreCRC && crc(buf) != checksum {
 					writtenBlocks <- orgBuf
-					setErr(ErrCRC)
-					writeBuf(nil, entry)
+					writeBuf(nil, entry, ErrCRC)
 					return
 				}
-				writeBuf(buf, entry)
+				writeBuf(buf, entry, nil)
 			}()
 			continue
 		case chunkTypeEOF:
@@ -1061,9 +1076,9 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 						r.err = ErrCorrupt
 						return 0, r.err
 					}
-					if wantSize != r.streamSize() {
+					if lo, hi := r.streamSize(); wantSize < lo || wantSize > hi {
 						if debug {
-							fmt.Println("ERR: EOF data length mismatch", wantSize, r.streamSize())
+							fmt.Println("ERR: EOF data length mismatch", wantSize, lo, hi)
 						}
 						r.err = ErrCorrupt
 						return 0, r.err
@@ -1082,8 +1097,9 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 			if !r.readFull(r.tmp[:magicBodyLen], false) {
 				return 0, r.err
 			}
-			r.blockStart = 0
+			r.blockStart += int64(r.j)
 			r.i, r.j = 0, 0
+			r.streamStart, r.jumpBlock = r.blockStart, 0
 			if string(r.tmp[:len(magicBody)]) == magicBody {
 				if !r.minLzHeader(r.tmp[:magicBodyLen]) {
 					return 0, r.err
@@ -1410,7 +1426,7 @@ func (r *Reader) Skip(n int64) error {
 				return r.err
 			}
 			if !r.ensureBufferSize(chunkLen) {
-				if r.err != nil {
+				if r.err == nil {
 					r.err = ErrTooLarge
 				}
 				return r.err
@@ -1460,7 +1476,7 @@ func (r *Reader) Skip(n int64) error {
 						r.err = ErrCorrupt
 						return r.err
 					}
-					if wantSize != r.streamSize() {
+					if lo, hi := r.streamSize(); wantSize < lo || wantSize > hi {
 						r.err = ErrCorrupt
 						return r.err
 					}
@@ -1478,8 +1494,9 @@ func (r *Reader) Skip(n int64) error {
 			if !r.readFull(r.tmp[:magicBodyLen], false) {
 				return r.err
 			}
-			r.blockStart = 0
+			r.blockStart += int64(r.j)
 			r.i, r.j = 0, 0
+			r.streamStart, r.jumpBlock = r.blockStart, 0
 			if string(r.tmp[:len(magicBody)]) == magicBody {
 				if !r.minLzHeader(r.tmp[:magicBodyLen]) {
 					return r.err
@@ -1528,7 +1545,8 @@ type ReadSeeker struct {
 // The original input must support the io.Seeker interface.
 // A custom index can be specified which will be used if supplied.
 // When using a custom index, it will not be read from the input stream.
-// After a seek through the index, SIMD chunks are accepted until a stream identifier is read.
+// After a seek through the index, SIMD chunks and blocks up to ReaderMaxBlockSize are accepted
+// until a stream identifier is read, and the size in the next EOF chunk is only checked against a range.
 // The ReadAt position will affect regular reads and the current position of Seek.
 // So using Read after ReadAt will continue from where the ReadAt stopped.
 // No functions should be used concurrently.
@@ -1622,6 +1640,7 @@ func (r *ReadSeeker) Seek(offset int64, whence int) (int64, error) {
 		if r.err != nil {
 			return 0, r.err
 		}
+		r.blockStart, r.i, r.j = 0, 0, 0
 		_, r.err = r.Read([]byte{})
 		if r.err != nil {
 			return 0, r.err
@@ -1646,8 +1665,16 @@ func (r *ReadSeeker) Seek(offset int64, whence int) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	// The jump skips the identifier of the target stream; the hash still verifies SIMD chunks.
+	// The jump skips the identifier of the target stream, which may not be the last one read:
+	// until the next one, accept what any identifier allows. The hash still verifies SIMD chunks.
 	r.simd = true
+	r.snappyFrame = false
+	if r.jumpBlock == 0 {
+		r.jumpBlock = r.maxBlock
+	}
+	r.maxBlock = r.maxBlockOrg
+	r.maxBufSize = MaxEncodedLen(r.maxBlock) + checksumSize
+	r.streamStart = u
 
 	r.i = r.j                     // Remove rest of current block.
 	r.blockStart = u - int64(r.j) // Adjust current block start for accounting.
