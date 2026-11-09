@@ -1257,6 +1257,9 @@ func (s *BlockSearcher) decodeChunk(chunkType byte, buf []byte) ([]byte, error) 
 		s.decoded[di] = make([]byte, n)
 	}
 	buf = buf[hdrLen:]
+	if n == 0 || n < len(buf) {
+		return nil, ErrCorrupt
+	}
 	if ret := minLZDecode(s.decoded[di][:n], buf); ret != 0 {
 		return nil, ErrCorrupt
 	}
@@ -1307,6 +1310,9 @@ func (s *BlockSearcher) decodePending(p *pendingBlock) ([]byte, error) {
 	}
 	if n > len(s.decoded[di]) {
 		s.decoded[di] = make([]byte, n)
+	}
+	if n == 0 || n < len(buf)-hdrLen {
+		return nil, ErrCorrupt
 	}
 	if ret := minLZDecode(s.decoded[di][:n], buf[hdrLen:]); ret != 0 {
 		return nil, ErrCorrupt

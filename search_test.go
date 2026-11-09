@@ -301,14 +301,14 @@ func TestPopulationThreshold(t *testing.T) {
 func TestChunkRoundtrip(t *testing.T) {
 	cfgs := []SearchTableConfig{
 		withBaseTableSize(NewSearchTableConfig().WithMatchLen(4), 12),
-		NewSearchTableConfig().WithMatchLen(3).WithBytePrefix('=', ':'),
-		NewSearchTableConfig().WithMatchLen(4).WithLongPrefix([]byte("id:")),
+		withBaseTableSize(NewSearchTableConfig().WithMatchLen(3).WithBytePrefix('=', ':'), 12),
+		withBaseTableSize(NewSearchTableConfig().WithMatchLen(4).WithLongPrefix([]byte("id:")), 12),
 	}
 	// Build a mask prefix
 	var mask [32]byte
 	mask['='>>3] |= 1 << ('=' & 7)
 	mask[':'>>3] |= 1 << (':' & 7)
-	cfgs = append(cfgs, NewSearchTableConfig().WithMatchLen(4).WithMaskPrefix(mask))
+	cfgs = append(cfgs, withBaseTableSize(NewSearchTableConfig().WithMatchLen(4).WithMaskPrefix(mask), 12))
 
 	for _, cfg := range cfgs {
 		info := cfg.marshalSearchInfoChunk()
@@ -4806,6 +4806,52 @@ func TestSearchBlockTypeMismatch(t *testing.T) {
 		}
 		if _, err := s.decodePending(&pendingBlock{lazy: lazy(m.bad)}); !errors.Is(err, ErrCorrupt) {
 			t.Errorf("%s/pending: got error %v, want %v", m.name, err, ErrCorrupt)
+		}
+	}
+}
+
+// TestSearchCorruptTableSize checks that the searchers return an error for table
+// sizes outside SPEC_SEARCH instead of sizing buffers and lookups from them.
+func TestSearchCorruptTableSize(t *testing.T) {
+	fn := func(SearchResult) error { return nil }
+	for _, bts := range []byte{0, 7, 24, 50, 60, 255} {
+		if _, err := parseSearchInfo([]byte{searchTableTypeNoPrefix, 4, bts}); !errors.Is(err, ErrCorrupt) {
+			t.Errorf("bts=%d: got error %v, want %v", bts, err, ErrCorrupt)
+		}
+		// Unchecked, 34..51 kill the test with a fatal out of memory.
+		if bts == 50 {
+			continue
+		}
+		stream := append([]byte(magicChunk+"\x03"), chunkTypeSearchInfo, 3, 0, 0, searchTableTypeNoPrefix, 4, bts)
+		if err := NewBlockSearcher(bytes.NewReader(stream)).Search([]byte("qwerty"), fn); !errors.Is(err, ErrCorrupt) {
+			t.Errorf("bts=%d: BlockSearcher: got error %v, want %v", bts, err, ErrCorrupt)
+		}
+		if err := NewSidecarSearcher(bytes.NewReader(nil), bytes.NewReader(stream)).Search([]byte("qwerty"), fn); !errors.Is(err, ErrCorrupt) {
+			t.Errorf("bts=%d: SidecarSearcher: got error %v, want %v", bts, err, ErrCorrupt)
+		}
+	}
+	// A 0x45 table reduced below one byte, with the CRC of its empty bitmap, before a block.
+	p := binary.LittleEndian.AppendUint32([]byte{searchTableTypeNoPrefix, 4, 13, 11}, crc(nil))
+	stream := append(appendChunkHeader([]byte(magicChunk+"\x03"), chunkTypeSearchTable, len(p)), p...)
+	stream = binary.LittleEndian.AppendUint32(appendChunkHeader(stream, chunkTypeUncompressedData, 4+6), crc([]byte("qwerty")))
+	stream = append(stream, "qwerty"...)
+	if err := NewBlockSearcher(bytes.NewReader(stream)).Search([]byte("qwerty"), fn); err == nil {
+		t.Error("table reduced below one byte: no error")
+	}
+}
+
+// TestSearchZeroSizeBlock checks that the searcher rejects a compressed block of
+// decoded size 0 like Reader does; the asm decoders panic on its nil buffer.
+func TestSearchZeroSizeBlock(t *testing.T) {
+	for _, ct := range []byte{chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC} {
+		// CRC, decoded size 0, one byte of block.
+		chunk := []byte{0, 0, 0, 0, 0, 0}
+		stream := append(appendChunkHeader([]byte(magicChunk+"\x03"), ct, len(chunk)), chunk...)
+		if err := NewBlockSearcher(bytes.NewReader(stream)).Search([]byte("qwerty"), func(SearchResult) error { return nil }); !errors.Is(err, ErrCorrupt) {
+			t.Errorf("chunk %#x: got error %v, want %v", ct, err, ErrCorrupt)
+		}
+		if _, err := NewBlockSearcher(nil).decodePending(&pendingBlock{lazy: lazyBlock{chunkType: ct, chunkData: chunk}}); !errors.Is(err, ErrCorrupt) {
+			t.Errorf("chunk %#x/pending: got error %v, want %v", ct, err, ErrCorrupt)
 		}
 	}
 }

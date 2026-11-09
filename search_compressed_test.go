@@ -844,6 +844,30 @@ func FuzzDecodeCompressedSearchChunk(f *testing.F) {
 	})
 }
 
+// TestCompressedHuff0TableReuse checks that a crafted huff0 table read into the
+// decoder scratch holding the previous chunk's table returns an error.
+// klauspost/compress before v1.20.2 panicked here (GHSA-fpmh-frq8-7rj8).
+func TestCompressedHuff0TableReuse(t *testing.T) {
+	// Weight tables from the upstream fix's tests, after the huff0 header byte:
+	// A has tableLog 15, B an FSE count of 1<<15.
+	tabA := []byte{0x0d, 0x1a, 0x00, 0x00, 0x00, 0x90, 0xaf, 0xfa, 0xff, 0x03, 0x00, 0x80, 0xff, 0x7f}
+	tabB := []byte{0x1c, 0x1a, 0x00, 0xe0, 0xff, 0x1f, 0x0f, 0xb1, 0x9c, 0x5a, 0xcf, 0x4d, 0xe4, 0x1d, 0x7b, 0xab, 0x99, 0x5e, 0x01, 0x51, 0xa4, 0x73, 0xd8, 0xb1, 0xf3, 0x39, 0x4b, 0x67, 0xf6}
+	stream := []byte(magicChunk + "\x06")
+	for _, tab := range [][]byte{tabA, tabB} {
+		// Table 0 and one all-zero RLE block covering the 1<<13 byte bitmap.
+		p := binary.LittleEndian.AppendUint32([]byte{searchTableTypeNoPrefix, 4, 16, 0}, crc(make([]byte, 1<<13)))
+		p = append(append(append(p, 13, 1), tab...), cstDispRLE, 0)
+		stream = append(appendChunkHeader(stream, chunkTypeSearchTableCompressed, len(p)), p...)
+	}
+	fn := func(SearchResult) error { return nil }
+	if err := NewBlockSearcher(bytes.NewReader(stream)).Search([]byte("qwerty"), fn); err == nil {
+		t.Error("BlockSearcher: no error")
+	}
+	if err := NewSidecarSearcher(bytes.NewReader(nil), bytes.NewReader(stream)).Search([]byte("qwerty"), fn); err == nil {
+		t.Error("SidecarSearcher: no error")
+	}
+}
+
 // Benchmarks
 
 func BenchmarkCompressedSearchEncode(b *testing.B) {

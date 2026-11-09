@@ -396,6 +396,10 @@ func parseSearchInfo(payload []byte) (SearchTableConfig, error) {
 		maxPopPct:        defaultMaxPopPct,
 		maxReducedPopPct: defaultMaxReducedPopPct,
 	}
+	// Searchers size bitmap buffers from it.
+	if cfg.baseTableSize < searchTableMinLog2 || cfg.baseTableSize > searchTableMaxLog2 {
+		return cfg, ErrCorrupt
+	}
 	payload = payload[3:]
 	switch cfg.tableType {
 	case searchTableTypeNoPrefix:
@@ -440,6 +444,10 @@ func parseSearchTable(payload []byte, ignoreCRC bool) (cfg SearchTableConfig, re
 		return
 	}
 	reductions = payload[off]
+	if cfg.baseTableSize <= reductions+3 {
+		err = fmt.Errorf("minlz: invalid reductions %d for baseTableSize %d", reductions, cfg.baseTableSize)
+		return
+	}
 	table = payload[off+1:]
 	expectedSize := 1 << (cfg.baseTableSize - reductions - 3)
 	if len(table) < expectedSize+4 {
