@@ -427,7 +427,7 @@ A [SIMD block](SPEC_SIMD.md) *without* the MinLZ indicator (initial 0 byte).
 The block type (see 1.1) must be 1.
 
 An [xxhash3](https://github.com/Cyan4973/xxHash#xxhash---extremely-fast-hash-algorithm)
-(XXH3 64-bit, seed 0) of the *uncompressed* data is stored unmasked, as an 8-byte little endian value, at the start of the block.
+(XXH3 64-bit, seed 0) of the *uncompressed* data is stored unmasked, as an 8-byte little endian value, at the start of the chunk data, before the block.
 
 The stream identifier *must* indicate that SIMD blocks are present (bit 6 set).
 Otherwise, the decoder should reject the stream.
