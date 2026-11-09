@@ -15,7 +15,6 @@
 package minlz
 
 import (
-	"bytes"
 	"hash/crc32"
 )
 
@@ -149,9 +148,3 @@ func crc(b []byte) uint32 {
 func crcMask(c uint32) uint32 {
 	return c>>15 | c<<17 + 0xa282ead8
 }
-
-type byter interface {
-	Bytes() []byte
-}
-
-var _ byter = &bytes.Buffer{}
