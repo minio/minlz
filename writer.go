@@ -494,7 +494,8 @@ func (w *Writer) EncodeBuffer(buf []byte) (err error) {
 
 		// Get output buffer. Front is reserved for search chunk, data starts at searchMaxChunk.
 		smc := w.searchMaxChunk
-		obuf := w.buffers.Get().([]byte)[:smc+len(uncompressed)+obufHeaderLen]
+		// The encoders need MaxEncodedLen of the block, more than its raw chunk.
+		obuf := w.buffers.Get().([]byte)[:w.obufLen]
 		output := make(chan result)
 		w.output <- output
 		res := result{
@@ -507,6 +508,7 @@ func (w *Writer) EncodeBuffer(buf []byte) (err error) {
 			if n2 > 0 {
 				dbuf = dbuf[:n2]
 			} else {
+				dbuf = dbuf[:obufHeaderLen+len(uncompressed)]
 				putUncompressed(dbuf, uncompressed)
 			}
 
@@ -601,7 +603,9 @@ func (w *Writer) encodeBlock(dst, uncompressed []byte) int {
 			os.WriteFile(name+"compressed.bin", block, 0o644)
 		}
 	}
-	if n == 0 {
+	// A block that doesn't shrink must be stored (SPEC 4.4). Checking the size, not only
+	// whether it fit dst, also keeps the output independent of the size of dst.
+	if n == 0 || h+n >= len(uncompressed) {
 		return 0
 	}
 	binary.LittleEndian.PutUint32(dst[chunkHeaderSize:], crc(uncompressed))

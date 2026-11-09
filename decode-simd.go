@@ -229,8 +229,8 @@ type simdChunk struct {
 	tok, ll, offc, esc, raw []byte
 	nLL, nOff, nEsc, bits   int
 	delta                   bool
-	// flat is set for chunks with the no-overlap flag. Their offsets are raised to the match length,
-	// so matches are plain copies.
+	// flat is set for chunks with the no-overlap flag. Their offsets are raised to the match length or 32,
+	// so copying 32 bytes at a time needs no overlap test. Longer matches can still overlap their output.
 	flat bool
 }
 

@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"io"
 	"math"
 	"math/rand"
 	"path/filepath"
@@ -2026,6 +2027,85 @@ func TestEncodeLiteralHeaderMinimal(t *testing.T) {
 					t.Errorf("n=%d litLen=%d level=%d: longest literal is %d bytes; test input is not doing its job",
 						n, litLen, level, longest)
 				}
+			}
+		}
+	}
+}
+
+// bestEndInput returns k segments of random bytes and 4 equal bytes, then random bytes and t equal bytes.
+// The first random run has first bytes, the others 400. LevelSmallest emits each segment as a literal
+// header, its literals and a repeat, which is one byte more than the segment.
+func bestEndInput(k, t, first int) []byte {
+	x := uint64(0x9E3779B97F4A7C15)
+	rnd := func(avoid byte) byte {
+		for {
+			x ^= x << 13
+			x ^= x >> 7
+			x ^= x << 17
+			if b := byte(x >> 24); b != avoid && b != avoid+1 {
+				return b
+			}
+		}
+	}
+	var v []byte
+	for a := 1; a <= k+1; a++ {
+		n := 400
+		if a == 1 {
+			n = first
+		}
+		for range n {
+			v = append(v, rnd(byte(a)))
+		}
+		v = append(v, bytes.Repeat([]byte{byte(a)}, 4)...)
+	}
+	return append(v[:len(v)-4], bytes.Repeat([]byte{byte(k + 1)}, t)...)
+}
+
+// TestEncodeBestEnd checks that the last emission of LevelSmallest stays inside dst.
+// encodeBlockBest checks its size limit before the literal header and the operation.
+func TestEncodeBestEnd(t *testing.T) {
+	step := 1
+	if testing.Short() {
+		step = 3
+	}
+	for k := 30; k <= 60; k += step {
+		for tt := 30; tt <= 70; tt++ {
+			src := bestEndInput(k, tt, 400)
+			n := MaxEncodedLen(len(src))
+			buf := bytes.Repeat([]byte{0xa5}, n+16)
+			enc, err := Encode(buf[:0:n], src, LevelSmallest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(enc) > n || !bytes.Equal(buf[n:], bytes.Repeat([]byte{0xa5}, 16)) {
+				t.Fatalf("k=%d t=%d: %d bytes, dst is %d", k, tt, len(enc), n)
+			}
+			if dec, err := Decode(nil, enc); err != nil || !bytes.Equal(dec, src) {
+				t.Fatalf("k=%d t=%d: round trip: %v", k, tt, err)
+			}
+		}
+	}
+	// Blocks of the stream block size, whose output ends past and just inside dst.
+	for _, x := range [][3]int{{161, 166, 326}, {161, 167, 325}} {
+		src := bestEndInput(x[0], x[1], x[2])
+		var want []byte
+		for _, c := range []int{1, 2} {
+			var buf bytes.Buffer
+			w := NewWriter(&buf, WriterBlockSize(len(src)), WriterLevel(LevelSmallest), WriterConcurrency(c))
+			if err := w.EncodeBuffer(src); err != nil {
+				t.Fatal(err)
+			}
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if c == 1 {
+				want = append(want, buf.Bytes()...)
+			} else if !bytes.Equal(buf.Bytes(), want) {
+				t.Errorf("%v: concurrent EncodeBuffer differs from serial", x)
+			}
+			dec, err := io.ReadAll(NewReader(&buf))
+			if err != nil || !bytes.Equal(dec, src) {
+				t.Fatalf("%v: round trip: %v", x, err)
 			}
 		}
 	}

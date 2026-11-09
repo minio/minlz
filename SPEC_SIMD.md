@@ -219,8 +219,9 @@ The flags byte:
 | 2-3  | Reserved hints: encoders set them to 0, decoders ignore them                                         |
 | 4-7  | Reserved, must be 0                                                                                  |
 
-With the no-overlap flag, matches only overlap their output, and delta references only repeat,
-in operations that start before position 32 (4.3, 4.5), so a decoder can run the others without handling either.
+With the no-overlap flag, operations that start at position 32 or later have match offsets of at least
+the match length or 32, whichever is smaller, and delta references that don't repeat (4.3, 4.5).
+A decoder that copies matches forward 32 bytes at a time can run them without an overlap test or repeating references.
 
 Each entry is an unsigned varint: the stored size of the stream's data in bytes times 8, plus its mode (2.2).
 
@@ -345,7 +346,9 @@ Clamping does not change the repeat offset: each use clamps it to the position a
 
 In a chunk with the no-overlap flag, an offset below the match length is raised to the match length, or to 32 for longer matches,
 before it is clamped. Like clamping, this does not change the repeat offset.
-A match then only overlaps its output when clamping makes its offset smaller, which needs a position below 32.
+A match of up to 32 bytes then only overlaps its output when clamping makes its offset smaller, which needs a position below 32.
+A longer match can still overlap its output, but its offset is at least 32 (below),
+so a forward copy of 32 bytes at a time never reads bytes that the same copy writes.
 
 Matches longer than 32 bytes must have an offset of at least 32, after clamping.
 
@@ -719,6 +722,7 @@ and 32 bytes after each operation it writes. The last operations of a block can 
   the overlap test and the pattern.
 * In chunks with the no-overlap flag, the offset is `min(max(offset, min(ml, 32)), position)`, and the delta reference offset
   `min(max(offset, 32), position)`. A decoder can run the operations that start before position 32 like other chunks,
-  and the rest without an overlap test or repeating references.
+  and the rest without an overlap test or repeating references, if it copies matches forward 32 bytes at a time:
+  a match longer than 32 bytes can still overlap its output.
 * The first operation's delta references are 0 (4.5). Setting the first output byte to 0, and treating offset 0 like offset 1,
   gives that without a special case.

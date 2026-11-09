@@ -107,7 +107,8 @@ type simdEncoder struct {
 	fastCode int
 
 	deltaDiv int // delta literals must save 1/deltaDiv of a chunk; 0 disables them, -1 uses only them
-	// noOverlap splits the matches that overlap their output, so every chunk has the no-overlap flag.
+	// noOverlap splits the matches of up to 32 bytes that overlap their output, so every chunk has the
+	// no-overlap flag. Longer matches have offsets of at least 32, which the flag allows.
 	// With budget, a chunk stops splitting once that cost it more than simdSplitBudget, and overlaps.
 	// splitCost is what splitting cost the chunk: operations and offsets, against operations of 32 bytes.
 	noOverlap, budget bool

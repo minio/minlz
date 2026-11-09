@@ -358,6 +358,14 @@ func encodeBlockBest(dst, src []byte) (d int) {
 				continue
 			}
 		}
+		// The size check above leaves out the literal header and the operation, up to 11 bytes,
+		// and the asm emitters store 1 byte past what they return.
+		// When they could end past dst, emit to a scratch buffer, and keep the emission only if it fits.
+		var full []byte
+		fullD := d
+		if len(dst)-d < base-nextEmit+16 {
+			full, dst, d = dst, make([]byte, base-nextEmit+16), 0
+		}
 		if debug && nextEmit != base {
 			fmt.Println("EMIT", base-nextEmit, "literals. base-after:", base)
 		}
@@ -450,6 +458,13 @@ func encodeBlockBest(dst, src []byte) (d int) {
 					d += emitCopy(dst[d:], offset, best.length)
 				}
 			}
+		}
+		if full != nil {
+			if fullD+d > len(full) {
+				return 0
+			}
+			copy(full[fullD:], dst[:d])
+			dst, d = full, fullD+d
 		}
 		repeat = offset
 
