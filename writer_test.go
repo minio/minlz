@@ -23,6 +23,7 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -412,6 +413,32 @@ func TestIndex(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+// TestIndexAddOrder checks that add rejects offsets that go backwards,
+// also at the same uncompressed offset, where a valid add replaces the entry.
+func TestIndexAddOrder(t *testing.T) {
+	var i Index
+	i.reset(1 << 20)
+	for _, s := range []struct {
+		c, u int64
+		err  string
+	}{
+		{100, 0, ""},
+		{200, 0, ""},
+		{150, 0, "Earlier compressed received (200 > 150)"},
+		{1000, 2 << 20, ""},
+		{2000, 1 << 20, "Earlier uncompressed received (2097152 > 1048576)"},
+		{500, 3 << 20, "Earlier compressed received (1000 > 500)"},
+	} {
+		err := i.add(s.c, s.u)
+		if s.err == "" && err != nil || s.err != "" && (err == nil || !strings.Contains(err.Error(), s.err)) {
+			t.Errorf("add(%d, %d): got error %v, want %q", s.c, s.u, err, s.err)
+		}
+	}
+	if want := []OffsetPair{{200, 0}, {1000, 2 << 20}}; !slices.Equal(i.Offsets, want) {
+		t.Errorf("got offsets %v, want %v", i.Offsets, want)
 	}
 }
 
