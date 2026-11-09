@@ -319,18 +319,24 @@ func TestTableReject(t *testing.T) {
 }
 
 func TestTableRebuild(t *testing.T) {
-	// Reusing a Table must not leak state from a larger previous table.
+	// Reusing a Table must not leak state from a previous table with more ranks or records.
 	var all, small [256]uint8
 	for i := range all {
 		all[i] = 8
 	}
 	small['a'], small['b'], small['c'] = 1, 2, 2
-	var tb Table
-	if tb.SetLengths(&all) != nil || tb.SetLengths(&small) != nil {
-		t.Fatal("build")
-	}
-	if fresh := mustTable(t, &small); *fresh != tb {
-		t.Fatal("rebuilt table differs from a fresh one")
+	english := lensOf(t, dist("english"))
+	fresh := mustTable(t, &small)
+	for _, prev := range []*[256]uint8{&all, &english} {
+		var tb Table
+		if tb.SetLengths(prev) != nil || tb.SetLengths(&small) != nil {
+			t.Fatal("build")
+		}
+		// build leaves sched past nsched stale; nothing reads it.
+		clear(tb.sched[tb.nsched:])
+		if *fresh != tb {
+			t.Fatal("rebuilt table differs from a fresh one")
+		}
 	}
 }
 

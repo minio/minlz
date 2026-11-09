@@ -98,4 +98,10 @@ func TestAVX512HistogramFallback(t *testing.T) {
 	if h != want {
 		t.Fatal("fallback histogram mismatch")
 	}
+	cpuid.CPU = saved
+	h = [256]uint32{}
+	TierAVX512.Histogram(&h, src, nil)
+	if h != want {
+		t.Fatal("short scratch histogram mismatch")
+	}
 }

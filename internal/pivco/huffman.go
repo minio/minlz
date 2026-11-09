@@ -25,8 +25,8 @@ type leaf struct {
 // BuildLengths sets lens to the Huffman code lengths of hist, the counts of symbols 0 to
 // len(hist)-1, at most 256, limited to MaxCodeLen.
 // A lone used symbol gets length 1. It returns false, with lens all zero, if hist is all zero.
-// The lengths are upstream's wherever upstream is defined; it overruns an array when the
-// unlimited Huffman tree is deeper than 63.
+// The lengths are upstream's wherever upstream is defined; upstream overruns an array when
+// the unlimited Huffman tree is deeper than 63, where these are still a complete code.
 func BuildLengths(hist []uint64, lens *[256]uint8) bool {
 	*lens = [256]uint8{}
 	var leaves [256]leaf

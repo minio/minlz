@@ -522,8 +522,9 @@ func (s *simdDecoder) setTable(k, mode int, b []byte) (int, bool) {
 			lens[v] = (x + lay.in[v]) & -((x + 15) >> 4)
 		}
 	}
-	// Lengths are at most 15, so adding 15 to a byte doesn't carry out of it,
-	// and the sum of 8 lengths fits a byte.
+	// Lengths are at most 22, a class length of 15 plus an in-class length of up to 7, so
+	// adding 15 to a byte doesn't carry out of it, and the sum of 8 lengths fits a byte.
+	// used misses lengths above 16, but SetLengths rejects any length above 11.
 	used, sum := 0, 0
 	for i := 0; i < 2*simdCodeBytes[min(k, simdLits)]; i += 8 {
 		x := load64(lens[:], i)

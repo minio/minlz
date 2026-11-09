@@ -2110,3 +2110,74 @@ func TestEncodeBestEnd(t *testing.T) {
 		}
 	}
 }
+
+// TestEmitLiteralSizeN checks the LevelSmallest literal header estimate against emitLiteral.
+func TestEmitLiteralSizeN(t *testing.T) {
+	lit := make([]byte, 65600)
+	dst := make([]byte, len(lit)+16)
+	for n := 1; n <= len(lit); n++ {
+		// The header size only steps after 29, 285 and 65565; copying every length between is slow under -race.
+		if n > 320 && n < 65530 && n%97 != 0 {
+			continue
+		}
+		if got, want := emitLiteralSizeN(n), emitLiteral(dst, lit[:n])-n; got != want {
+			t.Fatalf("n=%d: emitLiteralSizeN is %d, emitLiteral wrote a %d-byte header", n, got, want)
+		}
+	}
+}
+
+// TestSuperFastMaxOffset places an 8-byte match at offset maxCopy3Offset+delta
+// that only one encodeFastBlockGo probe can find: the one at s+k (k 0..2), or
+// the one right after a copy that ends there (k 3). The sizes check that the
+// match is taken at delta 0 and rejected at delta 1; an offset of
+// maxCopy3Offset+1 wraps to minCopy3Offset and decodes to wrong bytes.
+// The data and sizes match minlz-rs l0_max_offset_probes.
+func TestSuperFastMaxOffset(t *testing.T) {
+	const X = 1000
+	rng := uint64(7) + 0x9E3779B97F4A7C15
+	rnd := func(b []byte) {
+		for i := range b {
+			rng ^= rng << 13
+			rng ^= rng >> 7
+			rng ^= rng << 17
+			b[i] = byte(rng) | 1
+		}
+	}
+	marker, tail := make([]byte, 24), make([]byte, 16)
+	rnd(marker)
+	rnd(tail)
+	for k, sizes := range [][2]int{{68, 72}, {67, 72}, {66, 72}, {101, 98}} {
+		for delta, want := range sizes {
+			y := X + maxCopy3Offset + delta
+			src := make([]byte, y+4096)
+			copy(src[X:], marker)
+			at := k
+			if k == 3 {
+				copy(src[X+100:], tail)
+				copy(src[y-16:], tail)
+				at = 0
+			}
+			for i, b := range marker {
+				if i < at || i >= at+8 {
+					b ^= 0x80
+				}
+				src[y+i] = b
+			}
+			enc, err := Encode(nil, src, LevelSuperFast)
+			if err != nil {
+				t.Fatal(err)
+			}
+			goEnc := encodeGo(nil, src, LevelSuperFast)
+			for name, enc := range map[string][]byte{"go": goEnc, "default": enc} {
+				dec, err := Decode(nil, enc)
+				if err != nil || !bytes.Equal(dec, src) {
+					t.Errorf("%s k %d delta %d: roundtrip mismatch (err=%v)", name, k, delta, err)
+				}
+			}
+			if len(goEnc) != want {
+				t.Errorf("k %d delta %d: encodeFastBlockGo size %d, want %d (sizes shared with minlz-rs l0_max_offset_probes: regenerate both if the encodeFastBlockGo parse changes on purpose)",
+					k, delta, len(goEnc), want)
+			}
+		}
+	}
+}

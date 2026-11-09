@@ -374,9 +374,9 @@ func emitLiteralSizeN(n int) int {
 	switch {
 	case n <= 29:
 		return 1
-	case n < 29+(1<<8):
+	case n <= 29+(1<<8):
 		return 2
-	case n < 29+(1<<16):
+	case n <= 29+(1<<16):
 		return 3
 	default:
 		return 4

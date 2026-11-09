@@ -125,7 +125,8 @@ func execAVX512(p *Program) int {
 }
 
 func histogramAVX512(h *[256]uint32, src, scratch []byte) {
-	if !hasHistAVX512() {
+	// The caller sized scratch from an earlier read of the CPU flags, which may have changed since.
+	if len(scratch) < HistScratch || !hasHistAVX512() {
 		histogramGeneric(h, src)
 		return
 	}

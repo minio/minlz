@@ -86,9 +86,10 @@ type Program struct {
 
 // Slack required by the kernels, in bytes.
 const (
-	// RankSlack: rank, right-output and bitmap staging slices passed to the encoder kernels
-	// must have at least n+RankSlack (bitmaps: ceil(n/8)+RankSlack) bytes; kernels may store
-	// junk there. In-place left outputs of PartFull are exact.
+	// RankSlack: right-output and bitmap staging slices passed to the partitions of n ranks
+	// must have at least n+RankSlack and ceil(n/8)+RankSlack bytes; kernels may store junk
+	// there. Ranks (Gather output, partition and Pack input) and the in-place left outputs
+	// of PartFull are accessed exactly.
 	RankSlack = 64
 	// ArenaSlack: Program.Arena must extend this far past the last byte any op can address.
 	ArenaSlack = 128
@@ -221,8 +222,9 @@ func (t Tier) Pack(dst, ranks []byte, n int, d, base uint8) {
 }
 
 // Exec runs p.Ops. It returns -1 on success, or the index of the first op that is
-// malformed (unknown Kind, D out of range, K not a multiple of its layout block, nil R2S),
-// out of range of the slices, or whose bitmap popcount does not match its KR.
+// malformed (unknown Kind, D out of range, K not a multiple of its layout block, a lookup
+// flat with nil R2S), out of range of the slices, or whose bitmap popcount does not match
+// its KR.
 func (t Tier) Exec(p *Program) int {
 	switch t {
 	case TierAVX512:
