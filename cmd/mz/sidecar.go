@@ -300,10 +300,17 @@ Options:`)
 	}
 }
 
-// samePath reports whether a and b resolve to the same filesystem path. Used
-// to refuse outputs that would truncate the input or collide with each other.
+// samePath reports whether a and b name the same file. Used to refuse outputs
+// that would truncate the input or collide with each other.
 func samePath(a, b string) bool {
+	// Comparing paths catches two outputs that don't exist yet.
 	pa, ea := filepath.Abs(a)
 	pb, eb := filepath.Abs(b)
-	return ea == nil && eb == nil && pa == pb
+	if ea == nil && eb == nil && pa == pb {
+		return true
+	}
+	// Paths miss other spellings, case-insensitive names, symlinks and hard links.
+	fa, ea := os.Stat(a)
+	fb, eb := os.Stat(b)
+	return ea == nil && eb == nil && os.SameFile(fa, fb)
 }

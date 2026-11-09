@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -355,12 +356,23 @@ func processStream(filename string, o streamCompressOpts) {
 		fmt.Print("Compressing ", filename, " -> ", dstFilename)
 	}
 
-	if dstFilename == filename && !o.stdout {
+	sideName := dstFilename + minlzSidecarExt
+	if !o.stdout && o.searchSidecar && samePath(filename, sideName) {
+		exitErr(errors.New("sidecar output would overwrite the input"))
+	}
+	var tmpFile *os.File
+	if !o.stdout && samePath(filename, dstFilename) {
 		if o.remove {
 			exitErr(errors.New("cannot remove when input = output"))
 		}
+		if o.safe {
+			exitErr(errors.New("destination file exists"))
+		}
 		renameDst := dstFilename
-		dstFilename = fmt.Sprintf(".tmp-%s%s", time.Now().Format("2006-01-02T15-04-05Z07"), o.ext)
+		var err error
+		tmpFile, err = os.CreateTemp(filepath.Dir(renameDst), ".tmp-*"+o.ext)
+		exitErr(err)
+		dstFilename = tmpFile.Name()
 		defer func() {
 			exitErr(os.Rename(dstFilename, renameDst))
 		}()
@@ -394,14 +406,20 @@ func processStream(filename string, o streamCompressOpts) {
 	case o.stdout:
 		out = os.Stdout
 	default:
-		if o.safe {
-			_, err := os.Stat(dstFilename)
-			if !os.IsNotExist(err) {
-				exitErr(errors.New("destination file exists"))
+		dstFile := tmpFile
+		if dstFile == nil {
+			if o.safe {
+				_, err := os.Stat(dstFilename)
+				if !os.IsNotExist(err) {
+					exitErr(errors.New("destination file exists"))
+				}
 			}
+			dstFile, err = os.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+			exitErr(err)
+		} else {
+			// CreateTemp makes it 0600; the renamed file should keep the input's mode.
+			exitErr(dstFile.Chmod(mode))
 		}
-		dstFile, err := os.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-		exitErr(err)
 		defer dstFile.Close()
 		bw := bufio.NewWriterSize(dstFile, o.blockSize*2)
 		defer bw.Flush()
@@ -412,10 +430,8 @@ func processStream(filename string, o streamCompressOpts) {
 	start := time.Now()
 	o.wr.Reset(&wc)
 	defer o.wr.Close()
-	var sideName string
 	var sideCount *wCounter
 	if o.searchSidecar {
-		sideName = dstFilename + minlzSidecarExt
 		if o.safe {
 			if _, err := os.Stat(sideName); !os.IsNotExist(err) {
 				exitErr(fmt.Errorf("sidecar destination %s exists", sideName))
@@ -471,6 +487,9 @@ func processBlock(recomp *bool, filename string, ext string, outFile *string, qu
 		dstFilename := cleanFileName(fmt.Sprintf("%s%s", filename, ext))
 		if *outFile != "" {
 			dstFilename = *outFile
+		}
+		if *remove && !*stdout && samePath(filename, dstFilename) {
+			exitErr(errors.New("cannot remove when input = output"))
 		}
 		if !*quiet {
 			fmt.Print("Compressing ", filename, " -> ", dstFilename)

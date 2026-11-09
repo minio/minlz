@@ -254,6 +254,8 @@ Options:`)
 		}
 		if *verify {
 			dstFilename = "(verify)"
+		} else if !*stdout && samePath(filename, dstFilename) {
+			exitErr(fmt.Errorf("output %q would overwrite the input %q", dstFilename, filename))
 		}
 		cfg := &decompressConfig{
 			quiet:       quiet,
