@@ -258,3 +258,48 @@ func TestReadSeekerJumpSingleStream(t *testing.T) {
 		t.Fatalf("missing block: got %v, want %v", err, ErrCorrupt)
 	}
 }
+
+// TestReaderS2AfterMinLZ checks that an S2 stream with larger blocks than the MinLZ stream
+// before it is accepted, and that S2 blocks advance the offset when decoded concurrently.
+func TestReaderS2AfterMinLZ(t *testing.T) {
+	a, b := seekTestData(200<<10, 4), seekTestData(600<<10, 5)
+	var sa, sb bytes.Buffer
+	for w, data := range map[io.WriteCloser][]byte{
+		NewWriter(&sa, WriterBlockSize(64<<10), WriterConcurrency(1)):                                a,
+		s2.NewWriter(&sb, s2.WriterBlockSize(256<<10), s2.WriterConcurrency(1), s2.WriterAddIndex()): b,
+	} {
+		if _, err := w.Write(data); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stream, want := slices.Concat(sa.Bytes(), sb.Bytes()), slices.Concat(a, b)
+	got, err := io.ReadAll(NewReader(bytes.NewReader(stream), ReaderFallback(true)))
+	if err != nil || !bytes.Equal(got, want) {
+		t.Fatalf("Read: %v", err)
+	}
+	var out bytes.Buffer
+	if _, err := NewReader(bytes.NewReader(stream), ReaderFallback(true)).DecodeConcurrent(&out, 4); err != nil || !bytes.Equal(out.Bytes(), want) {
+		t.Fatalf("DecodeConcurrent: %v", err)
+	}
+	r := NewReader(bytes.NewReader(stream), ReaderFallback(true))
+	if err := r.Skip(int64(len(a) + 300<<10)); err != nil {
+		t.Fatalf("Skip: %v", err)
+	}
+	if got, err := io.ReadAll(r); err != nil || !bytes.Equal(got, want[len(a)+300<<10:]) {
+		t.Fatalf("Read after Skip: %v", err)
+	}
+
+	rs, err := NewReader(bytes.NewReader(sb.Bytes()), ReaderFallback(true)).ReadSeeker(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rs.WriteTo(io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if pos, err := rs.Seek(0, io.SeekCurrent); err != nil || pos != int64(len(b)) {
+		t.Fatalf("Seek(0, SeekCurrent) after WriteTo = %d, %v; want %d", pos, err, len(b))
+	}
+}

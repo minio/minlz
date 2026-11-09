@@ -597,6 +597,7 @@ func (r *Reader) Read(p []byte) (int, error) {
 				return 0, r.err
 			}
 			r.maxBlock = r.maxBlockOrg
+			r.maxBufSize = MaxEncodedLen(r.maxBlock) + checksumSize
 			r.simd = false
 			if string(r.tmp[:magicBodyLen]) != magicBodyS2 && string(r.tmp[:magicBodyLen]) != magicBodySnappy {
 				r.err = ErrUnsupported
@@ -858,7 +859,7 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 			}
 			entry := <-reUse
 			queue <- entry
-			r.blockStart += int64(r.j)
+			r.blockStart += int64(n)
 			go func() {
 				defer wg.Done()
 				decoded = decoded[:n]
@@ -1114,6 +1115,7 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 				return 0, r.err
 			}
 			r.maxBlock = r.maxBlockOrg
+			r.maxBufSize = MaxEncodedLen(r.maxBlock) + checksumSize
 			r.simd = false
 
 			if string(r.tmp[:magicBodyLen]) != magicBodyS2 && string(r.tmp[:magicBodyLen]) != magicBodySnappy {
@@ -1508,6 +1510,7 @@ func (r *Reader) Skip(n int64) error {
 				return r.err
 			}
 			r.maxBlock = r.maxBlockOrg
+			r.maxBufSize = MaxEncodedLen(r.maxBlock) + checksumSize
 			r.simd = false
 			if string(r.tmp[:magicBodyLen]) != magicBodyS2 && string(r.tmp[:magicBodyLen]) != magicBodySnappy {
 				r.err = ErrUnsupported

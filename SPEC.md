@@ -450,11 +450,11 @@ Encoders should always emit this chunk.
 Decoders can optionally reject streams that do not have this chunk.
 
 If this is the first chunk in the stream, the stream is empty.
-An EOF chunk directly after another EOF chunk, with no Stream identifier between them, is also an empty stream, and its size must be 0.
+An EOF chunk directly after another EOF chunk, with no Stream identifier between them, is also an empty stream: if it has a size, the size must be 0.
 
 If there are multiple Stream identifier (chunk type 0xff) chunks in the stream,
 each must have a corresponding EOF chunk and the count resets to 0 at each Stream identifier.
-A decoder that starts at an index entry (see 4.12) does not know where the stream started, and cannot check the size exactly.
+A decoder that starts at an index entry cannot check the size exactly (see 4.12).
 
 ### 4.7. Padding (chunk type 0xfe)
 
