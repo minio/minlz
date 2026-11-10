@@ -1405,6 +1405,33 @@ func testSIMDValidation(t *testing.T) {
 			}
 		}
 	})
+	t.Run("literal blocks", func(t *testing.T) {
+		for _, n := range []int{simdMaxLitBlocks, simdMaxLitBlocks + 1} {
+			var ops []simdTestOp
+			for l := 0; l < n; l += simdMaxLen {
+				ops = append(ops, simdTestOp{ll: min(simdMaxLen, n-l), ml: simdMaxLen, off: 1})
+			}
+			for range 200 {
+				ops = append(ops, simdTestOp{ml: simdMaxLen})
+			}
+			e, want := b.build(simdTestBlock{ops: ops, lits: bytes.Repeat([]byte("ab"), n)[:n], litBlock: 1})
+			block := e.bytes()
+			if len(e.lits) != n || len(block)-1+simdMinSaving > len(want) {
+				t.Fatalf("%d literal blocks, block of %d bytes for %d", len(e.lits), len(block), len(want))
+			}
+			_, rerr := reference.DecodeSIMDBlock(block)
+			if n <= simdMaxLitBlocks {
+				simdTestDecode(t, block, want)
+				if rerr != nil {
+					t.Fatalf("%d literal blocks: reference: %v", n, rerr)
+				}
+				continue
+			}
+			if _, err := Decode(nil, block); !errors.Is(err, ErrCorrupt) || rerr == nil {
+				t.Fatalf("%d literal blocks: %v, reference %v", n, err, rerr)
+			}
+		}
+	})
 	t.Run("65535 operations", func(t *testing.T) {
 		// Value 6 is 65535 operations, not 1024<<6: a stored token stream could hold 65536.
 		// Escapes are stored: two per operation don't fit a pivco block.
@@ -2052,7 +2079,7 @@ func testSIMDLitLazy(t *testing.T) {
 		ops, lits := simdTestOps(rng, 3000+rng.Intn(3000), "abcdefgh\x00", 288, 1<<rng.Intn(20))
 		delta := uint64(i&1) * rng.Uint64()
 		add(fmt.Sprint("many literal blocks per chunk ", i), simdTestBlock{ops: ops, lits: lits, limit: 2, chunk: 500 + rng.Intn(3000),
-			litBlock: 1 + rng.Intn(200), modes: []int{simdCodeLens, simdCurrent}, litModes: litModes[i:], delta: delta})
+			litBlock: max(1+rng.Intn(200), (len(lits)+simdMaxLitBlocks-1)/simdMaxLitBlocks), modes: []int{simdCodeLens, simdCurrent}, litModes: litModes[i:], delta: delta})
 		add(fmt.Sprint("many chunks per literal block ", i), simdTestBlock{ops: ops, lits: lits, chunk: len(ops)/90 + rng.Intn(20),
 			litBlock: 5000 + rng.Intn(60000), litModes: litModes[i:], delta: delta})
 	}

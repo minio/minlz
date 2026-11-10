@@ -34,7 +34,9 @@ const (
 	simdMaxChunk = pivco.MaxBlockSize
 	// simdMaxChunks is the most chunks of a block.
 	simdMaxChunks = 128
-	simdMaxLen    = 32
+	// simdMaxLitBlocks is the most literal blocks of a block.
+	simdMaxLitBlocks = 1024
+	simdMaxLen       = 32
 	// simdSlack is how far the fast loops write past the end of an operation.
 	simdSlack = 32
 	// simdPad is the number of readable bytes after decoded streams and literals.
@@ -216,6 +218,8 @@ type simdDecoder struct {
 	have [simdLits + 1]bool
 	// lits holds the literals decoded so far. Its capacity holds every literal of the block and simdPad.
 	lits []byte
+	// litBlocks is the number of literal blocks decoded so far.
+	litBlocks int
 
 	tok, ll, offc [simdMaxChunk + simdPad]byte
 	esc           [2*simdMaxChunk + simdPad]byte
@@ -325,7 +329,7 @@ func (s *simdDecoder) literals(sec []byte, size int) (simdReader, bool) {
 	if cap(s.lits) < size+simdPad {
 		s.lits = make([]byte, 0, size+simdPad)
 	}
-	s.lits = s.lits[:0]
+	s.lits, s.litBlocks = s.lits[:0], 0
 	return simdReader{recs: sec[end : len(sec)-n], body: sec, end: end}, true
 }
 
@@ -334,6 +338,10 @@ func (s *simdDecoder) literals(sec []byte, size int) (simdReader, bool) {
 func (s *simdDecoder) fill(r *simdReader, l, need, size int) bool {
 	lits := s.lits
 	for len(r.recs) > 0 && len(lits)-l < need {
+		if s.litBlocks == simdMaxLitBlocks {
+			return false
+		}
+		s.litBlocks++
 		v, nv, stored, ok := s.stream(r, simdLits, 1, min(pivco.MaxBlockSize, size-len(lits)), lits[len(lits):])
 		if !ok {
 			return false

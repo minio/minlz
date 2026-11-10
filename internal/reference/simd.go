@@ -45,6 +45,9 @@ const maxCodeLen = 11
 // maxChunks is the most chunks of a block.
 const maxChunks = 128
 
+// maxLitBlocks is the most literal blocks of a block.
+const maxLitBlocks = 1024
+
 // classLayout holds the values of each class, in ascending order.
 type classLayout [][]int
 
@@ -368,7 +371,10 @@ func (d *simdDecoder) literals(sec []byte) error {
 		return fmt.Errorf("literal records size %d larger than its section", t)
 	}
 	r := entryReader{data: sec[:len(sec)-int(t)], recs: sec[len(sec)-int(t):]}
-	for len(r.recs) > 0 {
+	for i := 0; len(r.recs) > 0; i++ {
+		if i == maxLitBlocks {
+			return fmt.Errorf("more than %d literal blocks", maxLitBlocks)
+		}
 		v, err := d.stream(&r, streamLiterals, -1)
 		if err != nil {
 			return err

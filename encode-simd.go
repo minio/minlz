@@ -633,22 +633,20 @@ func (e *simdEncoder) finish() int {
 	if len(e.switches)&1 == 1 {
 		e.switches = append(e.switches, e.opLits)
 	}
-	start := 0
-	for i, end := range append(e.switches, e.nLits) {
-		k, lits := simdLits, e.lits[start:end]
+	e.switches = append(e.switches, e.nLits)
+	cuts, i := e.litBlocks(e.splitLits), 0
+	for j := 1; j < len(cuts); j++ {
+		// Blocks don't span runs.
+		for e.switches[i] <= cuts[j-1] {
+			i++
+		}
+		k, lits := simdLits, e.lits
 		if i&1 == 1 || e.deltaDiv < 0 {
-			k, lits = simdDelta, e.dlits[start:end]
+			k, lits = simdDelta, e.dlits
 		}
-		start = end
-		if len(lits) == 0 {
-			continue
-		}
-		cuts := e.litBlocks(lits)
-		for j := 1; j < len(cuts); j++ {
-			e.litRecs = e.put(e.litRecs, k, lits[cuts[j-1]:cuts[j]])
-			if len(e.out)+len(e.litRecs) > e.limit {
-				return 0
-			}
+		e.litRecs = e.put(e.litRecs, k, lits[cuts[j-1]:cuts[j]])
+		if len(e.out)+len(e.litRecs) > e.limit {
+			return 0
 		}
 	}
 	e.out = appendRvarint(append(e.out, e.litRecs...), uint64(len(e.litRecs)))
@@ -689,20 +687,49 @@ func (e *simdEncoder) sampleSave(lits []byte, need int) int {
 	return need
 }
 
-// litBlocks returns the boundaries of the literal blocks of lits.
-// With splitLits, they are on simdLitSeg boundaries, chosen for the smallest estimated size.
-// Otherwise the blocks are equal.
-func (e *simdEncoder) litBlocks(lits []byte) []int {
-	cuts := e.cuts[:0]
-	if !e.splitLits {
-		parts := (len(lits) + pivco.MaxBlockSize - 1) / pivco.MaxBlockSize
-		size := (len(lits) + parts - 1) / parts
-		for j := 0; j < len(lits); j += size {
-			cuts = append(cuts, j)
+// litBlocks returns the boundaries of the literal blocks of the runs that switches ends, from 0.
+// Run i holds lits if i is even, else dlits, from the end of run i-1.
+// With splitLits, the blocks are on simdLitSeg boundaries of each run, chosen for the smallest estimated size.
+// Otherwise, or if that takes more than simdMaxLitBlocks blocks, the blocks of each run are equal.
+func (e *simdEncoder) litBlocks(splitLits bool) []int {
+	e.cuts = append(e.cuts[:0], 0)
+	if splitLits {
+		start := 0
+		for i, end := range e.switches {
+			lits := e.lits
+			if i&1 == 1 {
+				lits = e.dlits
+			}
+			e.split(lits[start:end], start)
+			start = end
 		}
-		e.cuts = append(cuts, len(lits))
-		return e.cuts
+		// A run of n literals takes up to ceil(n/simdLitSeg) blocks, so runs that end in partial segments
+		// can take a few more than simdMaxLitBlocks. Equal blocks take fewer than 8 MiB/65535 plus one per run,
+		// at most 257: chunks switch between plain and delta literals at most once each,
+		// which leaves at most simdMaxChunks+1 runs with literals.
+		if len(e.cuts) <= simdMaxLitBlocks+1 {
+			return e.cuts
+		}
+		e.cuts = e.cuts[:1]
 	}
+	start := 0
+	for _, end := range e.switches {
+		if end > start {
+			parts := (end - start + pivco.MaxBlockSize - 1) / pivco.MaxBlockSize
+			size := (end - start + parts - 1) / parts
+			for j := start + size; j < end; j += size {
+				e.cuts = append(e.cuts, j)
+			}
+			e.cuts = append(e.cuts, end)
+		}
+		start = end
+	}
+	return e.cuts
+}
+
+// split adds the ends of the literal blocks of lits, which start at start,
+// on simdLitSeg boundaries chosen for the smallest estimated size.
+func (e *simdEncoder) split(lits []byte, start int) {
 	n := (len(lits) + simdLitSeg - 1) / simdLitSeg
 	e.segs = slices.Grow(e.segs[:0], n)[:n]
 	for i := range e.segs {
@@ -728,12 +755,11 @@ func (e *simdEncoder) litBlocks(lits []byte) []int {
 			}
 		}
 	}
+	k := len(e.cuts)
 	for i := n; i > 0; i = from[i] {
-		cuts = append(cuts, min(i*simdLitSeg, len(lits)))
+		e.cuts = append(e.cuts, start+min(i*simdLitSeg, len(lits)))
 	}
-	e.cuts = append(cuts, 0)
-	slices.Reverse(e.cuts)
-	return e.cuts
+	slices.Reverse(e.cuts[k:])
 }
 
 // simdLitBits estimates the size in bits of a literal block of n values with histogram h:

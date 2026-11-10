@@ -1256,6 +1256,45 @@ func TestSIMDEncodeMaxChunks(t *testing.T) {
 	}
 }
 
+// TestSIMDEncodeMaxLitBlocks checks that literals split by size fall back to equal blocks over simdMaxLitBlocks.
+// That takes many plain and delta runs, which the parsers make only on contrived input, so this sets them.
+func TestSIMDEncodeMaxLitBlocks(t *testing.T) {
+	// Segments alternate between two sets of 4 values, so a split by size cuts where they change.
+	rng := rand.New(rand.NewSource(1))
+	src := make([]byte, MaxBlockSize)
+	for i := range src {
+		src[i] = byte(i/simdLitSeg%2*4 + rng.Intn(4))
+	}
+	dst := make([]byte, MaxEncodedLen(len(src)))
+	e := &simdEncoder{out: dst[1:1:len(dst)], splitLits: true}
+	e.reset(src, 0, 0)
+	e.emitLiterals(src)
+	// Runs of 1.5 segments take 2 blocks each. They stay plain: delta runs get the same values.
+	e.dlits = e.buf[:len(src)]
+	for p := simdLitSeg * 3 / 2; p < len(src); p += simdLitSeg * 3 / 2 {
+		e.switches = append(e.switches, p)
+	}
+	size := e.finish()
+	if size == 0 {
+		t.Fatal("block failed")
+	}
+	start := 0
+	e.cuts = e.cuts[:0]
+	for _, end := range e.switches {
+		e.split(e.lits[start:end], start)
+		start = end
+	}
+	if len(e.cuts) <= simdMaxLitBlocks {
+		t.Fatalf("split by size takes %d literal blocks", len(e.cuts))
+	}
+	if got, err := Decode(nil, dst[:1+size]); err != nil || !bytes.Equal(got, src) {
+		t.Fatal(err)
+	}
+	if _, err := reference.DecodeSIMDBlock(dst[:1+size]); err != nil {
+		t.Fatal("reference:", err)
+	}
+}
+
 // TestSIMDEncodeOps decodes encoded blocks with the strict reference decoder, which also checks the no-overlap flags.
 func TestSIMDEncodeOps(t *testing.T) { simdEncTiers(t, testSIMDEncodeOps) }
 

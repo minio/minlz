@@ -53,8 +53,11 @@ a later version may only define hints that a decoder can ignore.
 
 The decoded size is at most 8 MiB = 8,388,608 bytes.
 
-A block has at most 128 chunks (4).
+A block has at most 128 chunks (4) and at most 1024 literal blocks (3).
 Encoders that write chunks of 16384 operations (chunk limit 4) need an average of 4 bytes per operation to fit an 8 MiB block.
+Literal blocks of 65535 literals take at most 129 blocks for 8 MiB of literals.
+An encoder that keeps plain and delta literals (4.5) in separate literal blocks can split each run of them into equal blocks,
+which takes at most 129 blocks plus one per run.
 
 The encoded block, everything after the indicator byte, must be at least 64 bytes smaller than the decoded size.
 
@@ -179,7 +182,7 @@ For example, 1000 literals in one literal block, coded with a new class-lengths 
 the literal block is the 2 bytes `E8 03` and the pivco block, 602 bytes,
 and the literal record is `D3 25` (`602 * 8 + 3` = 4819) followed by the 7 bytes of the table.
 
-There is at least one literal block, and a literal block holds 1 to 65535 literals.
+There is at least one literal block, and at most 1024 (1.1). A literal block holds 1 to 65535 literals.
 
 The number of literals must not exceed the decoded size of the block.
 
@@ -666,6 +669,7 @@ Nor are offsets below the match length in chunks with the no-overlap flag; they 
 * Entry sizes that do not add up exactly to the data before the records.
 * A literal section without literal blocks, a literal block without literals, or one with more than 65535.
 * More literals than the decoded size (3).
+* More than 1024 literal blocks (1.1).
 * A chunk without operations, or with more than the chunk limit.
 * More than 128 chunks.
 * Chunk flag bits that must be 0 are set.
