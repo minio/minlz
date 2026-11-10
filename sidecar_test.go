@@ -16,6 +16,7 @@ package minlz
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -1476,19 +1477,24 @@ func TestSidecarSearcherMissingEOF(t *testing.T) {
 	noEOF := sc[:len(sc)-eofLen]
 	cat := func(b ...[]byte) []byte { return bytes.Join(b, nil) }
 	for _, tc := range []struct {
-		name string
-		side []byte
-		ok   bool
+		name    string
+		side    []byte
+		matches int
+		err     error
 	}{
-		{"complete", sc, true},
-		{"concatenated", cat(sc, sc), true},
-		{"no EOF", noEOF, false},
-		{"no EOF before next stream", cat(noEOF, sc), false},
-		{"partial header after EOF", cat(sc, []byte{chunkTypeEOF}), false},
+		{"complete", sc, 1, nil},
+		{"concatenated", cat(sc, sc), 2, nil},
+		{"no EOF", noEOF, 0, ErrSidecarInvalid},
+		{"no EOF before next stream", cat(noEOF, sc), 0, ErrSidecarInvalid},
+		{"partial header after EOF", cat(sc, []byte{chunkTypeEOF}), 1, io.ErrUnexpectedEOF},
 	} {
-		err := NewSidecarSearcher(bytes.NewReader(mainStream.Bytes()), bytes.NewReader(tc.side)).Search([]byte("world"), func(SearchResult) error { return nil })
-		if (err == nil) != tc.ok {
-			t.Errorf("%s: got err %v; want ok=%v", tc.name, err, tc.ok)
+		n := 0
+		err := NewSidecarSearcher(bytes.NewReader(mainStream.Bytes()), bytes.NewReader(tc.side)).Search([]byte("world"), func(SearchResult) error {
+			n++
+			return nil
+		})
+		if n != tc.matches || !errors.Is(err, tc.err) {
+			t.Errorf("%s: got %d matches, err %v; want %d, %v", tc.name, n, err, tc.matches, tc.err)
 		}
 	}
 }
