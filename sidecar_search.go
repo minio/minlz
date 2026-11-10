@@ -264,6 +264,11 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			}
 			return err
 		}
+		// Search chunks need the stream they belong to; between streams only
+		// a stream identifier or skippable chunks may follow.
+		if !streamOpen && ct != ChunkTypeStreamIdentifier && (ct <= maxNonSkippableChunk || ct >= chunkTypeSearchInfo && ct <= chunkTypeRemoteBlockRef) {
+			return fmt.Errorf("%w: chunk 0x%02x after EOF chunk", ErrSidecarInvalid, ct)
+		}
 		switch ct {
 		case chunkTypeSearchInfo:
 			payload, err := s.readPayload(cl)

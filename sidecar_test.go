@@ -1475,6 +1475,10 @@ func TestSidecarSearcherMissingEOF(t *testing.T) {
 		t.Fatalf("sidecar does not end with an EOF chunk")
 	}
 	noEOF := sc[:len(sc)-eofLen]
+	ref := 0
+	for sc[ref] != chunkTypeRemoteBlockRef {
+		ref += 4 + (int(sc[ref+1]) | int(sc[ref+2])<<8 | int(sc[ref+3])<<16)
+	}
 	cat := func(b ...[]byte) []byte { return bytes.Join(b, nil) }
 	for _, tc := range []struct {
 		name    string
@@ -1487,6 +1491,9 @@ func TestSidecarSearcherMissingEOF(t *testing.T) {
 		{"no EOF", noEOF, 0, ErrSidecarInvalid},
 		{"no EOF before next stream", cat(noEOF, sc), 0, ErrSidecarInvalid},
 		{"partial header after EOF", cat(sc, []byte{chunkTypeEOF}), 1, io.ErrUnexpectedEOF},
+		{"EOF after EOF", cat(sc, sc[len(sc)-eofLen:]), 1, ErrSidecarInvalid},
+		{"block ref after EOF", cat(sc, sc[ref:]), 1, ErrSidecarInvalid},
+		{"padding after EOF", cat(sc, []byte{0xfe, 1, 0, 0, 0}), 1, nil},
 	} {
 		n := 0
 		err := NewSidecarSearcher(bytes.NewReader(mainStream.Bytes()), bytes.NewReader(tc.side)).Search([]byte("world"), func(SearchResult) error {
