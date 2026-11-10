@@ -4095,23 +4095,24 @@ func TestSearchReadFromEncodeBufferStraddle(t *testing.T) {
 	readFrom := func(w *Writer, b []byte) { w.ReadFrom(plainReader{bytes.NewReader(b)}) }
 	modes := []struct {
 		name    string
-		flushed bool // WriterFlushOnWrite: tableless blocks allowed
+		flushed bool // WriterFlushOnWrite
+		missing int  // tableless blocks: flushed tails and incompressible short blocks
 		write   func(w *Writer)
 	}{
-		{"Write", false, func(w *Writer) { w.Write(full) }},
-		{"ReadFrom(*bytes.Buffer)", false, func(w *Writer) { w.ReadFrom(bytes.NewBuffer(bytes.Clone(full))) }},
-		{"ReadFrom(io.Reader)", false, func(w *Writer) { readFrom(w, full) }},
-		{"ReadFrom x2", false, func(w *Writer) { readFrom(w, first); readFrom(w, second) }},
-		{"ReadFrom short tail+Write", false, func(w *Writer) { readFrom(w, full[:bs+3]); w.Write(full[bs+3:]) }},
-		{"Write+ReadFrom", false, func(w *Writer) { w.Write(first); readFrom(w, second) }},
-		{"EncodeBuffer x2", false, func(w *Writer) { w.EncodeBuffer(bytes.Clone(first)); w.EncodeBuffer(bytes.Clone(second)) }},
-		{"EncodeBuffer+Write", false, func(w *Writer) { w.EncodeBuffer(bytes.Clone(first)); w.Write(second) }},
-		{"EncodeBuffer short+EncodeBuffer", false, func(w *Writer) {
+		{"Write", false, 0, func(w *Writer) { w.Write(full) }},
+		{"ReadFrom(*bytes.Buffer)", false, 0, func(w *Writer) { w.ReadFrom(bytes.NewBuffer(bytes.Clone(full))) }},
+		{"ReadFrom(io.Reader)", false, 0, func(w *Writer) { readFrom(w, full) }},
+		{"ReadFrom x2", false, 0, func(w *Writer) { readFrom(w, first); readFrom(w, second) }},
+		{"ReadFrom short tail+Write", false, 0, func(w *Writer) { readFrom(w, full[:bs+3]); w.Write(full[bs+3:]) }},
+		{"Write+ReadFrom", false, 0, func(w *Writer) { w.Write(first); readFrom(w, second) }},
+		{"EncodeBuffer x2", false, 0, func(w *Writer) { w.EncodeBuffer(bytes.Clone(first)); w.EncodeBuffer(bytes.Clone(second)) }},
+		{"EncodeBuffer+Write", false, 0, func(w *Writer) { w.EncodeBuffer(bytes.Clone(first)); w.Write(second) }},
+		{"EncodeBuffer short+EncodeBuffer", false, 1, func(w *Writer) {
 			w.EncodeBuffer(bytes.Clone(full[:bs+3]))
 			w.EncodeBuffer(bytes.Clone(full[bs+3:]))
 		}},
-		{"FlushOnWrite ReadFrom x2", true, func(w *Writer) { readFrom(w, first); readFrom(w, second) }},
-		{"FlushOnWrite EncodeBuffer x2", true, func(w *Writer) { w.EncodeBuffer(bytes.Clone(first)); w.EncodeBuffer(bytes.Clone(second)) }},
+		{"FlushOnWrite ReadFrom x2", true, 2, func(w *Writer) { readFrom(w, first); readFrom(w, second) }},
+		{"FlushOnWrite EncodeBuffer x2", true, 2, func(w *Writer) { w.EncodeBuffer(bytes.Clone(first)); w.EncodeBuffer(bytes.Clone(second)) }},
 	}
 	for _, cpu := range []int{1, 4} {
 		for _, m := range modes {
@@ -4129,7 +4130,7 @@ func TestSearchReadFromEncodeBufferStraddle(t *testing.T) {
 			if err != nil || !bytes.Equal(got, full) {
 				t.Fatalf("cpu=%d %s: roundtrip mismatch (err=%v)", cpu, m.name, err)
 			}
-			s := NewBlockSearcher(bytes.NewReader(buf.Bytes()))
+			s := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
 			found := 0
 			if err := s.Search(pat, func(SearchResult) error { found++; return nil }); err != nil {
 				t.Fatal(err)
@@ -4137,8 +4138,8 @@ func TestSearchReadFromEncodeBufferStraddle(t *testing.T) {
 			if found != 1 {
 				t.Errorf("cpu=%d %s: found %d, want 1", cpu, m.name, found)
 			}
-			if st := s.Stats(); !m.flushed && st.TablesMissing != 0 {
-				t.Errorf("cpu=%d %s: %d of %d blocks without a table", cpu, m.name, st.TablesMissing, st.BlocksTotal)
+			if st := s.Stats(); st.TablesMissing != m.missing {
+				t.Errorf("cpu=%d %s: %d of %d blocks without a table, want %d", cpu, m.name, st.TablesMissing, st.BlocksTotal, m.missing)
 			}
 		}
 	}

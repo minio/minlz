@@ -985,14 +985,16 @@ func (w *Writer) writeSync(p, next []byte, final, omitTrailing bool) (nRet int, 
 		// In sidecar mode, emit the sidecar header lazily before the first
 		// block, then write the search table (if any) + 0x47 ref to sidecar.
 		// Otherwise, the search table is written inline before the data chunk.
+		// Omit the table for a flushed block without full overlap (a sidecar
+		// 0x47 ref is still written); the searcher always scans tableless blocks.
+		emitTable := w.searchCfg != nil && (n2 > 0 || w.searchCfg.hasPrefix()) &&
+			(!omitTrailing || len(overlap) >= w.searchCfg.overlapBytes())
 		mainBlockOffset := w.written
 		if w.sidecar != nil {
 			if err := w.writeSidecarStartIfNeeded(); err != nil {
 				return 0, err
 			}
-			// Omit the table for a flushed block without full overlap (its 0x47
-			// ref is still written); the searcher always scans tableless blocks.
-			if w.searchCfg != nil && (n2 > 0 || w.searchCfg.hasPrefix()) && !(omitTrailing && len(overlap) < w.searchCfg.overlapBytes()) {
+			if emitTable {
 				if err := w.writeSearchTableSync(uncompressed, overlap); err != nil {
 					return 0, err
 				}
@@ -1000,7 +1002,7 @@ func (w *Writer) writeSync(p, next []byte, final, omitTrailing bool) (nRet int, 
 			if err := w.writeSidecarRemoteRef(mainBlockOffset, len(uncompressed)); err != nil {
 				return 0, err
 			}
-		} else if w.searchCfg != nil && (n2 > 0 || w.searchCfg.hasPrefix()) && !(omitTrailing && len(overlap) < w.searchCfg.overlapBytes()) {
+		} else if emitTable {
 			if err := w.writeSearchTableSync(uncompressed, overlap); err != nil {
 				return 0, err
 			}
