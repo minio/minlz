@@ -35,7 +35,7 @@ func mainSearch(args []string) {
 		noColor   = fs.Bool("no-color", false, "Disable colored output")
 		lineN     = fs.Bool("n", false, "Print match line numbers")
 		bail      = fs.Bool("bail", false, "Return error if search tables cannot be used")
-		quiet     = fs.Bool("q", false, "Quiet: only set exit code (0=found, 1=not found)")
+		quiet     = fs.Bool("q", false, "Quiet: only set exit code (0=found, 1=not found, 2=error)")
 		lines     = fs.Bool("l", true, "Print matching lines instead of whole blocks")
 		verbose   = fs.Bool("v", false, "Print data")
 		winStats  = fs.Bool("window-stats", false, "Print per-pattern-window table presence counts after the search (implies -v)")
@@ -60,7 +60,7 @@ Options:`)
 		if *help {
 			os.Exit(0)
 		}
-		os.Exit(1)
+		os.Exit(2)
 	}
 	_ = noColor
 	pattern := []byte(args[0])
@@ -68,6 +68,7 @@ Options:`)
 	verboseOut := *verbose || *winStats
 
 	exitCode := 1 // 1 = not found
+	failed := false
 	multiFile := len(files) > 1
 
 	for _, fileArg := range files {
@@ -95,6 +96,7 @@ Options:`)
 			})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s: %v\n", file, err)
+				failed = true
 				continue
 			}
 			if found {
@@ -111,6 +113,9 @@ Options:`)
 				}
 			}
 		}
+	}
+	if failed {
+		os.Exit(2)
 	}
 	if *quiet {
 		os.Exit(exitCode)

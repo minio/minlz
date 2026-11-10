@@ -2426,12 +2426,13 @@ func FuzzSearchRoundtrip(f *testing.F) {
 		}
 		level := LevelBalanced
 		if mode&0x80 != 0 {
-			level = simdLevels[int(mode>>1)%len(simdLevels)]
+			// Divided by the write mode count, so every level meets every write mode.
+			level = simdLevels[int(mode>>1)/7%len(simdLevels)]
 		}
 		// writeMode replays the selected writer mode onto w. Shared so the same
 		// mode drives both the inline stream and the sidecar stream below.
 		writeMode := func(w *Writer) error {
-			switch (mode >> 1) % 5 {
+			switch (mode >> 1) % 7 {
 			case 0:
 				return w.EncodeBuffer(append([]byte(nil), data...))
 			case 1:
@@ -2447,6 +2448,20 @@ func FuzzSearchRoundtrip(f *testing.F) {
 			case 3: // odd-sized streaming writes
 				for i := 0; i < len(data); i += 333 {
 					if _, err := w.Write(data[i:min(i+333, len(data))]); err != nil {
+						return err
+					}
+				}
+				return nil
+			case 5: // several ReadFrom calls on a plain io.Reader
+				for i := 0; i < len(data); i += 3000 {
+					if _, err := w.ReadFrom(struct{ io.Reader }{bytes.NewReader(data[i:min(i+3000, len(data))])}); err != nil {
+						return err
+					}
+				}
+				return nil
+			case 6: // several EncodeBuffer calls
+				for i := 0; i < len(data); i += 5000 {
+					if err := w.EncodeBuffer(bytes.Clone(data[i:min(i+5000, len(data))])); err != nil {
 						return err
 					}
 				}
@@ -2578,7 +2593,7 @@ func FuzzSearchRoundtrip(f *testing.F) {
 		var main, side bytes.Buffer
 		ws := NewWriter(&main, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(cpu), WriterLevel(level), WriterSidecar(&side))
 		if werr := writeMode(ws); werr != nil {
-			t.Fatalf("sidecar write failed (mode %d, inline succeeded): %v", (mode>>1)%5, werr)
+			t.Fatalf("sidecar write failed (mode %d, inline succeeded): %v", (mode>>1)%7, werr)
 		}
 		if err := ws.Close(); err != nil {
 			t.Fatalf("sidecar close failed: %v", err)
@@ -4098,6 +4113,73 @@ func TestSearchStreamingForwardStraddle(t *testing.T) {
 	}
 }
 
+// TestSearchReadFromEncodeBufferStraddle is the issue #94 regression: ReadFrom
+// from a plain io.Reader and EncodeBuffer built the table of a block ending
+// their input without the following bytes, hiding a straddling match. Blocks
+// must still get tables, unless flushed.
+func TestSearchReadFromEncodeBufferStraddle(t *testing.T) {
+	type plainReader struct{ io.Reader }
+	bs := minBlockSize
+	filler := bytes.Repeat([]byte("the quick brown fox jumps over\n"), bs/31+2)
+	first := make([]byte, bs)
+	copy(first, filler)
+	first[bs-1] = ' '
+	pat := []byte(" zqxjvkmarker9")
+	second := append(append([]byte{}, pat[1:]...), filler...)
+	full := append(append([]byte{}, first...), second...)
+	readFrom := func(w *Writer, b []byte) { w.ReadFrom(plainReader{bytes.NewReader(b)}) }
+	modes := []struct {
+		name    string
+		flushed bool // WriterFlushOnWrite
+		missing int  // tableless blocks: flushed tails and incompressible short blocks
+		write   func(w *Writer)
+	}{
+		{"Write", false, 0, func(w *Writer) { w.Write(full) }},
+		{"ReadFrom(*bytes.Buffer)", false, 0, func(w *Writer) { w.ReadFrom(bytes.NewBuffer(bytes.Clone(full))) }},
+		{"ReadFrom(io.Reader)", false, 0, func(w *Writer) { readFrom(w, full) }},
+		{"ReadFrom x2", false, 0, func(w *Writer) { readFrom(w, first); readFrom(w, second) }},
+		{"ReadFrom short tail+Write", false, 0, func(w *Writer) { readFrom(w, full[:bs+3]); w.Write(full[bs+3:]) }},
+		{"Write+ReadFrom", false, 0, func(w *Writer) { w.Write(first); readFrom(w, second) }},
+		{"EncodeBuffer x2", false, 0, func(w *Writer) { w.EncodeBuffer(bytes.Clone(first)); w.EncodeBuffer(bytes.Clone(second)) }},
+		{"EncodeBuffer+Write", false, 0, func(w *Writer) { w.EncodeBuffer(bytes.Clone(first)); w.Write(second) }},
+		{"EncodeBuffer short+EncodeBuffer", false, 1, func(w *Writer) {
+			w.EncodeBuffer(bytes.Clone(full[:bs+3]))
+			w.EncodeBuffer(bytes.Clone(full[bs+3:]))
+		}},
+		{"FlushOnWrite ReadFrom x2", true, 2, func(w *Writer) { readFrom(w, first); readFrom(w, second) }},
+		{"FlushOnWrite EncodeBuffer x2", true, 2, func(w *Writer) { w.EncodeBuffer(bytes.Clone(first)); w.EncodeBuffer(bytes.Clone(second)) }},
+	}
+	for _, cpu := range []int{1, 4} {
+		for _, m := range modes {
+			opts := []WriterOption{WriterSearchTable(NewSearchTableConfig().WithMatchLen(6)), WriterBlockSize(bs), WriterConcurrency(cpu)}
+			if m.flushed {
+				opts = append(opts, WriterFlushOnWrite())
+			}
+			var buf bytes.Buffer
+			w := NewWriter(&buf, opts...)
+			m.write(w)
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			got, err := io.ReadAll(NewReader(bytes.NewReader(buf.Bytes())))
+			if err != nil || !bytes.Equal(got, full) {
+				t.Fatalf("cpu=%d %s: roundtrip mismatch (err=%v)", cpu, m.name, err)
+			}
+			s := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
+			found := 0
+			if err := s.Search(pat, func(SearchResult) error { found++; return nil }); err != nil {
+				t.Fatal(err)
+			}
+			if found != 1 {
+				t.Errorf("cpu=%d %s: found %d, want 1", cpu, m.name, found)
+			}
+			if st := s.Stats(); st.TablesMissing != m.missing {
+				t.Errorf("cpu=%d %s: %d of %d blocks without a table, want %d", cpu, m.name, st.TablesMissing, st.BlocksTotal, m.missing)
+			}
+		}
+	}
+}
+
 // TestSearchStraddleShortInteriorBlock covers a match that spans three blocks
 // because a mid-stream Flush emits an interior block shorter than len(pattern)-1.
 // Regression for a boundary scan that only spanned prevBlock+current and lost
@@ -4854,4 +4936,62 @@ func TestSearchZeroSizeBlock(t *testing.T) {
 			t.Errorf("chunk %#x/pending: got error %v, want %v", ct, err, ErrCorrupt)
 		}
 	}
+}
+
+func TestBlockSearcherSkip(t *testing.T) {
+	stream := func(s string) []byte {
+		var buf bytes.Buffer
+		w := NewWriter(&buf, WriterAddIndex(true), WriterSearchTable(NewSearchTableConfig()))
+		w.Write([]byte(s))
+		w.Close()
+		return buf.Bytes()
+	}
+	search := func(r io.Reader) (n int, err error) {
+		err = NewBlockSearcher(r).Search([]byte("needle"), func(SearchResult) error {
+			n++
+			return nil
+		})
+		return n, err
+	}
+
+	// A trailing skippable chunk that declares 4096 bytes but carries 10 (or 0).
+	for _, have := range []int{10, 0} {
+		trunc := append(stream("hello world\n"), 0x80, 0x00, 0x10, 0x00)
+		trunc = append(trunc, make([]byte, have)...)
+		if _, err := search(struct{ io.Reader }{bytes.NewReader(trunc)}); err != ErrCorrupt {
+			t.Errorf("have %d: io.Reader: got %v; want ErrCorrupt", have, err)
+		}
+		if _, err := search(bytes.NewReader(trunc)); err != ErrCorrupt {
+			t.Errorf("have %d: io.ReadSeeker: got %v; want ErrCorrupt", have, err)
+		}
+	}
+
+	// Seek works, but SeekEnd fails (e.g. HTTP without Content-Length).
+	two := append(stream("hello world\n"), stream("a needle\n")...)
+	if n, err := search(noSeekEnd{bytes.NewReader(two)}); n != 1 || err != nil {
+		t.Errorf("no SeekEnd: got %d matches, err %v; want 1, nil", n, err)
+	}
+
+	// Two concatenated streams on a pipe; the needle is only in the second.
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pr.Close()
+	go func() {
+		pw.Write(two)
+		pw.Close()
+	}()
+	if n, err := search(pr); n != 1 || err != nil {
+		t.Errorf("pipe: got %d matches, err %v; want 1, nil", n, err)
+	}
+}
+
+type noSeekEnd struct{ *bytes.Reader }
+
+func (r noSeekEnd) Seek(offset int64, whence int) (int64, error) {
+	if whence == io.SeekEnd {
+		return 0, errors.New("no size")
+	}
+	return r.Reader.Seek(offset, whence)
 }

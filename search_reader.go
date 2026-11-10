@@ -1200,9 +1200,18 @@ func (s *BlockSearcher) skip(n int) bool {
 	if n == 0 {
 		return true
 	}
+	// A failing Seek (e.g. *os.File on a pipe) falls back to reading.
 	if rs, ok := s.r.(io.Seeker); ok {
-		_, s.err = rs.Seek(int64(n), io.SeekCurrent)
-		return s.err == nil
+		if cur, err := rs.Seek(0, io.SeekCurrent); err == nil {
+			if end, err := rs.Seek(0, io.SeekEnd); err == nil {
+				if cur+int64(n) > end {
+					s.err = ErrCorrupt
+					return false
+				}
+				_, s.err = rs.Seek(cur+int64(n), io.SeekStart)
+				return s.err == nil
+			}
+		}
 	}
 	s.ensureBuf(s.maxBlock + obufHeaderLen)
 	buf := s.buf
@@ -1212,6 +1221,9 @@ func (s *BlockSearcher) skip(n int) bool {
 			chunk = chunk[:n]
 		}
 		if !s.readFull(chunk) {
+			if s.err == io.EOF {
+				s.err = ErrCorrupt
+			}
 			return false
 		}
 		n -= len(chunk)

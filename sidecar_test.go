@@ -1518,3 +1518,72 @@ func TestSidecarSIMD(t *testing.T) {
 		})
 	}
 }
+
+// Non-power-of-two block sizes: 0x47 sizes are relative to the header's
+// rounded-up max block size.
+func TestSidecarOddBlockSize(t *testing.T) {
+	data := bytes.Repeat([]byte("abcdefgh"), 2000)
+	copy(data[9000:], "NEEDLE")
+	var mainStream, side bytes.Buffer
+	w := NewWriter(&mainStream,
+		WriterBlockSize(5000),
+		WriterSearchTable(NewSearchTableConfig()),
+		WriterSidecar(&side),
+	)
+	w.Write(data)
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	err := NewSidecarSearcher(bytes.NewReader(mainStream.Bytes()), &side).Search([]byte("NEEDLE"), func(SearchResult) error {
+		n++
+		return nil
+	})
+	if n != 1 || err != nil {
+		t.Errorf("got %d matches, err %v; want 1, nil", n, err)
+	}
+}
+
+func TestSidecarSearcherMissingEOF(t *testing.T) {
+	var mainStream, side bytes.Buffer
+	w := NewWriter(&mainStream, WriterSearchTable(NewSearchTableConfig()), WriterSidecar(&side))
+	w.Write([]byte("hello world\n"))
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sc := side.Bytes()
+	const eofLen = 5 // 0x20 chunk carrying a 1-byte varint 0.
+	if sc[len(sc)-eofLen] != chunkTypeEOF {
+		t.Fatalf("sidecar does not end with an EOF chunk")
+	}
+	noEOF := sc[:len(sc)-eofLen]
+	ref := 0
+	for sc[ref] != chunkTypeRemoteBlockRef {
+		ref += 4 + (int(sc[ref+1]) | int(sc[ref+2])<<8 | int(sc[ref+3])<<16)
+	}
+	cat := func(b ...[]byte) []byte { return bytes.Join(b, nil) }
+	for _, tc := range []struct {
+		name    string
+		side    []byte
+		matches int
+		err     error
+	}{
+		{"complete", sc, 1, nil},
+		{"concatenated", cat(sc, sc), 2, nil},
+		{"no EOF", noEOF, 0, ErrSidecarInvalid},
+		{"no EOF before next stream", cat(noEOF, sc), 0, ErrSidecarInvalid},
+		{"partial header after EOF", cat(sc, []byte{chunkTypeEOF}), 1, io.ErrUnexpectedEOF},
+		{"EOF after EOF", cat(sc, sc[len(sc)-eofLen:]), 1, ErrSidecarInvalid},
+		{"block ref after EOF", cat(sc, sc[ref:]), 1, ErrSidecarInvalid},
+		{"padding after EOF", cat(sc, []byte{0xfe, 1, 0, 0, 0}), 1, nil},
+	} {
+		n := 0
+		err := NewSidecarSearcher(bytes.NewReader(mainStream.Bytes()), bytes.NewReader(tc.side)).Search([]byte("world"), func(SearchResult) error {
+			n++
+			return nil
+		})
+		if n != tc.matches || !errors.Is(err, tc.err) {
+			t.Errorf("%s: got %d matches, err %v; want %d, %v", tc.name, n, err, tc.matches, tc.err)
+		}
+	}
+}
