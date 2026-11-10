@@ -129,6 +129,9 @@ Options:`)
 		limitBytes, err = toSize(*limitString)
 		exitErr(err)
 	}
+	if *remove && (offset > 0 || tailBytes > 0 || limitBytes > 0) {
+		exitErr(errors.New("-rm cannot be used with --offset, --tail or --limit"))
+	}
 
 	*block = *block || *blockDebug
 	r := minlz.NewReader(nil, minlz.ReaderFallback(true))
@@ -162,6 +165,7 @@ Options:`)
 			exitErr(err)
 			return
 		}
+		refuseStdin(*out)
 		dstFile := createOutput(*out, os.ModePerm, *safe)
 		bw := bufio.NewWriterSize(dstFile, 4<<20)
 		_, err = io.Copy(bw, r)

@@ -186,6 +186,18 @@ func createOutput(name string, mode os.FileMode, safe bool) *os.File {
 	return f
 }
 
+// refuseStdin exits if name is the file stdin reads from, since creating the
+// output would truncate it before it is read. Devices such as /dev/null can be both.
+func refuseStdin(name string) {
+	so, err := os.Stat(name)
+	if err != nil || !so.Mode().IsRegular() {
+		return
+	}
+	if si, err := os.Stdin.Stat(); err == nil && os.SameFile(si, so) {
+		exitErr(fmt.Errorf("output %q would overwrite the input (stdin)", name))
+	}
+}
+
 // closeOutput flushes bw and closes f when set. Callers sync when the input is
 // about to be replaced or removed, since the output is then the only copy.
 // Pipes and devices keep no copy and fail fsync, so only regular files are synced.

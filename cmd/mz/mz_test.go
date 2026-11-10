@@ -162,6 +162,11 @@ func TestOutputSafety(t *testing.T) {
 		{"c-rm-nodir", map[string][]byte{"x": data}, "", "", []string{"c", "-q", "-rm", "-o", "nodir/x.mz", "x"}, false, "", []string{"x"}},
 		{"c-rm-block-nodir", map[string][]byte{"x": data}, "", "", []string{"c", "-q", "-rm", "-block", "-o", "nodir/x", "x"}, false, "", []string{"x"}},
 		{"d-rm-nodir", map[string][]byte{"x.mz": stream}, "", "", []string{"d", "-q", "-rm", "-o", "nodir/x", "x.mz"}, false, "", []string{"x.mz"}},
+		{"d-rm-offset", map[string][]byte{"x.mz": stream}, "", "", []string{"d", "-q", "-rm", "-offset", "60000", "x.mz"}, false, "", []string{"x.mz"}},
+		{"d-rm-limit", map[string][]byte{"x.mz": stream}, "", "", []string{"d", "-q", "-rm", "-limit", "1000", "x.mz"}, false, "", []string{"x.mz"}},
+		{"d-stdin-same", map[string][]byte{"x.mz": stream}, "", "x.mz", []string{"d", "-q", "-o", "x.mz", "-"}, false, "", []string{"x.mz"}},
+		{"c-stdin-same", map[string][]byte{"x": data}, "", "x", []string{"c", "-q", "-o", "x", "-"}, false, "", []string{"x"}},
+		{"c-stdin-same-sidecar", map[string][]byte{"x.mzs": data}, "", "x.mzs", []string{"c", "-q", "-search", "-search.sidecar", "-o", "x", "-"}, false, "", []string{"x.mzs"}},
 		{"d-rm-corrupt", map[string][]byte{"x.mz": stream[:len(stream)/2]}, "", "", []string{"d", "-q", "-rm", "x.mz"}, false, "", []string{"x.mz"}},
 		// Writes to /dev/full fail after the output is opened.
 		{"c-rm-full", map[string][]byte{"x": data}, "", "", []string{"c", "-q", "-rm", "-o", "/dev/full", "x"}, false, "", []string{"x"}},

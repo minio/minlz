@@ -235,6 +235,10 @@ Options:`)
 			}
 			wr.Reset(os.Stdout)
 		} else {
+			refuseStdin(*out)
+			if *searchSidecar {
+				refuseStdin(*out + minlzSidecarExt)
+			}
 			dstFile = createOutput(*out, os.ModePerm, *safe)
 			bw = bufio.NewWriterSize(dstFile, blockSizeInt*2)
 			wr.Reset(bw)
