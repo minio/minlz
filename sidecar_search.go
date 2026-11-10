@@ -31,6 +31,10 @@ type blockTableEntry struct {
 	table      []byte
 }
 
+// maxSidecarBatchSpan caps the main-stream span one coalesced ReadAt may cover,
+// excluding the last block.
+const maxSidecarBatchSpan = 16 << 20
+
 // pendingDecode is one batched decode-and-search entry.
 type pendingDecode struct {
 	ref    remoteRef
@@ -491,6 +495,13 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 				// Must decode. tableNoMatch is true when the table proved
 				// absence but we still decode for a boundary check — used
 				// post-decode to prevent the cascade into the next block.
+				// Bound the coalesced read: when no block can be skipped the
+				// run would otherwise span, and buffer, the whole main stream.
+				if len(batch) > 0 && ref.offset-batch[0].ref.offset >= maxSidecarBatchSpan {
+					if err := flushBatch(); err != nil {
+						return err
+					}
+				}
 				batch = append(batch, pendingDecode{ref: ref, tables: tables, tableNoMatch: skip})
 			}
 
