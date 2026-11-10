@@ -2397,7 +2397,7 @@ func FuzzSearchRoundtrip(f *testing.F) {
 		// writeMode replays the selected writer mode onto w. Shared so the same
 		// mode drives both the inline stream and the sidecar stream below.
 		writeMode := func(w *Writer) error {
-			switch (mode >> 1) % 5 {
+			switch (mode >> 1) % 7 {
 			case 0:
 				return w.EncodeBuffer(append([]byte(nil), data...))
 			case 1:
@@ -2413,6 +2413,20 @@ func FuzzSearchRoundtrip(f *testing.F) {
 			case 3: // odd-sized streaming writes
 				for i := 0; i < len(data); i += 333 {
 					if _, err := w.Write(data[i:min(i+333, len(data))]); err != nil {
+						return err
+					}
+				}
+				return nil
+			case 5: // several ReadFrom calls on a plain io.Reader
+				for i := 0; i < len(data); i += 3000 {
+					if _, err := w.ReadFrom(struct{ io.Reader }{bytes.NewReader(data[i:min(i+3000, len(data))])}); err != nil {
+						return err
+					}
+				}
+				return nil
+			case 6: // several EncodeBuffer calls
+				for i := 0; i < len(data); i += 5000 {
+					if err := w.EncodeBuffer(bytes.Clone(data[i:min(i+5000, len(data))])); err != nil {
 						return err
 					}
 				}
@@ -2544,7 +2558,7 @@ func FuzzSearchRoundtrip(f *testing.F) {
 		var main, side bytes.Buffer
 		ws := NewWriter(&main, WriterSearchTable(cfg), WriterBlockSize(minBlockSize), WriterConcurrency(cpu), WriterSidecar(&side))
 		if werr := writeMode(ws); werr != nil {
-			t.Fatalf("sidecar write failed (mode %d, inline succeeded): %v", (mode>>1)%5, werr)
+			t.Fatalf("sidecar write failed (mode %d, inline succeeded): %v", (mode>>1)%7, werr)
 		}
 		if err := ws.Close(); err != nil {
 			t.Fatalf("sidecar close failed: %v", err)
@@ -4060,6 +4074,73 @@ func TestSearchStreamingForwardStraddle(t *testing.T) {
 		}
 		if found != 1 {
 			t.Errorf("cpu%d: straddling match across a streaming block boundary was missed (found=%d)", cpu, found)
+		}
+	}
+}
+
+// TestSearchReadFromEncodeBufferStraddle is the issue #94 regression: ReadFrom
+// from a plain io.Reader and EncodeBuffer built the table of a block ending
+// their input without the following bytes, hiding a straddling match. Blocks
+// must still get tables, unless flushed.
+func TestSearchReadFromEncodeBufferStraddle(t *testing.T) {
+	type plainReader struct{ io.Reader }
+	bs := minBlockSize
+	filler := bytes.Repeat([]byte("the quick brown fox jumps over\n"), bs/31+2)
+	first := make([]byte, bs)
+	copy(first, filler)
+	first[bs-1] = ' '
+	pat := []byte(" zqxjvkmarker9")
+	second := append(append([]byte{}, pat[1:]...), filler...)
+	full := append(append([]byte{}, first...), second...)
+	readFrom := func(w *Writer, b []byte) { w.ReadFrom(plainReader{bytes.NewReader(b)}) }
+	modes := []struct {
+		name    string
+		flushed bool // WriterFlushOnWrite
+		missing int  // tableless blocks: flushed tails and incompressible short blocks
+		write   func(w *Writer)
+	}{
+		{"Write", false, 0, func(w *Writer) { w.Write(full) }},
+		{"ReadFrom(*bytes.Buffer)", false, 0, func(w *Writer) { w.ReadFrom(bytes.NewBuffer(bytes.Clone(full))) }},
+		{"ReadFrom(io.Reader)", false, 0, func(w *Writer) { readFrom(w, full) }},
+		{"ReadFrom x2", false, 0, func(w *Writer) { readFrom(w, first); readFrom(w, second) }},
+		{"ReadFrom short tail+Write", false, 0, func(w *Writer) { readFrom(w, full[:bs+3]); w.Write(full[bs+3:]) }},
+		{"Write+ReadFrom", false, 0, func(w *Writer) { w.Write(first); readFrom(w, second) }},
+		{"EncodeBuffer x2", false, 0, func(w *Writer) { w.EncodeBuffer(bytes.Clone(first)); w.EncodeBuffer(bytes.Clone(second)) }},
+		{"EncodeBuffer+Write", false, 0, func(w *Writer) { w.EncodeBuffer(bytes.Clone(first)); w.Write(second) }},
+		{"EncodeBuffer short+EncodeBuffer", false, 1, func(w *Writer) {
+			w.EncodeBuffer(bytes.Clone(full[:bs+3]))
+			w.EncodeBuffer(bytes.Clone(full[bs+3:]))
+		}},
+		{"FlushOnWrite ReadFrom x2", true, 2, func(w *Writer) { readFrom(w, first); readFrom(w, second) }},
+		{"FlushOnWrite EncodeBuffer x2", true, 2, func(w *Writer) { w.EncodeBuffer(bytes.Clone(first)); w.EncodeBuffer(bytes.Clone(second)) }},
+	}
+	for _, cpu := range []int{1, 4} {
+		for _, m := range modes {
+			opts := []WriterOption{WriterSearchTable(NewSearchTableConfig().WithMatchLen(6)), WriterBlockSize(bs), WriterConcurrency(cpu)}
+			if m.flushed {
+				opts = append(opts, WriterFlushOnWrite())
+			}
+			var buf bytes.Buffer
+			w := NewWriter(&buf, opts...)
+			m.write(w)
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			got, err := io.ReadAll(NewReader(bytes.NewReader(buf.Bytes())))
+			if err != nil || !bytes.Equal(got, full) {
+				t.Fatalf("cpu=%d %s: roundtrip mismatch (err=%v)", cpu, m.name, err)
+			}
+			s := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
+			found := 0
+			if err := s.Search(pat, func(SearchResult) error { found++; return nil }); err != nil {
+				t.Fatal(err)
+			}
+			if found != 1 {
+				t.Errorf("cpu=%d %s: found %d, want 1", cpu, m.name, found)
+			}
+			if st := s.Stats(); st.TablesMissing != m.missing {
+				t.Errorf("cpu=%d %s: %d of %d blocks without a table, want %d", cpu, m.name, st.TablesMissing, st.BlocksTotal, m.missing)
+			}
 		}
 	}
 }
