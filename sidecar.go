@@ -487,6 +487,10 @@ func BuildSidecar(dst io.Writer, src io.Reader, opts ...SidecarOption) error {
 			if err := cr.discardChunkPayload(chunkLen); err != nil {
 				return err
 			}
+			if !streamOpen {
+				// An EOF chunk after an EOF chunk is an empty stream (SPEC 4.6), which has no sidecar stream.
+				continue
+			}
 			if havePrev {
 				if err := emitPrev(nil); err != nil {
 					return err
@@ -711,6 +715,10 @@ func ExtractSidecar(sidecarDst, newStreamDst io.Writer, src io.Reader, opts ...S
 			// Discard src's EOF payload (we'll write our own).
 			if err := cr.discardChunkPayload(chunkLen); err != nil {
 				return err
+			}
+			if !streamOpen {
+				// An EOF chunk after an EOF chunk is an empty stream (SPEC 4.6), which has no sidecar stream.
+				continue
 			}
 			// Write sidecar EOF (0 uncompressed payload).
 			if _, err := emitEOFChunk(sidecarDst, 0); err != nil {

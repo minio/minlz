@@ -1558,8 +1558,11 @@ func TestReaderEmptyStream(t *testing.T) {
 		}},
 		// ExtractSidecar writes its own EOF sizes, which Read checks.
 		{"ExtractSidecar", false, true, func(stream, want []byte) error {
-			var out bytes.Buffer
-			if err := ExtractSidecar(io.Discard, &out, bytes.NewReader(stream)); err != nil {
+			var side, out bytes.Buffer
+			if err := ExtractSidecar(&side, &out, bytes.NewReader(stream)); err != nil {
+				return err
+			}
+			if err := NewSidecarSearcher(bytes.NewReader(out.Bytes()), &side).Search([]byte("empty"), func(SearchResult) error { return nil }); err != nil {
 				return err
 			}
 			got, err := io.ReadAll(NewReader(&out))
