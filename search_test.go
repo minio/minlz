@@ -3,6 +3,7 @@ package minlz
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -4671,8 +4672,13 @@ func TestBlockSearcherSkip(t *testing.T) {
 		}
 	}
 
-	// Two concatenated streams on a pipe; the needle is only in the second.
+	// Seek works, but SeekEnd fails (e.g. HTTP without Content-Length).
 	two := append(stream("hello world\n"), stream("a needle\n")...)
+	if n, err := search(noSeekEnd{bytes.NewReader(two)}); n != 1 || err != nil {
+		t.Errorf("no SeekEnd: got %d matches, err %v; want 1, nil", n, err)
+	}
+
+	// Two concatenated streams on a pipe; the needle is only in the second.
 	pr, pw, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -4685,4 +4691,13 @@ func TestBlockSearcherSkip(t *testing.T) {
 	if n, err := search(pr); n != 1 || err != nil {
 		t.Errorf("pipe: got %d matches, err %v; want 1, nil", n, err)
 	}
+}
+
+type noSeekEnd struct{ *bytes.Reader }
+
+func (r noSeekEnd) Seek(offset int64, whence int) (int64, error) {
+	if whence == io.SeekEnd {
+		return 0, errors.New("no size")
+	}
+	return r.Reader.Seek(offset, whence)
 }

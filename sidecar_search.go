@@ -536,6 +536,9 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			streamOpen = false
 
 		case ChunkTypeStreamIdentifier:
+			if streamOpen {
+				return fmt.Errorf("%w: missing EOF chunk", ErrSidecarInvalid)
+			}
 			streamOpen = true
 			// Concatenated sidecar stream starts here. Conservatively resolve
 			// any deferred from the prior stream first.
@@ -1054,11 +1057,7 @@ func (s *SidecarSearcher) readFull(buf []byte) (int, error) {
 }
 
 func (s *SidecarSearcher) readChunkHeader() (chunkType byte, chunkLen int, err error) {
-	_, err = io.ReadFull(s.sidecar, s.tmp[:4])
-	if err != nil {
-		if errors.Is(err, io.ErrUnexpectedEOF) {
-			err = io.EOF
-		}
+	if _, err = io.ReadFull(s.sidecar, s.tmp[:4]); err != nil {
 		return 0, 0, err
 	}
 	return s.tmp[0], int(s.tmp[1]) | int(s.tmp[2])<<8 | int(s.tmp[3])<<16, nil

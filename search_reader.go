@@ -1214,15 +1214,14 @@ func (s *BlockSearcher) skip(n int) bool {
 	// A failing Seek (e.g. *os.File on a pipe) falls back to reading.
 	if rs, ok := s.r.(io.Seeker); ok {
 		if cur, err := rs.Seek(0, io.SeekCurrent); err == nil {
-			end, err := rs.Seek(0, io.SeekEnd)
-			if err == nil && cur+int64(n) > end {
-				err = ErrCorrupt
+			if end, err := rs.Seek(0, io.SeekEnd); err == nil {
+				if cur+int64(n) > end {
+					s.err = ErrCorrupt
+					return false
+				}
+				_, s.err = rs.Seek(cur+int64(n), io.SeekStart)
+				return s.err == nil
 			}
-			if err == nil {
-				_, err = rs.Seek(cur+int64(n), io.SeekStart)
-			}
-			s.err = err
-			return err == nil
 		}
 	}
 	s.ensureBuf(s.maxBlock + obufHeaderLen)

@@ -60,7 +60,7 @@ Options:`)
 		if *help {
 			os.Exit(0)
 		}
-		os.Exit(1)
+		os.Exit(2)
 	}
 	_ = noColor
 	pattern := []byte(args[0])

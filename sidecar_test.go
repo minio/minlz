@@ -16,7 +16,6 @@ package minlz
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -1474,8 +1473,22 @@ func TestSidecarSearcherMissingEOF(t *testing.T) {
 	if sc[len(sc)-eofLen] != chunkTypeEOF {
 		t.Fatalf("sidecar does not end with an EOF chunk")
 	}
-	err := NewSidecarSearcher(bytes.NewReader(mainStream.Bytes()), bytes.NewReader(sc[:len(sc)-eofLen])).Search([]byte("world"), func(SearchResult) error { return nil })
-	if !errors.Is(err, ErrSidecarInvalid) {
-		t.Errorf("got err %v; want ErrSidecarInvalid", err)
+	noEOF := sc[:len(sc)-eofLen]
+	cat := func(b ...[]byte) []byte { return bytes.Join(b, nil) }
+	for _, tc := range []struct {
+		name string
+		side []byte
+		ok   bool
+	}{
+		{"complete", sc, true},
+		{"concatenated", cat(sc, sc), true},
+		{"no EOF", noEOF, false},
+		{"no EOF before next stream", cat(noEOF, sc), false},
+		{"partial header after EOF", cat(sc, []byte{chunkTypeEOF}), false},
+	} {
+		err := NewSidecarSearcher(bytes.NewReader(mainStream.Bytes()), bytes.NewReader(tc.side)).Search([]byte("world"), func(SearchResult) error { return nil })
+		if (err == nil) != tc.ok {
+			t.Errorf("%s: got err %v; want ok=%v", tc.name, err, tc.ok)
+		}
 	}
 }
