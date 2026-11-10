@@ -387,8 +387,8 @@ func (cfg *decompressConfig) decompressFile() {
 		if cfg.offset > 0 {
 			b = b[min(cfg.offset, int64(len(b))):]
 		}
-		if cfg.tailBytes > 0 {
-			b = b[len(b)-int(min(cfg.tailBytes, int64(len(b)))):]
+		if cfg.tailBytes > 0 && cfg.tailBytes < int64(len(b)) {
+			b = b[int64(len(b))-cfg.tailBytes:]
 		}
 		// Like stream mode: start after the next newline, or keep everything if there is none.
 		if cfg.tailNextNL && (cfg.offset > 0 || cfg.tailBytes > 0) {
