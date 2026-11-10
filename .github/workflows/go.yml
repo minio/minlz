@@ -128,6 +128,20 @@ jobs:
         tags: [ '', 'nounsafe', '"noasm,nounsafe"' ]
         tests: ['FuzzEncodingBlocks', 'FuzzDecodeBlock', 'FuzzDecodeSIMD', 'FuzzStreamEncode', 'FuzzStreamDecode', 'FuzzCompressedSearchRoundtrip', 'FuzzDecodeCompressedSearchChunk']
         os: [ubuntu-latest, ubuntu-24.04-arm]
+        # The pivco fuzzers compare the kernel tiers; the NEON kernels get no other direct fuzzing.
+        # noasm leaves only the generic tier.
+        include:
+          # Anchored: FuzzDecodeBlock also matches FuzzDecodeBlockFixed, and is a root fuzzer name.
+          - { os: ubuntu-24.04-arm, tags: '', pkg: ./internal/pivco, tests: '^FuzzDecodeBlock$' }
+          - { os: ubuntu-24.04-arm, tags: nounsafe, pkg: ./internal/pivco, tests: '^FuzzDecodeBlock$' }
+          - { os: ubuntu-24.04-arm, tags: '', pkg: ./internal/pivco, tests: FuzzDecodeBlockFixed }
+          - { os: ubuntu-24.04-arm, tags: nounsafe, pkg: ./internal/pivco, tests: FuzzDecodeBlockFixed }
+          - { os: ubuntu-24.04-arm, tags: '', pkg: ./internal/pivco, tests: FuzzRoundTripBlock }
+          - { os: ubuntu-24.04-arm, tags: nounsafe, pkg: ./internal/pivco, tests: FuzzRoundTripBlock }
+          - { os: ubuntu-24.04-arm, tags: '', pkg: ./internal/pivco, tests: FuzzTable }
+          - { os: ubuntu-24.04-arm, tags: nounsafe, pkg: ./internal/pivco, tests: FuzzTable }
+          - { os: ubuntu-24.04-arm, tags: '', pkg: ./internal/pivco/kernel, tests: FuzzExec }
+          - { os: ubuntu-24.04-arm, tags: nounsafe, pkg: ./internal/pivco/kernel, tests: FuzzExec }
     runs-on: ${{ matrix.os }}
     steps:
       - name: Set up Go
@@ -146,5 +160,6 @@ jobs:
           path: testdata/bench
           key: benchdata-v1
 
-      - name: mz/${{ matrix.tests }}/${{ matrix.tags }}
-        run: go test -tags=${{ matrix.tags }} -run=none -fuzz=${{ matrix.tests }} -fuzztime=3m -test.fuzzminimizetime=100ms -download
+      # -download is a flag of the root package's tests.
+      - name: ${{ matrix.pkg || 'mz' }}/${{ matrix.tests }}/${{ matrix.tags }}
+        run: go test -tags=${{ matrix.tags }} -run=none -fuzz=${{ matrix.tests }} -fuzztime=3m -test.fuzzminimizetime=100ms ${{ matrix.pkg || '-download' }}

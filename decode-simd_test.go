@@ -27,10 +27,12 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/minio/minlz/internal/guard"
 	"github.com/minio/minlz/internal/pivco"
+	"github.com/minio/minlz/internal/pivco/kernel"
 	"github.com/minio/minlz/internal/race"
 	"github.com/minio/minlz/internal/reference"
 	"github.com/zeebo/xxh3"
@@ -610,6 +612,35 @@ func TestSIMDLayoutsSpec(t *testing.T) {
 			t.Errorf("stream %d: %d bytes, want %d", k, got, want)
 		}
 	}
+}
+
+// simdTierDecoders and simdTierEncoders keep the SIMD coders of each pivco tier between simdTier calls:
+// FuzzDecodeSIMD runs every tier per input, and making new coders for each is slow.
+var simdTierDecoders, simdTierEncoders [kernel.TierNEON + 1]sync.Pool
+
+// simdTier runs f as subtest name with SIMD coders of pivco tier pv only, and checks the tier of the
+// pooled coders it gets back. A pivco coder keeps the tier of its first use, so a coder pooled under
+// another forced tier would run that tier.
+func simdTier(t *testing.T, name string, pv kernel.Tier, f func(t *testing.T)) {
+	dp, ep := &simdTierDecoders[pv], &simdTierEncoders[pv]
+	simdDecoders, simdEncoders = sync.Pool{New: dp.Get}, sync.Pool{New: ep.Get}
+	defer func() { simdDecoders, simdEncoders = sync.Pool{}, sync.Pool{} }()
+	t.Run(name, func(t *testing.T) {
+		f(t)
+		// On the goroutine that ran f, Get mostly returns a coder that f used.
+		if d, _ := simdDecoders.Get().(*simdDecoder); d != nil {
+			if d.pv.Tier() != pv {
+				t.Fatalf("pivco decoder tier %v, want %v", d.pv.Tier(), pv)
+			}
+			dp.Put(d)
+		}
+		if e, _ := simdEncoders.Get().(*simdEncoder); e != nil {
+			if e.pv.Tier() != pv {
+				t.Fatalf("pivco encoder tier %v, want %v", e.pv.Tier(), pv)
+			}
+			ep.Put(e)
+		}
+	})
 }
 
 func TestSIMDDecodeBuilt(t *testing.T) { simdTiers(t, testSIMDDecodeBuilt) }

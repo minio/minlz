@@ -52,6 +52,12 @@ func (e *Encoder) setup() {
 	e.tier = kernel.Best()
 }
 
+// Tier returns the kernel tier e codes with. It is kernel.Best at first use.
+func (e *Encoder) Tier() kernel.Tier {
+	e.setup()
+	return e.tier
+}
+
 // Histogram adds the byte counts of src to hist.
 // src must be shorter than 4 GiB: the kernels count in uint32.
 func (e *Encoder) Histogram(hist *[256]uint64, src []byte) {

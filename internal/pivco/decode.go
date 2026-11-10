@@ -43,6 +43,12 @@ func (d *Decoder) setup() {
 	}
 }
 
+// Tier returns the kernel tier d decodes with. It is kernel.Best at first use.
+func (d *Decoder) Tier() kernel.Tier {
+	d.setup()
+	return d.tier
+}
+
 // Decode decodes the block src, coded with t, to the len(dst) symbols of dst.
 // src must be exactly the block and must not overlap dst.
 // It returns ErrBlockSize unless 1 <= len(dst) <= MaxBlockSize, ErrInvalidTable if t is

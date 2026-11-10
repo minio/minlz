@@ -16,9 +16,13 @@
 
 package minlz
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/minio/minlz/internal/pivco/kernel"
+)
 
 // simdTiers runs f as a subtest for each SIMD block tier the CPU supports, with that tier forced.
 func simdTiers(t *testing.T, f func(t *testing.T)) {
-	t.Run("go", f)
+	simdTier(t, "go", kernel.TierGeneric, f)
 }

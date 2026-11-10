@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/minio/minlz/internal/cpu"
+	"github.com/minio/minlz/internal/pivco/kernel"
 )
 
 // simdTiers runs f as a subtest for each SIMD block tier, with that tier forced.
@@ -30,8 +31,9 @@ func simdTiers(t *testing.T, f func(t *testing.T)) {
 	for _, tier := range []struct {
 		name        string
 		neon, batch bool
-	}{{"go", false, false}, {"neon", true, false}, {"neon-batch", true, true}} {
+		pv          kernel.Tier
+	}{{"go", false, false, kernel.TierGeneric}, {"neon", true, false, kernel.TierNEON}, {"neon-batch", true, true, kernel.TierNEON}} {
 		cpu.NEON, simdBatchNEON = tier.neon, tier.batch
-		t.Run(tier.name, f)
+		simdTier(t, tier.name, tier.pv, f)
 	}
 }

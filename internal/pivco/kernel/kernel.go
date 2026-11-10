@@ -124,7 +124,7 @@ func (t Tier) String() string {
 }
 
 // Best returns the fastest tier usable on this CPU. CPU features are read on every call,
-// so tests can disable them with cpuid.CPU.Disable.
+// so clearing the internal/cpu flags selects a lower tier; on amd64, so does cpuid.CPU.Disable.
 func Best() Tier {
 	switch {
 	case hasAVX512():
