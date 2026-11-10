@@ -281,6 +281,9 @@ func simdTestValues(ops []simdTestOp) (s [5][]byte) {
 	var nacc int
 	for _, o := range ops {
 		ll, ml := o.ll, o.ml
+		if ll > simdMaxLong || ml > simdMaxLong {
+			panic(fmt.Sprintf("operation lengths %d, %d above %d", ll, ml, simdMaxLong))
+		}
 		var t byte
 		if ll > 0 {
 			t |= 2
