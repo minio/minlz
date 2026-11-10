@@ -1041,6 +1041,7 @@ func (w *Writer) Written() (input, output int64) {
 }
 
 // CloseIndex calls Close and returns an index on first call.
+// An empty stream has no index, and nil is returned.
 // This is not required if you are only adding index to a stream.
 func (w *Writer) CloseIndex() ([]byte, error) {
 	return w.closeIndex(true)
@@ -1077,8 +1078,8 @@ func (w *Writer) closeIndex(idx bool) ([]byte, error) {
 	}
 	var index []byte
 	if w.err(err) == nil && w.writer != nil {
-		// Create index.
-		if idx {
+		// Create index. An empty stream has nothing to seek to.
+		if idx && w.uncompWritten > 0 {
 			compSize := int64(-1)
 			if w.pad <= 1 {
 				compSize = w.written
@@ -1190,7 +1191,7 @@ func WriterConcurrency(n int) WriterOption {
 }
 
 // WriterAddIndex will append an index to the end of a stream
-// when it is closed.
+// when it is closed. An empty stream gets no index.
 func WriterAddIndex(b bool) WriterOption {
 	return func(w *Writer) error {
 		if b && !w.genIndex {

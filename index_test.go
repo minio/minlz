@@ -359,6 +359,47 @@ func TestIndexStreamEmptyChunks(t *testing.T) {
 	}
 }
 
+// TestIndexEmptyStream checks that an empty stream gets no index, and that a ReadSeeker reports that.
+func TestIndexEmptyStream(t *testing.T) {
+	for _, pad := range []int{1, 64} {
+		var buf, ref bytes.Buffer
+		w := minlz.NewWriter(&buf, minlz.WriterAddIndex(true), minlz.WriterPadding(pad))
+		if idx, err := w.CloseIndex(); idx != nil || err != nil {
+			t.Fatalf("padding %d: index of %d bytes, %v", pad, len(idx), err)
+		}
+		minlz.NewWriter(&ref).Close()
+		if pad == 1 && !bytes.Equal(buf.Bytes(), ref.Bytes()) {
+			t.Fatalf("stream %x, want %x", buf.Bytes(), ref.Bytes())
+		}
+		r := minlz.NewReader(bytes.NewReader(buf.Bytes()))
+		if b, err := io.ReadAll(r); len(b) != 0 || err != nil {
+			t.Fatalf("padding %d: decoded %d bytes, %v", pad, len(b), err)
+		}
+		r.Reset(bytes.NewReader(buf.Bytes()))
+		if _, err := r.ReadSeeker(nil); err != (minlz.ErrCantSeek{Reason: "input stream does not contain an index"}) {
+			t.Fatalf("padding %d: %v", pad, err)
+		}
+	}
+}
+
+// TestIndexLoadStreamShort checks LoadStream on streams too short for the index their trailer gives.
+func TestIndexLoadStreamShort(t *testing.T) {
+	trailer := append(binary.LittleEndian.AppendUint32(nil, 100), minlz.IndexTrailer...)
+	for _, tc := range []struct {
+		in   []byte
+		want error
+	}{
+		{nil, minlz.ErrUnsupported},
+		{[]byte{1, 2, 3, 4, 5}, minlz.ErrUnsupported},
+		{trailer, io.ErrUnexpectedEOF},
+	} {
+		var i minlz.Index
+		if err := i.LoadStream(bytes.NewReader(tc.in)); err != tc.want {
+			t.Errorf("%x: %v, want %v", tc.in, err, tc.want)
+		}
+	}
+}
+
 func TestSeekingStreamIndex(t *testing.T) {
 	compressed := bytes.Buffer{}
 
