@@ -162,20 +162,11 @@ Options:`)
 			exitErr(err)
 			return
 		}
-		dstFilename := *out
-		if *safe {
-			_, err := os.Stat(dstFilename)
-			if !os.IsNotExist(err) {
-				exitErr(errors.New("destination files exists"))
-			}
-		}
-		dstFile, err := os.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
-		exitErr(err)
-		defer dstFile.Close()
+		dstFile := createOutput(*out, os.ModePerm, *safe)
 		bw := bufio.NewWriterSize(dstFile, 4<<20)
-		defer bw.Flush()
 		_, err = io.Copy(bw, r)
 		exitErr(err)
+		closeOutput(bw, dstFile, false)
 		return
 	}
 	var files []string
@@ -354,26 +345,19 @@ func (cfg *decompressConfig) decompressFile() {
 	} else {
 		src = rc
 	}
-	if *cfg.safe {
-		_, err := os.Stat(cfg.dstFilename)
-		if !os.IsNotExist(err) {
-			exitErr(errors.New("destination files exists"))
-		}
-	}
 	var out io.Writer
+	var dstFile *os.File
+	var bw *bufio.Writer
 	switch {
 	case *cfg.verify:
 		out = io.Discard
 	case *cfg.stdout:
 		out = os.Stdout
 	default:
-		dstFile, err := os.OpenFile(cfg.dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-		exitErr(err)
-		defer dstFile.Close()
+		dstFile = createOutput(cfg.dstFilename, mode, *cfg.safe)
 		out = dstFile
 		if !cfg.block {
-			bw := bufio.NewWriterSize(dstFile, 4<<20)
-			defer bw.Flush()
+			bw = bufio.NewWriterSize(dstFile, 4<<20)
 			out = bw
 		}
 	}
@@ -453,6 +437,8 @@ func (cfg *decompressConfig) decompressFile() {
 		output, err = io.Copy(out, decoded)
 	}
 	exitErr(err)
+	closeOutput(bw, dstFile, *cfg.remove)
+	outputs = nil
 	if !*cfg.quiet {
 		elapsed := time.Since(start)
 		mbPerSec := (float64(output) / 1e6) / (float64(elapsed) / (float64(time.Second)))

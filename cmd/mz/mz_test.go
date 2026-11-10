@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 
@@ -50,10 +51,6 @@ func TestSameFileOutput(t *testing.T) {
 	}
 	stream := buf.Bytes()
 	block, err := minlz.Encode(nil, data, minlz.LevelBalanced)
-	if err != nil {
-		t.Fatal(err)
-	}
-	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,13 +90,7 @@ func TestSameFileOutput(t *testing.T) {
 					t.Skip("hard links not supported:", err)
 				}
 			}
-			cmd := exec.Command(exe, tc.args...)
-			cmd.Dir = dir
-			cmd.Env = append(os.Environ(), "MZ_TEST_RUN_MAIN=1")
-			output, err := cmd.CombinedOutput()
-			if _, ok := err.(*exec.ExitError); err != nil && !ok {
-				t.Fatal(err)
-			}
+			output, err := runMZ(t, dir, "", tc.args...)
 			if (err == nil) != (tc.out != "") {
 				t.Fatalf("mz %v: got err %v, want refusal %v\n%s", tc.args, err, tc.out == "", output)
 			}
@@ -131,4 +122,187 @@ func TestSameFileOutput(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestOutputSafety checks -safe, -rm and the removal of partial outputs.
+func TestOutputSafety(t *testing.T) {
+	data := bytes.Repeat([]byte("output safety test\n"), 1<<16)
+	var buf bytes.Buffer
+	w := minlz.NewWriter(&buf)
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	stream := buf.Bytes()
+	old := []byte("old")
+
+	cases := []struct {
+		name  string
+		pre   map[string][]byte
+		link  string // dangling symlink to "target", if set
+		stdin string
+		args  []string
+		ok    bool
+		out   string   // holds or decodes to data, if set
+		files []string // directory contents afterwards
+	}{
+		{"c-safe", map[string][]byte{"x": data, "x.mz": old}, "", "", []string{"c", "-q", "-safe", "x"}, false, "", []string{"x", "x.mz"}},
+		{"c-safe-block", map[string][]byte{"x": data, "x.mzb": old}, "", "", []string{"c", "-q", "-safe", "-block", "x"}, false, "", []string{"x", "x.mzb"}},
+		{"c-safe-stdin", map[string][]byte{"x": data, "y": old}, "", "x", []string{"c", "-q", "-safe", "-o", "y", "-"}, false, "", []string{"x", "y"}},
+		{"c-safe-sidecar", map[string][]byte{"x": data, "x.mz.mzs": old}, "", "", []string{"c", "-q", "-safe", "-search", "-search.sidecar", "x"}, false, "", []string{"x", "x.mz.mzs"}},
+		{"c-safe-stdin-sidecar", map[string][]byte{"x": data, "y.mzs": old}, "", "x", []string{"c", "-q", "-safe", "-search", "-search.sidecar", "-o", "y", "-"}, false, "", []string{"x", "y.mzs"}},
+		{"c-safe-link", map[string][]byte{"x": data}, "x.mz", "", []string{"c", "-q", "-safe", "x"}, false, "", []string{"x", "x.mz"}},
+		{"d-safe", map[string][]byte{"x.mz": stream, "x": old}, "", "", []string{"d", "-q", "-safe", "x.mz"}, false, "", []string{"x", "x.mz"}},
+		{"d-safe-stdin", map[string][]byte{"x.mz": stream, "y": old}, "", "x.mz", []string{"d", "-q", "-safe", "-o", "y", "-"}, false, "", []string{"x.mz", "y"}},
+		{"d-safe-link", map[string][]byte{"x.mz": stream}, "x", "", []string{"d", "-q", "-safe", "x.mz"}, false, "", []string{"x", "x.mz"}},
+		{"sidecar-build-safe", map[string][]byte{"x.mz": stream, "x.mz.mzs": old}, "", "", []string{"sidecar", "build", "-q", "-safe", "x.mz"}, false, "", []string{"x.mz", "x.mz.mzs"}},
+		{"sidecar-extract-safe", map[string][]byte{"x.mz": stream, "y": old}, "", "", []string{"sidecar", "extract", "-q", "-safe", "-newstream", "y", "x.mz"}, false, "", []string{"x.mz", "y"}},
+		{"c-rm-nodir", map[string][]byte{"x": data}, "", "", []string{"c", "-q", "-rm", "-o", "nodir/x.mz", "x"}, false, "", []string{"x"}},
+		{"c-rm-block-nodir", map[string][]byte{"x": data}, "", "", []string{"c", "-q", "-rm", "-block", "-o", "nodir/x", "x"}, false, "", []string{"x"}},
+		{"d-rm-nodir", map[string][]byte{"x.mz": stream}, "", "", []string{"d", "-q", "-rm", "-o", "nodir/x", "x.mz"}, false, "", []string{"x.mz"}},
+		{"d-rm-corrupt", map[string][]byte{"x.mz": stream[:len(stream)/2]}, "", "", []string{"d", "-q", "-rm", "x.mz"}, false, "", []string{"x.mz"}},
+		// Writes to /dev/full fail after the output is opened.
+		{"c-rm-full", map[string][]byte{"x": data}, "", "", []string{"c", "-q", "-rm", "-o", "/dev/full", "x"}, false, "", []string{"x"}},
+		{"d-rm-full", map[string][]byte{"x.mz": stream}, "", "", []string{"d", "-q", "-rm", "-o", "/dev/full", "x.mz"}, false, "", []string{"x.mz"}},
+		{"c-rm-null", map[string][]byte{"x": data}, "", "", []string{"c", "-q", "-rm", "-o", os.DevNull, "x"}, true, "", nil},
+		{"d-rm-null", map[string][]byte{"x.mz": stream}, "", "", []string{"d", "-q", "-rm", "-o", os.DevNull, "x.mz"}, true, "", nil},
+		{"c-rm", map[string][]byte{"x": data}, "", "", []string{"c", "-q", "-rm", "x"}, true, "x.mz", []string{"x.mz"}},
+		{"d-rm", map[string][]byte{"x.mz": stream}, "", "", []string{"d", "-q", "-rm", "x.mz"}, true, "x", []string{"x"}},
+		{"c-block-inplace", map[string][]byte{"x": data}, "", "", []string{"c", "-q", "-block", "-o", "./x", "x"}, true, "x", []string{"x"}},
+		// The sidecar can't be created, so the in-place temp file must be removed.
+		{"c-inplace-fail", map[string][]byte{"x": data, "x.mzs/f": old}, "", "", []string{"c", "-q", "-search", "-search.sidecar", "-o", "./x", "x"}, false, "", []string{"x", "x.mzs"}},
+		// A later input's failure must keep the outputs of earlier inputs.
+		{"c-batch", map[string][]byte{"x": data, "y": data, "y.mz": old}, "", "", []string{"c", "-q", "-safe", "x", "y"}, false, "x.mz", []string{"x", "x.mz", "y", "y.mz"}},
+		{"c-batch-block", map[string][]byte{"x": data, "y": data, "y.mzb": old}, "", "", []string{"c", "-q", "-safe", "-block", "x", "y"}, false, "x.mzb", []string{"x", "x.mzb", "y", "y.mzb"}},
+		{"d-batch", map[string][]byte{"x.mz": stream, "y.mz": stream, "y": old}, "", "", []string{"d", "-q", "-safe", "x.mz", "y.mz"}, false, "x", []string{"x", "x.mz", "y", "y.mz"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for name, b := range tc.pre {
+				p := filepath.Join(dir, name)
+				if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(p, b, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if slices.Contains(tc.args, "/dev/full") {
+				if _, err := os.Stat("/dev/full"); err != nil {
+					t.Skip("no /dev/full:", err)
+				}
+			}
+			if tc.link != "" {
+				if err := os.Symlink(filepath.Join(dir, "target"), filepath.Join(dir, tc.link)); err != nil {
+					t.Skip("symlinks not supported:", err)
+				}
+			}
+			output, err := runMZ(t, dir, tc.stdin, tc.args...)
+			if (err == nil) != tc.ok {
+				t.Fatalf("mz %v: got err %v, want success %v\n%s", tc.args, err, tc.ok, output)
+			}
+			if !tc.ok {
+				for name, b := range tc.pre {
+					if got, err := os.ReadFile(filepath.Join(dir, name)); err != nil || !bytes.Equal(got, b) {
+						t.Errorf("%s changed (read err %v)", name, err)
+					}
+				}
+			}
+			if tc.out != "" {
+				got, err := os.ReadFile(filepath.Join(dir, tc.out))
+				switch {
+				case err != nil, tc.args[0] == "d":
+				case slices.Contains(tc.args, "-block"):
+					got, err = minlz.Decode(nil, got)
+				default:
+					got, err = io.ReadAll(minlz.NewReader(bytes.NewReader(got)))
+				}
+				if err != nil || !bytes.Equal(got, data) {
+					t.Errorf("%s does not hold the input: %v", tc.out, err)
+				}
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var names []string
+			for _, e := range entries {
+				names = append(names, e.Name())
+			}
+			if !slices.Equal(names, tc.files) {
+				t.Errorf("directory has %v, want %v", names, tc.files)
+			}
+		})
+	}
+}
+
+// TestOutputModes checks that outputs don't inherit set-ID or sticky bits from the input.
+func TestOutputModes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no set-ID bits on Windows")
+	}
+	const special = os.ModeSetuid | os.ModeSetgid | os.ModeSticky
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "x"), bytes.Repeat([]byte("mode test\n"), 1000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The in-place case runs last, as it replaces x.
+	for _, tc := range []struct {
+		in, out string
+		args    []string
+	}{
+		{"x", "x.mz", []string{"c", "-q", "x"}},
+		{"x", "x.mzb", []string{"c", "-q", "-block", "x"}},
+		{"x", "x.mz.mzs", []string{"c", "-q", "-search", "-search.sidecar", "-o", "x.mz", "x"}},
+		{"x.mz", "y", []string{"d", "-q", "-o", "y", "x.mz"}},
+		{"x.mzb", "z", []string{"d", "-q", "-o", "z", "x.mzb"}},
+		{"x", "x", []string{"c", "-q", "-o", "./x", "x"}},
+	} {
+		in := filepath.Join(dir, tc.in)
+		if err := os.Chmod(in, 0o755|special); err != nil {
+			// BSDs refuse the sticky bit on a file for a non-root user.
+			t.Skip("cannot set special mode bits:", err)
+		}
+		if st, err := os.Stat(in); err != nil || st.Mode()&special == 0 {
+			t.Skip("cannot set special mode bits:", err)
+		}
+		if output, err := runMZ(t, dir, "", tc.args...); err != nil {
+			t.Fatalf("mz %v: %v\n%s", tc.args, err, output)
+		}
+		st, err := os.Stat(filepath.Join(dir, tc.out))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.Mode()&special != 0 {
+			t.Errorf("mz %v: %s has mode %v", tc.args, tc.out, st.Mode())
+		}
+	}
+}
+
+// runMZ runs mz in dir, with stdin read from the file stdin if set.
+func runMZ(t *testing.T, dir, stdin string, args ...string) ([]byte, error) {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(exe, args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "MZ_TEST_RUN_MAIN=1")
+	if stdin != "" {
+		f, err := os.Open(filepath.Join(dir, stdin))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		cmd.Stdin = f
+	}
+	output, err := cmd.CombinedOutput()
+	if _, ok := err.(*exec.ExitError); err != nil && !ok {
+		t.Fatal(err)
+	}
+	return output, err
 }

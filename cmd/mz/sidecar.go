@@ -180,14 +180,7 @@ Options:`)
 	exitErr(err)
 	defer in.Close()
 
-	if *safe {
-		if _, err := os.Stat(dst); !os.IsNotExist(err) {
-			exitErr(fmt.Errorf("destination %s exists (use without -safe to overwrite)", dst))
-		}
-	}
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	exitErr(err)
-	defer out.Close()
+	out := createOutput(dst, 0o644, *safe)
 
 	if !*quiet {
 		fmt.Printf("Building sidecar: %s -> %s\n", src, dst)
@@ -196,6 +189,7 @@ Options:`)
 	if err := minlz.BuildSidecar(out, in, opts...); err != nil {
 		exitErr(err)
 	}
+	closeOutput(nil, out, false)
 	if !*quiet {
 		st, _ := os.Stat(dst)
 		if st != nil {
@@ -261,26 +255,10 @@ Options:`)
 	exitErr(err)
 	defer in.Close()
 
-	if *safe {
-		if _, err := os.Stat(dst); !os.IsNotExist(err) {
-			exitErr(fmt.Errorf("destination %s exists", dst))
-		}
-		if *newStream != "" {
-			if _, err := os.Stat(*newStream); !os.IsNotExist(err) {
-				exitErr(fmt.Errorf("--newstream destination %s exists", *newStream))
-			}
-		}
-	}
-
-	sideOut, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	exitErr(err)
-	defer sideOut.Close()
-
+	sideOut := createOutput(dst, 0o644, *safe)
 	var newOut *os.File
 	if *newStream != "" {
-		newOut, err = os.OpenFile(*newStream, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-		exitErr(err)
-		defer newOut.Close()
+		newOut = createOutput(*newStream, 0o644, *safe)
 	}
 
 	if !*quiet {
@@ -298,6 +276,8 @@ Options:`)
 	if err := minlz.ExtractSidecar(sideOut, newDst, in); err != nil {
 		exitErr(err)
 	}
+	closeOutput(nil, sideOut, false)
+	closeOutput(nil, newOut, false)
 }
 
 // samePath reports whether a and b name the same file. Used to refuse outputs

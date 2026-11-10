@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -47,6 +48,9 @@ const (
 )
 
 var debugErrs bool
+
+// outputs are removed by exitErr, so a failed run leaves no partial output.
+var outputs []*os.File
 
 func main() {
 	var cpuprofile, memprofile, traceprofile string
@@ -157,8 +161,47 @@ func exitErr(err error) {
 			debug.PrintStack()
 		}
 		fmt.Fprintln(os.Stderr, "\nERROR:", err.Error())
+		for _, f := range outputs {
+			f.Close()
+			os.Remove(f.Name())
+		}
 		os.Exit(2)
 	}
+}
+
+// createOutput creates name for writing. Only the permission bits of mode are
+// used, so set-ID and sticky bits of an input aren't copied. With safe it fails
+// if anything exists at name, even a dangling symlink. Only a regular file is
+// removed on failure, never a device or symlink given as output.
+func createOutput(name string, mode os.FileMode, safe bool) *os.File {
+	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	if safe {
+		flags |= os.O_EXCL
+	}
+	f, err := os.OpenFile(name, flags, mode.Perm())
+	exitErr(err)
+	if st, err := os.Lstat(name); err == nil && st.Mode().IsRegular() {
+		outputs = append(outputs, f)
+	}
+	return f
+}
+
+// closeOutput flushes bw and closes f when set. Callers sync when the input is
+// about to be replaced or removed, since the output is then the only copy.
+// Pipes and devices keep no copy and fail fsync, so only regular files are synced.
+func closeOutput(bw *bufio.Writer, f *os.File, sync bool) {
+	if bw != nil {
+		exitErr(bw.Flush())
+	}
+	if f == nil {
+		return
+	}
+	if sync {
+		if st, err := f.Stat(); err == nil && st.Mode().IsRegular() {
+			exitErr(f.Sync())
+		}
+	}
+	exitErr(f.Close())
 }
 
 func isHTTP(name string) bool {
