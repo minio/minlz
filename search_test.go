@@ -4642,3 +4642,47 @@ func TestWriterSearchTableIncompressiblePrefix(t *testing.T) {
 		}
 	})
 }
+
+func TestBlockSearcherSkip(t *testing.T) {
+	stream := func(s string) []byte {
+		var buf bytes.Buffer
+		w := NewWriter(&buf, WriterAddIndex(true), WriterSearchTable(NewSearchTableConfig()))
+		w.Write([]byte(s))
+		w.Close()
+		return buf.Bytes()
+	}
+	search := func(r io.Reader) (n int, err error) {
+		err = NewBlockSearcher(r).Search([]byte("needle"), func(SearchResult) error {
+			n++
+			return nil
+		})
+		return n, err
+	}
+
+	// A trailing skippable chunk that declares 4096 bytes but carries 10 (or 0).
+	for _, have := range []int{10, 0} {
+		trunc := append(stream("hello world\n"), 0x80, 0x00, 0x10, 0x00)
+		trunc = append(trunc, make([]byte, have)...)
+		if _, err := search(struct{ io.Reader }{bytes.NewReader(trunc)}); err != ErrCorrupt {
+			t.Errorf("have %d: io.Reader: got %v; want ErrCorrupt", have, err)
+		}
+		if _, err := search(bytes.NewReader(trunc)); err != ErrCorrupt {
+			t.Errorf("have %d: io.ReadSeeker: got %v; want ErrCorrupt", have, err)
+		}
+	}
+
+	// Two concatenated streams on a pipe; the needle is only in the second.
+	two := append(stream("hello world\n"), stream("a needle\n")...)
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pr.Close()
+	go func() {
+		pw.Write(two)
+		pw.Close()
+	}()
+	if n, err := search(pr); n != 1 || err != nil {
+		t.Errorf("pipe: got %d matches, err %v; want 1, nil", n, err)
+	}
+}

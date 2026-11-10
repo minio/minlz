@@ -60,7 +60,7 @@ func NewWriter(w io.Writer, opts ...WriterOption) *Writer {
 			w2.errState = errors.New("minlz: WriterSidecar requires WriterSearchTable")
 			return &w2
 		}
-		w2.sidecarMaxBlock = w2.blockSize
+		w2.sidecarMaxBlock = 1 << bits.Len(uint(w2.blockSize-1))
 	}
 	w2.obufLen = obufHeaderLen + MaxEncodedLen(w2.blockSize)
 	if w2.searchCfg != nil {
@@ -121,9 +121,9 @@ type Writer struct {
 	// sidecarHeaderWritten tracks whether the sidecar stream header and
 	// 0x44 info chunk have been emitted.
 	sidecarHeaderWritten bool
-	// sidecarMaxBlock is the stream's max block size; used to compute the
-	// (max - actual) field encoded in 0x47 chunks. Derived from w.blockSize
-	// at first emit.
+	// sidecarMaxBlock is the max block size declared in the stream header
+	// (blockSize rounded up to a power of two); used to compute the
+	// (max - actual) field encoded in 0x47 chunks.
 	sidecarMaxBlock int
 
 	// wroteStreamHeader is whether we have written the stream header.
@@ -1547,7 +1547,7 @@ func (w *Writer) SetSidecar(sidecar io.Writer) error {
 	w.sidecar = sidecar
 	w.sidecarHeaderWritten = false
 	if sidecar != nil {
-		w.sidecarMaxBlock = w.blockSize
+		w.sidecarMaxBlock = 1 << bits.Len(uint(w.blockSize-1))
 	}
 	return nil
 }

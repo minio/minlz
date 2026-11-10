@@ -248,11 +248,18 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 		return err
 	}
 
+	// A sidecar is auto-loaded and trusted to cover the main stream, so
+	// one cut short (e.g. a failed build) must not end the search silently.
+	streamOpen := true
+
 	// Walk sidecar.
 	for {
 		ct, cl, err := s.readChunkHeader()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				if streamOpen {
+					return fmt.Errorf("%w: missing EOF chunk", ErrSidecarInvalid)
+				}
 				return s.finalize(pattern, fn, flushBatch)
 			}
 			return err
@@ -526,8 +533,10 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			s.prevLazy = nil
 			s.tailBuf = s.tailBuf[:0]
 			s.streamInfos = s.streamInfos[:0]
+			streamOpen = false
 
 		case ChunkTypeStreamIdentifier:
+			streamOpen = true
 			// Concatenated sidecar stream starts here. Conservatively resolve
 			// any deferred from the prior stream first.
 			if s.sideDeferred != nil {

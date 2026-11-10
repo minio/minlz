@@ -16,6 +16,7 @@ package minlz
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -1433,5 +1434,48 @@ func TestSidecarSearchWindowStatsConfigDrift(t *testing.T) {
 	}
 	if denom > st.BlocksTotal {
 		t.Fatalf("window denominator %d exceeds %d blocks — incompatible configs were mixed into the counts", denom, st.BlocksTotal)
+	}
+}
+
+// Non-power-of-two block sizes: 0x47 sizes are relative to the header's
+// rounded-up max block size.
+func TestSidecarOddBlockSize(t *testing.T) {
+	data := bytes.Repeat([]byte("abcdefgh"), 2000)
+	copy(data[9000:], "NEEDLE")
+	var mainStream, side bytes.Buffer
+	w := NewWriter(&mainStream,
+		WriterBlockSize(5000),
+		WriterSearchTable(NewSearchTableConfig()),
+		WriterSidecar(&side),
+	)
+	w.Write(data)
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	err := NewSidecarSearcher(bytes.NewReader(mainStream.Bytes()), &side).Search([]byte("NEEDLE"), func(SearchResult) error {
+		n++
+		return nil
+	})
+	if n != 1 || err != nil {
+		t.Errorf("got %d matches, err %v; want 1, nil", n, err)
+	}
+}
+
+func TestSidecarSearcherMissingEOF(t *testing.T) {
+	var mainStream, side bytes.Buffer
+	w := NewWriter(&mainStream, WriterSearchTable(NewSearchTableConfig()), WriterSidecar(&side))
+	w.Write([]byte("hello world\n"))
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sc := side.Bytes()
+	const eofLen = 5 // 0x20 chunk carrying a 1-byte varint 0.
+	if sc[len(sc)-eofLen] != chunkTypeEOF {
+		t.Fatalf("sidecar does not end with an EOF chunk")
+	}
+	err := NewSidecarSearcher(bytes.NewReader(mainStream.Bytes()), bytes.NewReader(sc[:len(sc)-eofLen])).Search([]byte("world"), func(SearchResult) error { return nil })
+	if !errors.Is(err, ErrSidecarInvalid) {
+		t.Errorf("got err %v; want ErrSidecarInvalid", err)
 	}
 }
