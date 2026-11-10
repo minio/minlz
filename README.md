@@ -853,7 +853,7 @@ Options:
 - `-l` Print matching lines (default: show match offsets)
 - `-c` Print match count only
 - `-n` Include line numbers (with `-l`)
-- `-q` Quiet mode, exit code only (0=found, 1=not found)
+- `-q` Quiet mode, exit code only (0=found, 1=not found, 2=error)
 - `-bail` Error if search tables are not available
 
 Example:

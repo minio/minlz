@@ -193,9 +193,7 @@ Options:`)
 		fmt.Printf("Building sidecar: %s -> %s\n", src, dst)
 	}
 
-	if err := minlz.BuildSidecar(out, in, opts...); err != nil {
-		exitErr(err)
-	}
+	exitRemove(minlz.BuildSidecar(out, in, opts...), out)
 	if !*quiet {
 		st, _ := os.Stat(dst)
 		if st != nil {
@@ -279,7 +277,7 @@ Options:`)
 	var newOut *os.File
 	if *newStream != "" {
 		newOut, err = os.OpenFile(*newStream, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-		exitErr(err)
+		exitRemove(err, sideOut)
 		defer newOut.Close()
 	}
 
@@ -295,9 +293,22 @@ Options:`)
 	if newOut != nil {
 		newDst = newOut
 	}
-	if err := minlz.ExtractSidecar(sideOut, newDst, in); err != nil {
-		exitErr(err)
+	exitRemove(minlz.ExtractSidecar(sideOut, newDst, in), sideOut, newOut)
+}
+
+// exitRemove deletes partially written outputs before exiting on err,
+// since search auto-loads <input>.mzs and would trust a truncated one.
+func exitRemove(err error, files ...*os.File) {
+	if err == nil {
+		return
 	}
+	for _, f := range files {
+		if f != nil {
+			f.Close()
+			os.Remove(f.Name())
+		}
+	}
+	exitErr(err)
 }
 
 // samePath reports whether a and b resolve to the same filesystem path. Used

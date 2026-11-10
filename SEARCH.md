@@ -483,7 +483,7 @@ mz search "pattern" file.log.mz                     # print matching lines
 mz search -c "pattern" file.log.mz                  # count matching lines
 mz search -n "pattern" file.log.mz                  # print with line numbers
 mz search -v "pattern" file.log.mz                  # verbose: print stats after search
-mz search -q "pattern" file.log.mz                  # quiet: exit code only (0=found, 1=not)
+mz search -q "pattern" file.log.mz                  # quiet: exit code only (0=found, 1=not, 2=error)
 mz search -bail "pattern" file.log.mz               # error if tables are missing/unusable
 ```
 

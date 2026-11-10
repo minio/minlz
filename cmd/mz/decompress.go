@@ -383,22 +383,20 @@ func (cfg *decompressConfig) decompressFile() {
 			DecodeDebug(nil, all)
 		}
 		b, err := minlz.Decode(nil, all)
+		exitErr(err)
 		if cfg.offset > 0 {
-			b = b[min(cfg.offset, int64(len(all))):]
+			b = b[min(cfg.offset, int64(len(b))):]
 		}
-		if cfg.tailBytes > 0 {
-			tb := min(cfg.tailBytes, int64(len(b)))
-			b = b[len(b)-min(len(b), int(tb)):]
-			for len(b) > 0 && cfg.tailNextNL {
-				if b[0] == '\n' {
-					b = b[1:]
-					break
-				}
-				b = b[1:]
+		if cfg.tailBytes > 0 && cfg.tailBytes < int64(len(b)) {
+			b = b[int64(len(b))-cfg.tailBytes:]
+		}
+		// Like stream mode: start after the next newline, or keep everything if there is none.
+		if cfg.tailNextNL && (cfg.offset > 0 || cfg.tailBytes > 0) {
+			if i := bytes.IndexByte(b, '\n'); i >= 0 {
+				b = b[i+1:]
 			}
 		}
 		// Limit applied later...
-		exitErr(err)
 		decoded = bytes.NewReader(b)
 	} else {
 		cfg.reader.Reset(src)

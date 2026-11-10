@@ -248,14 +248,26 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 		return err
 	}
 
+	// A sidecar is auto-loaded and trusted to cover the main stream, so
+	// one cut short (e.g. a failed build) must not end the search silently.
+	streamOpen := true
+
 	// Walk sidecar.
 	for {
 		ct, cl, err := s.readChunkHeader()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				if streamOpen {
+					return fmt.Errorf("%w: missing EOF chunk", ErrSidecarInvalid)
+				}
 				return s.finalize(pattern, fn, flushBatch)
 			}
 			return err
+		}
+		// Search chunks need the stream they belong to; between streams only
+		// a stream identifier or skippable chunks may follow.
+		if !streamOpen && ct != ChunkTypeStreamIdentifier && (ct <= maxNonSkippableChunk || ct >= chunkTypeSearchInfo && ct <= chunkTypeRemoteBlockRef) {
+			return fmt.Errorf("%w: chunk 0x%02x after EOF chunk", ErrSidecarInvalid, ct)
 		}
 		switch ct {
 		case chunkTypeSearchInfo:
@@ -526,8 +538,13 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			s.prevLazy = nil
 			s.tailBuf = s.tailBuf[:0]
 			s.streamInfos = s.streamInfos[:0]
+			streamOpen = false
 
 		case ChunkTypeStreamIdentifier:
+			if streamOpen {
+				return fmt.Errorf("%w: missing EOF chunk", ErrSidecarInvalid)
+			}
+			streamOpen = true
 			// Concatenated sidecar stream starts here. Conservatively resolve
 			// any deferred from the prior stream first.
 			if s.sideDeferred != nil {
@@ -1045,11 +1062,7 @@ func (s *SidecarSearcher) readFull(buf []byte) (int, error) {
 }
 
 func (s *SidecarSearcher) readChunkHeader() (chunkType byte, chunkLen int, err error) {
-	_, err = io.ReadFull(s.sidecar, s.tmp[:4])
-	if err != nil {
-		if errors.Is(err, io.ErrUnexpectedEOF) {
-			err = io.EOF
-		}
+	if _, err = io.ReadFull(s.sidecar, s.tmp[:4]); err != nil {
 		return 0, 0, err
 	}
 	return s.tmp[0], int(s.tmp[1]) | int(s.tmp[2])<<8 | int(s.tmp[3])<<16, nil

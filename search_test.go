@@ -3,6 +3,7 @@ package minlz
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -4722,4 +4723,62 @@ func TestWriterSearchTableIncompressiblePrefix(t *testing.T) {
 			t.Fatalf("BlocksSkipped=%d, want 0: no-prefix tables must not exist for incompressible blocks", st.BlocksSkipped)
 		}
 	})
+}
+
+func TestBlockSearcherSkip(t *testing.T) {
+	stream := func(s string) []byte {
+		var buf bytes.Buffer
+		w := NewWriter(&buf, WriterAddIndex(true), WriterSearchTable(NewSearchTableConfig()))
+		w.Write([]byte(s))
+		w.Close()
+		return buf.Bytes()
+	}
+	search := func(r io.Reader) (n int, err error) {
+		err = NewBlockSearcher(r).Search([]byte("needle"), func(SearchResult) error {
+			n++
+			return nil
+		})
+		return n, err
+	}
+
+	// A trailing skippable chunk that declares 4096 bytes but carries 10 (or 0).
+	for _, have := range []int{10, 0} {
+		trunc := append(stream("hello world\n"), 0x80, 0x00, 0x10, 0x00)
+		trunc = append(trunc, make([]byte, have)...)
+		if _, err := search(struct{ io.Reader }{bytes.NewReader(trunc)}); err != ErrCorrupt {
+			t.Errorf("have %d: io.Reader: got %v; want ErrCorrupt", have, err)
+		}
+		if _, err := search(bytes.NewReader(trunc)); err != ErrCorrupt {
+			t.Errorf("have %d: io.ReadSeeker: got %v; want ErrCorrupt", have, err)
+		}
+	}
+
+	// Seek works, but SeekEnd fails (e.g. HTTP without Content-Length).
+	two := append(stream("hello world\n"), stream("a needle\n")...)
+	if n, err := search(noSeekEnd{bytes.NewReader(two)}); n != 1 || err != nil {
+		t.Errorf("no SeekEnd: got %d matches, err %v; want 1, nil", n, err)
+	}
+
+	// Two concatenated streams on a pipe; the needle is only in the second.
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pr.Close()
+	go func() {
+		pw.Write(two)
+		pw.Close()
+	}()
+	if n, err := search(pr); n != 1 || err != nil {
+		t.Errorf("pipe: got %d matches, err %v; want 1, nil", n, err)
+	}
+}
+
+type noSeekEnd struct{ *bytes.Reader }
+
+func (r noSeekEnd) Seek(offset int64, whence int) (int64, error) {
+	if whence == io.SeekEnd {
+		return 0, errors.New("no size")
+	}
+	return r.Reader.Seek(offset, whence)
 }
