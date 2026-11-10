@@ -35,7 +35,7 @@ compression ratio while retaining a high decompression speed.
 * Powerful commandline utility
 * Customizable Bloom Filter Stream Search 
 
-This package implements the MinLZ specification v1.0 in Go, plus SIMD blocks from v1.1.
+This package implements the MinLZ specification v1.1 in Go.
 
 For format specification see the included [SPEC.md](SPEC.md) and [SPEC_SIMD.md](SPEC_SIMD.md).
 
@@ -139,7 +139,7 @@ For small blocks the MinLZ levels compress faster, and usually decompress faster
 
 4 levels write SIMD blocks:
 
-* Level 4, `LevelSuperFastSIMD`: The fastest SIMD compression and decompression, at a reduced compression ratio.
+* Level 4, `LevelSuperFastSIMD`: The fastest SIMD compression, at a reduced compression ratio.
 * Level 5, `LevelFastestSIMD`: Fast compression with a good compression ratio.
 * Level 6, `LevelBalancedSIMD`: A balance between compression and speed. ~50% the speed of level 5.
 * Level 7, `LevelSmallestSIMD`: The smallest output. Not tuned for speed.
@@ -155,7 +155,7 @@ For small blocks the MinLZ levels compress faster, and usually decompress faster
 ```
 
 `LevelSIMDDelta` can be added to levels 4 to 6, for example `minlz.LevelBalancedSIMD | minlz.LevelSIMDDelta`.
-Literals are then stored as the difference to the bytes at the last match offset.
+The first 32 literals of each operation are then stored as the difference to the bytes at the last match offset (see [SPEC_SIMD.md](SPEC_SIMD.md) 4.5).
 This mainly helps binary data, like tables of numbers, but makes text larger and costs decompression speed.
 Level 7 decides this itself.
 
@@ -163,8 +163,9 @@ SIMD blocks can be used with `Encode`, `TryEncode`, `AppendEncoded`, the decodin
 see "Writer Compression Level" below.
 Older versions of this package cannot decode SIMD blocks, nor streams written with SIMD levels.
 
-Decompression uses AVX-512 on amd64 CPUs with AVX-512 (F, BW, VL, VBMI, VBMI2) and BMI2,
+Decompression uses AVX-512 on amd64 CPUs with AVX-512 (F, BW, VL, VBMI, VBMI2), AVX2, BMI2 and POPCNT,
 and AVX2 on CPUs with AVX2 and BMI2; arm64 uses NEON. Other platforms use Go.
+Huffman coding picks AVX-512, AVX2 or NEON the same way, but also needs POPCNT for AVX2, and AVX-512 VPOPCNTDQ for AVX-512.
 SuperFast, Fastest and Balanced SIMD compress with assembly on amd64 and arm64, with the same output as the Go code.
 Smallest and delta literals use Go.
 
@@ -389,7 +390,7 @@ Besides offering higher throughput using `DecompressConcurrent` will also make i
 
 For memory-sensitive systems, the maximum block size can be set below 8MB. For this use the `ReaderMaxBlockSize(int)`
 option.
-Decoding SIMD blocks also keeps about 180KB per concurrent decoder, plus a literal buffer of up to the block size.
+Decoding SIMD blocks also keeps about 480KB per concurrent decoder, plus a literal buffer of up to the block size.
 
 #### Skipping and Seeking
 
@@ -1024,10 +1025,12 @@ Content encoded with MinLZ cannot be decoded by Snappy or S2.
 |----------------|----------------|------------|---------------|
 | Snappy Encoder | ✔              | ✔          | ✔ (*)         |
 | S2 Encoder     | x              | ✔          | ✔ (*)         |
-| MinLZ Encoder  | x              | x          | ✔             |
+| MinLZ Encoder  | x              | x          | ✔ (**)        |
 
 (*) MinLZ decoders *may* implement fallback to S2/Snappy. 
 This is however not required and ports may not support this.
+
+(**) Decoders for format v1.0, such as this package before v1.3.0, cannot read SIMD blocks, nor streams written with SIMD levels (the `mz c` default).
 
 # License
 

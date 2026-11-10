@@ -51,7 +51,7 @@ const (
 	// Use only if LevelFastestSIMD is confirmed to be too slow.
 	LevelSuperFastSIMD = 4
 
-	// LevelFastestSIMD is the fastest compression level.
+	// LevelFastestSIMD is a fast compression level with a good compression ratio.
 	// SIMD blocks typically compress better, and decompress faster
 	// on platforms where SIMD is available when blocks are 64KB or more.
 	// See the README for details.

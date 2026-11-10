@@ -41,8 +41,7 @@ of the block if this value is non-zero.
 
 ## 1.1 Block Size 
 
-A block starts with the uncompressed length up to a maximum of 2^24,
-stored as an unsigned varint.
+A block starts with the uncompressed length in bits 0-23 of an unsigned varint.
 Bits 24-31 of the varint are the block type ([SPEC_SIMD.md](SPEC_SIMD.md) 1.0); MinLZ blocks are type 0.
 
 Maximum uncompressed block size is 8 MiB = 8,388,608 bytes.
@@ -339,7 +338,7 @@ be extended in the future.
 | 2, 3    | MinLZ Compressed Block        | 4.4, 4.5    |
 | 16      | MinLZ SIMD Block              | 4.5B        |
 | 32      | EOF                           | 4.6         |
-| 0-63    | (non-skippable)               | 4.8         |
+| 0-63    | (reserved, non-skippable)     | 4.8         |
 | 64      | Stream Index                  | 4.12        |
 | 65-127  | (reserved, skippable)         | 4.9         |
 | 128-191 | (user defined, skippable)     | 4.10        |
@@ -358,12 +357,12 @@ This means that a valid MinLZ framed stream always starts with the bytes:
 
 The final byte of the identifier is a block size indicator.
 
-| Bits | Description                                                     |
-|------|-----------------------------------------------------------------|
-| 0-3  | Max block size indicator                                        |
-| 4-5  | Reserved, must be ignored                                       |
-| 6    | Stream contains [SIMD Block(s)](SPEC_SIMD.md) (chunk type 0x10) |
-| 7    | Reserved, must be 0                                             |
+| Bits | Description                                                        |
+|------|--------------------------------------------------------------------|
+| 0-3  | Max block size indicator                                           |
+| 4-5  | Reserved, must be ignored                                          |
+| 6    | Stream may contain [SIMD Block(s)](SPEC_SIMD.md) (chunk type 0x10) |
+| 7    | Reserved, must be 0                                                |
 
 #### 4.1.1 Max Block Size
 
@@ -400,7 +399,7 @@ Instead, use type 0x02, which indicates a MinLZ compressed block.
 ### 4.4. MinLZ Compressed data (chunk type 0x02)
 
 A MinLZ block *without* the MinLZ identifier (initial 0 byte).
-The block type (see 1.1) must be 0. SIMD blocks are stored as chunk type 0x10.
+The block type (see 1.1 Block Size) must be 0. SIMD blocks are stored as chunk type 0x10.
 
 A CRC32C (see section 3) checksum of the *uncompressed* 
 data is stored at the beginning of the block.
@@ -411,7 +410,7 @@ as well as blocks with decompressed size less than compressed size.
 ### 4.5. MinLZ Compressed data - Compressed CRC (chunk type 0x03).
 
 A MinLZ block *without* the MinLZ identifier (initial 0 byte).
-The block type (see 1.1) must be 0.
+The block type (see 1.1 Block Size) must be 0.
 
 A CRC32C (see section 3) checksum of the *compressed* 
 data is stored at the beginning of the block.
@@ -424,12 +423,12 @@ If possible prefer type `0x02` over this.
 ### 4.5B. MinLZ SIMD Block (chunk type 0x10).
 
 A [SIMD block](SPEC_SIMD.md) *without* the MinLZ indicator (initial 0 byte).
-The block type (see 1.1) must be 1.
+The block type (see 1.1 Block Size) must be 1.
 
 An [xxhash3](https://github.com/Cyan4973/xxHash#xxhash---extremely-fast-hash-algorithm)
 (XXH3 64-bit, seed 0) of the *uncompressed* data is stored unmasked, as an 8-byte little endian value, at the start of the chunk data, before the block.
 
-The stream identifier *must* indicate that SIMD blocks are present (bit 6 set).
+The stream identifier *must* have bit 6 set (see 4.1).
 Otherwise, the decoder should reject the stream.
 The bit applies until the next stream identifier.
 A decoder that starts at an index entry (see 4.12) has not read the stream identifier, and may accept SIMD blocks until it reads one.
@@ -549,7 +548,7 @@ An implicit block start at 0,0 can be assumed.
 ```
 // Read Uncompressed entries.
 // Each assumes EstBlockSize delta from previous.
-for each entry {
+for entryNum := 0; entryNum < Entries; entryNum++ {
     uOff = 0
     if HasUncompressedOffsets == 1 {
         uOff = ReadVarInt // Read value from stream
@@ -563,7 +562,6 @@ for each entry {
     
     // Uncompressed uses previous offset and adds EstBlockSize
     entry[entryNum].UncompressedOffset = entry[entryNum-1].UncompressedOffset + EstBlockSize + uOff
-    entryNum++
 }
 
 
@@ -574,7 +572,7 @@ CompressGuess := EstBlockSize / 2
 // Read Compressed entries.
 // Each assumes CompressGuess delta from previous.
 // CompressGuess is adjusted for each value.
-for each entry {
+for entryNum := 0; entryNum < Entries; entryNum++ {
     cOff = ReadVarInt // Read value from stream
     
     // Except for the first entry, use previous values.
@@ -588,8 +586,6 @@ for each entry {
         
      // Adjust compressed offset for next loop, integer truncating division must be used. 
      CompressGuess += cOff/2
-     
-     entryNum++               
 }
 ```
 
@@ -597,7 +593,7 @@ To decode from any given uncompressed offset `(wantOffset)`:
 
 * Iterate entries until `entry[n].UncompressedOffset > wantOffset`.
 * Start decoding from `entry[n-1].CompressedOffset`.
-* Discard `entry[n-1].UncompressedOffset - wantOffset` bytes from the decoded stream.
+* Discard `wantOffset - entry[n-1].UncompressedOffset` bytes from the decoded stream.
 
 A decoder that starts at an index entry has not read the stream identifier of the stream the entry is in,
 which may not be the first one when streams are concatenated.

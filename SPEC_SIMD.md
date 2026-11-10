@@ -60,7 +60,7 @@ The encoded block, everything after the indicator byte, must be at least 64 byte
 
 ## 2 Block Layout
 
-Sizes are stored *after* the data they describe, as reverse varints (2.1),
+The sizes `L` and `R` (below) are stored *after* the data they describe, as reverse varints (2.1),
 so a block is parsed from its end.
 
     | 0 | varint | flags | LZ section | literal section | L |
@@ -365,8 +365,14 @@ Here `b = (symbol + 16) >> 3` and `m = (symbol + 16) & 7`.
 So symbol 16 is offsets 16-17, symbol 24 is offsets 32-35, and symbol 175 is offsets 15,728,640-16,777,215.
 
 Raw bits are read least significant bit first: bit `i` of the offset bits is bit `i & 7` of byte `i >> 3`.
+The first raw bit an offset reads is bit 0, the least significant bit, of its raw value; the next one is bit 1, and so on.
 Each chunk starts at bit 0. Its offset bits are exactly the bits it reads, rounded up to whole bytes;
 unused bits in the last byte are ignored.
+
+For example, offset 78 is symbol 33 (offsets 72-79) with the 3 raw bits of 6 (binary 110),
+and offset 33 is symbol 24 (offsets 32-35) with the 2 raw bits of 1 (binary 01).
+A chunk that reads only these two, in this order, has the offset bits `0E`: bits 0-2 hold 6, and bits 3-4 hold 1.
+Reading the first bit as the most significant would give offsets 75 and 34 instead.
 
 ### 4.5 Delta Literals
 
@@ -669,7 +675,7 @@ Nor are offsets below the match length in chunks with the no-overlap flag; they 
 * Modes 5-7, mode 4 outside the literals, or offset bits in a mode other than 0.
 * Mode 1 without a current table.
 * A table with a code length above 11, with an incomplete code (other than a single value of length 1),
-  or with codes for values outside the stream's range.
+  with an over-subscribed code (`2^-length` summed over the coded values is above 1), or with codes for values outside the stream's range.
 * Class lengths whose padding nibble (2.3) is not 0.
 * Token class lengths whose group lengths or flag codes are not complete codes (A.4).
 * A number of values of tokens or of a literal block (2.2) that runs past the stored size.
@@ -724,5 +730,6 @@ and 32 bytes after each operation it writes. The last operations of a block can 
   `min(max(offset, 32), position)`. A decoder can run the operations that start before position 32 like other chunks,
   and the rest without an overlap test or repeating references, if it copies matches forward 32 bytes at a time:
   a match longer than 32 bytes can still overlap its output.
-* The first operation's delta references are 0 (4.5). Setting the first output byte to 0, and treating offset 0 like offset 1,
-  gives that without a special case.
+* The first operation's delta references are 0 (4.5). A decoder that reads the references of an operation before it writes its literals
+  gets that without a special case: set the first output byte to 0, and read the reference of literal `j` at `p - r + (j mod max(r, 1))`.
+  With `r` = 0 that is position 0 for every literal.
