@@ -16,6 +16,7 @@ package minlz
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -512,6 +513,54 @@ func TestSidecarSearcher_ReadAtCoalescing(t *testing.T) {
 	}
 	if calls == 0 {
 		t.Fatalf("no ReadAt calls made")
+	}
+}
+
+// TestSidecarSearcher_BatchSpanBounded: when no block can be skipped, the
+// coalesced ReadAt must stay bounded instead of buffering the whole stream.
+func TestSidecarSearcher_BatchSpanBounded(t *testing.T) {
+	const blockSize = 1 << 20
+	data := make([]byte, maxSidecarBatchSpan+8<<20)
+	rand.New(rand.NewSource(1)).Read(data)
+	pat := []byte("needle-in-every-block")
+	for i := 0; i < len(data); i += blockSize {
+		copy(data[i+1000:], pat)
+	}
+	var main, side bytes.Buffer
+	w := NewWriter(&main,
+		WriterBlockSize(blockSize),
+		WriterConcurrency(1),
+		WriterSearchTable(NewSearchTableConfig().WithMatchLen(6)),
+		WriterSidecar(&side),
+	)
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	rr := &rangeRecorderReaderAt{r: bytes.NewReader(main.Bytes())}
+	matches := 0
+	ss := NewSidecarSearcher(rr, bytes.NewReader(side.Bytes()))
+	if err := ss.Search(pat, func(SearchResult) error {
+		matches++
+		return nil
+	}); err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if want := countOccurrences(data, pat); matches != want {
+		t.Fatalf("matches=%d want=%d", matches, want)
+	}
+	maxRead := int64(maxSidecarBatchSpan + MaxEncodedLen(blockSize) + obufHeaderLen + binary.MaxVarintLen64)
+	blocks := len(data) / blockSize
+	if len(rr.ranges) >= blocks {
+		t.Errorf("ReadAt not coalesced: %d calls for %d blocks", len(rr.ranges), blocks)
+	}
+	for _, r := range rr.ranges {
+		if n := r[1] - r[0]; n > maxRead {
+			t.Errorf("ReadAt of %d bytes at %d exceeds bound %d (stream %d)", n, r[0], maxRead, main.Len())
+		}
 	}
 }
 
