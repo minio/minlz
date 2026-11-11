@@ -25,6 +25,7 @@ import (
 	"io"
 	"math/bits"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -215,6 +216,26 @@ func (s *simdStats) otherBytes() uint64 {
 	return n
 }
 
+func (s *simdStats) merge(o *simdStats) {
+	s.Blocks += o.Blocks
+	s.BlockBytes += o.BlockBytes
+	s.Chunks += o.Chunks
+	s.DeltaChunks += o.DeltaChunks
+	s.NoOverlapChunks += o.NoOverlapChunks
+	s.Operations += o.Operations
+	s.NoMatch += o.NoMatch
+	for i := range s.Streams {
+		a, b := &s.Streams[i], &o.Streams[i]
+		a.Entries += b.Entries
+		a.Values += b.Values
+		a.Data += b.Data
+		a.Table += b.Table
+		for m := range a.Modes {
+			a.Modes[m] += b.Modes[m]
+		}
+	}
+}
+
 func (b *blockStats) totalOps() uint64 {
 	var n uint64
 	for i := range b.Ops {
@@ -270,6 +291,7 @@ type statsOpts struct {
 	perBlock bool
 	noHist   bool
 	quiet    bool
+	cpu      int
 }
 
 func mainStats(args []string) {
@@ -280,6 +302,7 @@ func mainStats(args []string) {
 		perBlock = fs.Bool("per-block", false, "Include per-block one-line summary")
 		noHist   = fs.Bool("no-hist", false, "Omit histograms")
 		quiet    = fs.Bool("q", false, "Quiet: don't print filenames/timing")
+		cpu      = fs.Int("cpu", runtime.GOMAXPROCS(0), "Maximum number of threads to use")
 		help     = fs.Bool("help", false, "Display help")
 	)
 	fs.Usage = func() {
@@ -306,7 +329,7 @@ Options:`)
 	if *asJSON && *asCSV {
 		exitErr(errors.New("-json and -csv are mutually exclusive"))
 	}
-	opts := statsOpts{json: *asJSON, csv: *asCSV, perBlock: *perBlock, noHist: *noHist, quiet: *quiet}
+	opts := statsOpts{json: *asJSON, csv: *asCSV, perBlock: *perBlock, noHist: *noHist, quiet: *quiet, cpu: *cpu}
 
 	var files []string
 	for _, p := range args {
@@ -463,8 +486,71 @@ func analyzeRawBlock(data []byte, rep *fileReport, opts statsOpts) error {
 	return nil
 }
 
-// analyzeStream parses .mz framing chunks.
+// blockJob is a MinLZ or SIMD block walked by a stats worker.
+type blockJob struct {
+	bs    blockStats
+	ss    simdStats
+	block []byte // MinLZ block ops, or a SIMD block with its indicator byte.
+	err   error
+	done  chan struct{}
+}
+
+func (j *blockJob) analyze() {
+	switch {
+	case j.bs.ChunkType == chunkMinLZSIMD:
+		j.err = walkSIMDBlock(j.block, &j.bs, &j.ss)
+	case j.bs.UncompSize > 0:
+		j.err = walkBlock(j.block, j.bs.UncompSize, &j.bs)
+	}
+	if j.err != nil {
+		j.err = fmt.Errorf("block %d: %w", j.bs.Index, j.err)
+	}
+	close(j.done)
+}
+
+// analyzeStream parses .mz framing chunks. opts.cpu workers walk the blocks,
+// which are merged in stream order, so the first error in the stream is returned.
 func analyzeStream(br *bufio.Reader, rep *fileReport, opts statsOpts) error {
+	cpu := max(opts.cpu, 1)
+	jobs := make(chan *blockJob)
+	defer close(jobs)
+	for range cpu {
+		go func() {
+			for j := range jobs {
+				j.analyze()
+			}
+		}()
+	}
+	var queue []*blockJob
+	merge := func(keep int) error {
+		for len(queue) > keep {
+			j := queue[0]
+			queue = queue[1:]
+			<-j.done
+			if j.err != nil {
+				queue = nil
+				return j.err
+			}
+			rep.SIMD.merge(&j.ss)
+			mergeBlockIntoReport(rep, &j.bs, opts)
+		}
+		return nil
+	}
+	err := streamChunks(br, rep, func(j *blockJob) error {
+		j.done = make(chan struct{})
+		queue = append(queue, j)
+		jobs <- j
+		return merge(cpu)
+	})
+	// Queued blocks precede a framing error.
+	if mErr := merge(0); mErr != nil {
+		return mErr
+	}
+	return err
+}
+
+// streamChunks parses the chunks and submits MinLZ and SIMD blocks in stream order.
+func streamChunks(br *bufio.Reader, rep *fileReport, submit func(*blockJob) error) error {
 	var hdr [4]byte
 	streamSawID := false
 	streamSIMD := false
@@ -534,20 +620,16 @@ func analyzeStream(br *bufio.Reader, rep *fileReport, opts statsOpts) error {
 			if uncomp>>24 != 0 {
 				return fmt.Errorf("block type %d in MinLZ chunk: %w", uncomp>>24, minlz.ErrCorrupt)
 			}
-			body := payload[n:]
-			bs := blockStats{
-				Index:      len(rep.Blocks),
+			j := &blockJob{block: payload[n:], bs: blockStats{
+				Index:      int(rep.Stream.MinlzBlocks + rep.Stream.SimdBlocks),
 				ChunkType:  ct,
 				CompSize:   clen, // chunk payload size (4 CRC + varint + ops)
 				UncompSize: int(uncomp),
-			}
-			if uncomp != 0 {
-				if err := walkBlock(body, int(uncomp), &bs); err != nil {
-					return fmt.Errorf("block %d: %w", bs.Index, err)
-				}
-			} else {
+			}}
+			if uncomp == 0 {
 				// All-literals form: entire body is literal data.
-				ll := uint32(len(body))
+				bs := &j.bs
+				ll := uint32(len(j.block))
 				bs.Ops[opLiteral].Count = 1
 				bs.Ops[opLiteral].OutBytes = uint64(ll)
 				bs.Ops[opLiteral].HeaderBytes = uint64(4 + n) // CRC + varint
@@ -566,7 +648,9 @@ func analyzeStream(br *bufio.Reader, rep *fileReport, opts statsOpts) error {
 			rep.Stream.BlockSizeHist[bucket(uint32(clen))]++
 			rep.Stream.UncompSizeHist[bucket(uint32(uncomp))]++
 			rep.Stream.RatioBuckets[ratioBucket(int(uncomp), clen)]++
-			mergeBlockIntoReport(rep, &bs, opts)
+			if err := submit(j); err != nil {
+				return err
+			}
 			uncompEmitted += uncomp
 
 		case chunkMinLZSIMD:
@@ -586,17 +670,21 @@ func analyzeStream(br *bufio.Reader, rep *fileReport, opts statsOpts) error {
 				return fmt.Errorf("corrupt SIMD block header: %w", minlz.ErrCorrupt)
 			}
 			uncomp := v & (1<<24 - 1)
-			bs := blockStats{Index: len(rep.Blocks), ChunkType: ct, CompSize: clen, UncompSize: int(uncomp)}
 			// The chunk has no indicator byte; put it over the last hash byte, which isn't checked.
 			buf[7] = 0
-			if err := walkSIMDBlock(buf[7:], &bs, &rep.SIMD); err != nil {
-				return fmt.Errorf("block %d: %w", bs.Index, err)
-			}
+			j := &blockJob{block: buf[7:], bs: blockStats{
+				Index:      int(rep.Stream.MinlzBlocks + rep.Stream.SimdBlocks),
+				ChunkType:  ct,
+				CompSize:   clen,
+				UncompSize: int(uncomp),
+			}}
 			rep.Stream.SimdBlocks++
 			rep.Stream.BlockSizeHist[bucket(uint32(clen))]++
 			rep.Stream.UncompSizeHist[bucket(uint32(uncomp))]++
 			rep.Stream.RatioBuckets[ratioBucket(int(uncomp), clen)]++
-			mergeBlockIntoReport(rep, &bs, opts)
+			if err := submit(j); err != nil {
+				return err
+			}
 			uncompEmitted += uncomp
 
 		case chunkUncompressed:

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -156,6 +157,65 @@ func TestStatsSIMD(t *testing.T) {
 		// The literals after the last operation are one more Literal op.
 		if n := ops[opLiteral].Count - ss.Streams[1].Values; n > 1 {
 			t.Errorf("level %d: %d literal ops for %d literal lengths", level, ops[opLiteral].Count, ss.Streams[1].Values)
+		}
+	}
+}
+
+// TestStatsConcurrent checks that concurrent stream stats equal single-threaded ones, block order included,
+// and that the first corrupt block is reported before later corrupt blocks and framing errors.
+func TestStatsConcurrent(t *testing.T) {
+	rng := rand.New(rand.NewPCG(3, 4))
+	words := strings.Fields("Hello concurrent stats. The quick brown fox jumps over the lazy dog 0123456789")
+	var data []byte
+	for len(data) < 1<<20 {
+		data = append(data, words[rng.IntN(len(words))]...)
+		data = append(data, ' ')
+	}
+	var stream []byte
+	for _, level := range []int{minlz.LevelBalanced, minlz.LevelBalancedSIMD} {
+		var buf bytes.Buffer
+		w := minlz.NewWriter(&buf, minlz.WriterLevel(level), minlz.WriterBlockSize(64<<10))
+		if _, err := w.Write(data); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		stream = append(stream, buf.Bytes()...)
+	}
+	analyze := func(stream []byte, cpu int) (fileReport, error) {
+		var rep fileReport
+		err := analyzeStream(bufio.NewReader(bytes.NewReader(stream)), &rep, statsOpts{perBlock: true, cpu: cpu})
+		return rep, err
+	}
+	want, err := analyze(stream, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want.Stream.MinlzBlocks < 8 || want.Stream.SimdBlocks < 8 {
+		t.Fatalf("got %d MinLZ and %d SIMD blocks", want.Stream.MinlzBlocks, want.Stream.SimdBlocks)
+	}
+	got, err := analyze(stream, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Error("concurrent stats differ from single-threaded")
+	}
+
+	// Offsets of the decoded size varints of the MinLZ blocks.
+	var sizes []int
+	for i := 0; i < len(stream); i += 4 + (int(stream[i+1]) | int(stream[i+2])<<8 | int(stream[i+3])<<16) {
+		if stream[i] == chunkMinLZ || stream[i] == chunkMinLZCompCRC {
+			sizes = append(sizes, i+8)
+		}
+	}
+	bad := slices.Clone(stream)
+	bad[sizes[3]]++
+	bad[sizes[6]]++
+	for _, b := range [][]byte{bad, bad[:sizes[6]]} {
+		if _, err := analyze(b, 8); err == nil || !strings.HasPrefix(err.Error(), "block 3:") {
+			t.Errorf("%d bytes: got error %v, want block 3", len(b), err)
 		}
 	}
 }
