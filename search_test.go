@@ -73,6 +73,17 @@ func TestSearchTableConfigSetterOverflow(t *testing.T) {
 	}
 }
 
+func TestSearchTableConfigStringMask(t *testing.T) {
+	var mask [32]byte
+	for _, b := range []byte("\n \xf0") {
+		mask[b>>3] |= 1 << (b & 7)
+	}
+	got := NewSearchTableConfig().WithMaskPrefix(mask).String()
+	if want := `mask-prefix="\n \xf0" (3 bytes)`; !strings.HasSuffix(got, want) {
+		t.Errorf("got %s, want suffix %s", got, want)
+	}
+}
+
 func TestHashValue(t *testing.T) {
 	// Verify HashValue matches per-matchLen helpers.
 	v := uint64(0x0102030405060708)

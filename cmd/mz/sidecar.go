@@ -70,6 +70,7 @@ func mainSidecarBuild(args []string) {
 		outFile            = fs.String("o", "", "Sidecar output filename (default: <input>"+minlzSidecarExt+")")
 		searchLens         = fs.String("search.lens", "6", "Comma-separated list of match lengths (1-8); one config per length")
 		searchPfx          = fs.String("search.prefixes", "", "Search prefix bytes (e.g. ':,\"')")
+		searchPfxEsc       = fs.String("search.prefixes.esc", "", prefixesEscUsage)
 		searchPfxLong      = fs.String("search.prefix", "", "Single longer prefix string (e.g. 'id\":\"')")
 		searchExtras       = fs.Int("search.extras", 0, "Requires -search.prefix: emit Extras+1 windows per prefix occurrence (0-15). matchLen+extras must be <= 16")
 		searchMax          = fs.Int("search.max", 75, "Discard search-table entries with population % > this")
@@ -118,8 +119,10 @@ Options:`)
 	if len(lens) == 0 {
 		exitErr(errors.New("at least one --search.lens value required"))
 	}
-	if len(*searchPfx) > 0 && len(*searchPfxLong) > 0 {
-		exitErr(errors.New("cannot use both --search.prefix and --search.prefixes"))
+	pfx, err := searchPrefixBytes(*searchPfx, *searchPfxEsc)
+	exitErr(err)
+	if len(pfx) > 0 && len(*searchPfxLong) > 0 {
+		exitErr(errors.New("cannot use --search.prefix with --search.prefixes or --search.prefixes.esc"))
 	}
 	searchLimSet := false
 	fs.Visit(func(f *flag.Flag) {
@@ -150,8 +153,8 @@ Options:`)
 			} else {
 				cfg = cfg.WithBytePrefix((*searchPfxLong)[0])
 			}
-		} else if len(*searchPfx) > 0 {
-			cfg = cfg.WithBytePrefix([]byte(*searchPfx)...)
+		} else if len(pfx) > 0 {
+			cfg = cfg.WithBytePrefix(pfx...)
 		}
 		if *searchExtras != 0 {
 			if *searchExtras < 0 || *searchExtras > 15 {

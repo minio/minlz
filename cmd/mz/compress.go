@@ -54,6 +54,7 @@ func mainCompress(args []string) {
 		searchTable        = fs.Bool("search", false, "Add search table")
 		searchLen          = fs.Int("search.len", 6, "Add search tables with given match length (1-8)")
 		searchPfx          = fs.String("search.prefixes", "", "Search table prefix bytes (e.g. '=', '=:')")
+		searchPfxEsc       = fs.String("search.prefixes.esc", "", prefixesEscUsage)
 		searchPfxString    = fs.String("search.prefix", "", "Single value longer prefix, eg 'id:\\\"'")
 		searchExtras       = fs.Int("search.extras", 0, "Requires -search.prefix: emit Extras+1 windows per prefix occurrence (0-15). matchLen+extras must be <= 16")
 		searchMax          = fs.Int("search.max", 75, "Discards search table entries with a population percentage higher than this")
@@ -150,8 +151,10 @@ Options:`)
 	}
 	opts := []minlz.WriterOption{minlz.WriterBlockSize(blockSizeInt), minlz.WriterConcurrency(*cpu), minlz.WriterPadding(padInt), minlz.WriterLevel(level), minlz.WriterAddIndex(*index)}
 	if *searchTable {
-		if len(*searchPfxString) > 0 && len(*searchPfx) > 0 {
-			exitErr(fmt.Errorf("cannot use both -search.prefix and -search.prefixes"))
+		pfx, err := searchPrefixBytes(*searchPfx, *searchPfxEsc)
+		exitErr(err)
+		if len(*searchPfxString) > 0 && len(pfx) > 0 {
+			exitErr(fmt.Errorf("cannot use -search.prefix with -search.prefixes or -search.prefixes.esc"))
 		}
 		if *searchLen < 1 || *searchLen > 8 {
 			exitErr(fmt.Errorf("search length must be between 1 and 8"))
@@ -172,8 +175,8 @@ Options:`)
 			} else {
 				cfg = cfg.WithBytePrefix((*searchPfxString)[0])
 			}
-		} else if len(*searchPfx) > 0 {
-			cfg = cfg.WithBytePrefix([]byte(*searchPfx)...)
+		} else if len(pfx) > 0 {
+			cfg = cfg.WithBytePrefix(pfx...)
 		}
 		if *searchExtras != 0 {
 			if *searchExtras < 0 || *searchExtras > 15 {
