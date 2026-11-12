@@ -41,6 +41,10 @@ const maxSidecarBatchSpan = 16 << 20
 // blocks can be decoded while the rest of the batch is still being read.
 const minSidecarReadPiece = 4 << 20
 
+// maxScanMatches bounds the match offsets a concurrent block scan stores, so
+// dense matches cannot take unbounded memory. Dispatch scans for the rest.
+const maxScanMatches = 4096
+
 // pendingDecode is one batched decode-and-search entry.
 type pendingDecode struct {
 	ref    remoteRef
@@ -704,7 +708,7 @@ func (s *SidecarSearcher) rescueTail(pattern []byte, fn func(SearchResult) error
 	s.prevBlock = nil
 	s.prevLazy = nil
 	s.tailBuf = s.tailBuf[:0]
-	if err := s.dispatchSidecarMatches(blk, indexAll(blk, pattern), s.tailRescueOff, pattern, fn); err != nil {
+	if err := s.dispatchSidecarMatches(blk, nil, 0, s.tailRescueOff, pattern, fn); err != nil {
 		return err
 	}
 	if s.collectStats && s.blockMatches == 0 {
@@ -916,6 +920,7 @@ func (p *readPiece) read(r io.ReaderAt, b []byte) {
 type blockScan struct {
 	decoded []byte
 	matches []int
+	rest    int // offset from which dispatch scans for more matches, or -1
 	err     error
 }
 
@@ -960,17 +965,22 @@ func (s *SidecarSearcher) scanBlock(buf []byte, bufOff int64, ref remoteRef, pat
 	if err != nil {
 		return blockScan{err: err}
 	}
-	return blockScan{decoded: decoded, matches: indexAll(decoded, pattern)}
+	matches, rest := indexMatches(decoded, pattern, maxScanMatches)
+	return blockScan{decoded: decoded, matches: matches, rest: rest}
 }
 
-// indexAll returns the offsets of every occurrence of pattern in b,
-// including overlapping ones.
-func indexAll(b, pattern []byte) []int {
+// indexMatches returns the offsets of up to limit occurrences of pattern in
+// b, including overlapping ones, and the offset to scan on from, or -1 when
+// all were found.
+func indexMatches(b, pattern []byte, limit int) ([]int, int) {
 	var idx []int
 	for off := 0; ; {
+		if len(idx) == limit {
+			return idx, off
+		}
 		i := bytes.Index(b[off:], pattern)
 		if i < 0 {
-			return idx
+			return idx, -1
 		}
 		idx = append(idx, off+i)
 		off += i + 1
@@ -992,7 +1002,7 @@ func (s *SidecarSearcher) processBlock(r blockScan, pd pendingDecode, pattern []
 			return err
 		}
 	}
-	if err := s.dispatchSidecarMatches(decoded, r.matches, blockOff, pattern, fn); err != nil {
+	if err := s.dispatchSidecarMatches(decoded, r.matches, r.rest, blockOff, pattern, fn); err != nil {
 		return err
 	}
 	if s.collectStats && s.blockMatches == 0 {
@@ -1051,9 +1061,10 @@ func (s *SidecarSearcher) updateTail(blk []byte, endOff int64, keep int) {
 }
 
 // dispatchSidecarMatches mirrors BlockSearcher.dispatchMatches but uses
-// lazyMainBlock for prev-block lazy access. matches are the offsets of every
-// occurrence of pattern in blk (see indexAll).
-func (s *SidecarSearcher) dispatchSidecarMatches(blk []byte, matches []int, blockOff int64, pattern []byte, fn func(SearchResult) error) error {
+// lazyMainBlock for prev-block lazy access. matches are the first occurrences
+// of pattern in blk; if rest >= 0 it scans for more from there (see
+// indexMatches).
+func (s *SidecarSearcher) dispatchSidecarMatches(blk []byte, matches []int, rest int, blockOff int64, pattern []byte, fn func(SearchResult) error) error {
 	prevBlockStart := blockOff
 	if s.prevBlock != nil {
 		prevBlockStart = blockOff - int64(len(s.prevBlock))
@@ -1125,7 +1136,21 @@ func (s *SidecarSearcher) dispatchSidecarMatches(blk []byte, matches []int, bloc
 		}
 	}
 
-	for _, matchOff := range matches {
+	for mi := 0; ; mi++ {
+		var matchOff int
+		if mi < len(matches) {
+			matchOff = matches[mi]
+		} else {
+			if rest < 0 {
+				break
+			}
+			i := bytes.Index(blk[rest:], pattern)
+			if i < 0 {
+				break
+			}
+			matchOff = rest + i
+			rest = matchOff + 1
+		}
 		streamOff := blockOff + int64(matchOff)
 
 		var result SearchResult

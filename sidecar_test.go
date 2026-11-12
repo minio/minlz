@@ -267,6 +267,90 @@ func TestSidecarSearcher_ConcurrencyParity(t *testing.T) {
 	}
 }
 
+// More matches in a block than a concurrent scan stores (maxScanMatches).
+func TestSidecarSearcher_DenseMatches(t *testing.T) {
+	const bs = 8 << 10
+	data := bytes.Repeat([]byte("A"), 8*bs)
+	var main, side bytes.Buffer
+	w := NewWriter(&main, WriterBlockSize(bs), WriterConcurrency(1), WriterSearchTable(NewSearchTableConfig().WithMatchLen(6)), WriterSidecar(&side))
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	pat := []byte("AAA")
+	for _, conc := range []int{1, 3} {
+		var got []int64
+		check := resultChecker(t, data, pat)
+		ss := NewSidecarSearcher(bytes.NewReader(main.Bytes()), bytes.NewReader(side.Bytes()), BlockSearchConcurrency(conc))
+		if err := ss.Search(pat, func(r SearchResult) error {
+			check(r, true)
+			if len(got) > 0 && r.StreamOffset <= got[len(got)-1] {
+				t.Fatalf("conc %d: match at %d after %d", conc, r.StreamOffset, got[len(got)-1])
+			}
+			got = append(got, r.StreamOffset)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if want := countOccurrences(data, pat); len(got) != want {
+			t.Fatalf("conc %d: got %d matches, want %d", conc, len(got), want)
+		}
+	}
+}
+
+// A batch spanning several read pieces: concurrent ReadAt calls, identical
+// callbacks, and an early stop while pieces are in flight.
+func TestSidecarSearcher_ReadPieces(t *testing.T) {
+	const bs = 8 << 10
+	data := make([]byte, 12<<20)
+	rand.New(rand.NewSource(1)).Read(data)
+	pat := []byte("NEEDLE-IN-EVERY-BLOCK")
+	for i := 0; i < len(data); i += bs {
+		copy(data[i+100:], pat)
+	}
+	// Incompressible blocks get no no-prefix table, so none is skipped and
+	// one batch spans the stream.
+	var main, side bytes.Buffer
+	w := NewWriter(&main, WriterBlockSize(bs), WriterConcurrency(1), WriterSearchTable(NewSearchTableConfig().WithMatchLen(6)), WriterSidecar(&side))
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	errStop := errors.New("stop")
+	search := func(conc, stopAfter int) (got []int64, reads int, err error) {
+		rr := &rangeRecorderReaderAt{r: bytes.NewReader(main.Bytes())}
+		check := resultChecker(t, data, pat)
+		ss := NewSidecarSearcher(rr, bytes.NewReader(side.Bytes()), BlockSearchConcurrency(conc))
+		err = ss.Search(pat, func(r SearchResult) error {
+			check(r, true)
+			got = append(got, r.StreamOffset)
+			if len(got) == stopAfter {
+				return errStop
+			}
+			return nil
+		})
+		return got, len(rr.ranges), err
+	}
+	want, reads1, err := search(1, 0)
+	if err != nil || len(want) != countOccurrences(data, pat) {
+		t.Fatalf("conc 1: %v, %d matches, want %d", err, len(want), countOccurrences(data, pat))
+	}
+	got, reads4, err := search(4, 0)
+	if err != nil || !slices.Equal(got, want) {
+		t.Fatalf("conc 4: %v, %d matches differ from concurrency 1", err, len(got))
+	}
+	if reads4 <= reads1 {
+		t.Fatalf("conc 4 made %d reads, conc 1 %d: batches were not split into pieces", reads4, reads1)
+	}
+	if got, _, err := search(4, 10); err != errStop || !slices.Equal(got, want[:10]) {
+		t.Fatalf("early stop: got %v after %d matches", err, len(got))
+	}
+}
+
 func TestBuildSidecar_RoundTrip(t *testing.T) {
 	data := makeTestData(150 << 10)
 	// 1) Compress with NO search tables.
