@@ -481,7 +481,7 @@ compressible).
 
 `-search.prefixes` takes its bytes literally, so bytes a shell can't pass
 easily go in `-search.prefixes.esc`, a comma-separated list. Both flags can
-be combined, and repeated bytes count once:
+be combined:
 
 | Item | Adds |
 |---|---|
@@ -490,9 +490,8 @@ be combined, and repeated bytes count once:
 | `{`, `é`, `😀` | a single character; a multi-byte UTF-8 character adds all its bytes |
 | `0x80-0xbf`, `a-z` | a range; both ends must be single bytes |
 
-Up to 8 distinct bytes give a byte-prefix table, more a mask table. A prefix
-byte indexes the `matchLen` bytes after it, so a pattern can use the table
-when a prefix byte is followed by at least `matchLen` bytes of it. For
+A prefix byte indexes the `matchLen` bytes after it, so a pattern can use the
+table when a prefix byte is followed by at least `matchLen` bytes of it. For
 example, to find an emoji the table needs its first byte as a prefix and
 `matchLen` at most its remaining length plus the pattern bytes after it.
 
