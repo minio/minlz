@@ -176,7 +176,9 @@ Options:`)
 	if len(opts) == 0 {
 		exitErr(errors.New("no usable search configs"))
 	}
-	opts = append(opts, minlz.SidecarConcurrency(*cpu))
+	if *cpu > 0 {
+		opts = append(opts, minlz.SidecarConcurrency(*cpu))
+	}
 
 	// Open files.
 	in, err := os.Open(src)

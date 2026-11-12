@@ -27,6 +27,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // makeTestData builds a chunk of mixed text data that compresses well.
@@ -897,6 +898,33 @@ func TestBuildSidecar_WriteError(t *testing.T) {
 		if err == nil || err.Error() != "write failed" {
 			t.Errorf("n=%d: got %v, want write failed", n, err)
 		}
+	}
+
+	// A failed header write returns while the source is still open.
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	go pw.Write(main.Bytes()[:magicChunk1Len()])
+	done := make(chan error, 1)
+	go func() { done <- BuildSidecar(&failAfterWriter{}, pr, SidecarSearchTable(NewSearchTableConfig())) }()
+	select {
+	case err := <-done:
+		if err == nil || err.Error() != "write failed" {
+			t.Errorf("stalled source: got %v, want write failed", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("stalled source: BuildSidecar did not return the header write error")
+	}
+}
+
+// An uncompressed block larger than the stream's block size must not panic.
+func TestBuildSidecar_OversizedUncompressed(t *testing.T) {
+	body := make([]byte, 64<<10+1)
+	n := checksumSize + len(body)
+	stream := append(makeHeader(64<<10, false), chunkTypeUncompressedData, byte(n), byte(n>>8), byte(n>>16))
+	stream = binary.LittleEndian.AppendUint32(stream, crc(body))
+	stream = append(stream, body...)
+	if err := BuildSidecar(io.Discard, bytes.NewReader(stream), SidecarSearchTable(NewSearchTableConfig())); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("got %v, want ErrTooLarge", err)
 	}
 }
 

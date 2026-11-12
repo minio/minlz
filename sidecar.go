@@ -229,10 +229,15 @@ type sidecarBlock struct {
 	maxBlock    int
 	cfgs        []SearchTableConfig
 	bufs        sidecarBufs
+	// slots limits concurrent decoding and indexing. A slot is only held
+	// while working, never while waiting for another block.
+	slots chan struct{}
 }
 
 func (b *sidecarBlock) decode(chunkType byte, payload []byte, simd, ignoreCRC bool, overlapLen int) {
+	b.slots <- struct{}{}
 	b.decoded, b.err = decodeDataChunk(b.bufs.get(0), chunkType, payload, 0, b.maxBlock, simd, ignoreCRC)
+	<-b.slots
 	b.bufs.put(payload)
 	// A copy, since decoded is recycled when b is indexed.
 	b.head = bytes.Clone(b.decoded[:min(overlapLen, len(b.decoded))])
@@ -246,12 +251,18 @@ func (b *sidecarBlock) index(next *sidecarBlock, concurrency int) sidecarOut {
 	if b.err != nil {
 		return sidecarOut{err: b.err}
 	}
+	// Only compressed blocks are checked against the block size when decoded.
+	if len(b.decoded) > b.maxBlock {
+		return sidecarOut{err: ErrTooLarge}
+	}
 	defer b.bufs.put(b.decoded)
 	var overlap []byte
 	if next != nil {
 		<-next.ready
 		overlap = next.head
 	}
+	b.slots <- struct{}{}
+	defer func() { <-b.slots }()
 	var out []byte
 	for i := range b.cfgs {
 		cfg := &b.cfgs[i]
@@ -407,10 +418,21 @@ func BuildSidecar(dst io.Writer, src io.Reader, opts ...SidecarOption) (err erro
 		}
 	}
 
+	// Write sidecar stream header + 0x44 info chunks (one per config).
+	if _, err := dst.Write(makeHeader(maxBlock, cr.simd)); err != nil {
+		return err
+	}
+	for i := range cfgs {
+		if _, err := dst.Write(cfgs[i].marshalSearchInfoChunk()); err != nil {
+			return err
+		}
+	}
+
 	// Blocks are decoded and indexed concurrently; q writes the output in stream order.
 	q := make(sidecarQueue, o.concurrency)
 	// Each block in flight holds up to a payload and a decoded buffer.
 	bufs := make(sidecarBufs, 2*(o.concurrency+3))
+	slots := make(chan struct{}, o.concurrency)
 	var failed atomic.Bool
 	werr := make(chan error, 1)
 	go func() {
@@ -433,17 +455,6 @@ func BuildSidecar(dst io.Writer, src io.Reader, opts ...SidecarOption) (err erro
 			err = e
 		}
 	}()
-
-	// Write sidecar stream header + 0x44 info chunks (one per config).
-	if _, err := q.Write(makeHeader(maxBlock, cr.simd)); err != nil {
-		return err
-	}
-	for i := range cfgs {
-		info := cfgs[i].marshalSearchInfoChunk()
-		if _, err := q.Write(info); err != nil {
-			return err
-		}
-	}
 
 	// prev is indexed once the next block supplies its overlap.
 	var prev *sidecarBlock
@@ -487,7 +498,7 @@ func BuildSidecar(dst io.Writer, src io.Reader, opts ...SidecarOption) (err erro
 			if _, err := io.ReadFull(cr.src, payload); err != nil {
 				return err
 			}
-			curr := &sidecarBlock{ready: make(chan struct{}), chunkOffset: chunkOffset, maxBlock: maxBlock, cfgs: cfgs, bufs: bufs}
+			curr := &sidecarBlock{ready: make(chan struct{}), chunkOffset: chunkOffset, maxBlock: maxBlock, cfgs: cfgs, bufs: bufs, slots: slots}
 			go curr.decode(chunkType, payload, cr.simd, o.ignoreCRC, overlapLen)
 			if prev != nil {
 				emitPrev(curr)
