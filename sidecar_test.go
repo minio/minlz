@@ -210,38 +210,24 @@ func TestSidecarSearcher_ConcurrencyParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	errStop := errors.New("stop")
-	// Forward policies: every 3rd match, only matches straddling a block
-	// boundary (whose deferred context is the previous block), or all.
-	policies := []func(r SearchResult, pat []byte, n int) bool{
-		func(_ SearchResult, _ []byte, n int) bool { return n%3 == 0 },
-		func(r SearchResult, pat []byte, _ int) bool {
-			return r.Offset < r.PrevBlockLen && r.Offset+len(pat) > r.PrevBlockLen
-		},
-		func(SearchResult, []byte, int) bool { return true },
-	}
-	search := func(pat []byte, policy, conc, stopAfter int) (got []string, err error) {
-		forwarded, straddled := map[int64]bool{}, map[int64]bool{}
-		check := resultChecker(t, data, pat)
+	search := func(pat []byte, policy, conc, stopAfter int) ([]string, error) {
+		ft := newForwardTester(t, data, pat, policy)
 		ss := NewSidecarSearcher(bytes.NewReader(main.Bytes()), bytes.NewReader(side.Bytes()), BlockSearchConcurrency(conc))
-		err = ss.Search(pat, func(r SearchResult) error {
-			// TODO: a forward re-call of a straddling match is not given the
-			// block after Blocks[0] yet, so only Blocks[0] is checked for it.
-			check(r, !straddled[r.StreamOffset])
-			got = append(got, fmt.Sprint(r.StreamOffset, r.BlockStart, r.PrevBlockLen, len(r.Blocks[1])))
-			if len(got) == stopAfter {
+		err := ss.Search(pat, func(r SearchResult) error {
+			err := ft.callback(r)
+			if len(ft.calls) == stopAfter {
 				return errStop
 			}
-			if !forwarded[r.StreamOffset] && policies[policy](r, pat, len(got)) {
-				forwarded[r.StreamOffset] = true
-				straddled[r.StreamOffset] = policies[1](r, pat, 0)
-				return ErrSearchForward
-			}
-			return nil
+			return err
 		})
-		return got, err
+		if err == nil {
+			ft.done()
+		}
+		return ft.calls, err
 	}
 	for _, pat := range [][]byte{[]byte("RARE-NEEDLE"), []byte(`"level":"WARN"`), []byte("}\n{\"timestamp\""), []byte("absent-pattern")} {
-		for policy := range policies {
+		// Forward context for every 3rd match, every match, or twice for every match.
+		for policy := 1; policy <= 3; policy++ {
 			want, err := search(pat, policy, 1, 0)
 			if err != nil {
 				t.Fatal(err)

@@ -177,8 +177,12 @@ func (st SearchStats) FprintExtended(w io.Writer) {
 }
 
 // ErrSearchForward can be returned from the search callback to request
-// forward context. The searcher will decode the next block, shift Blocks
-// forward, and re-call the callback with the same match but more context.
+// forward context. The searcher will decode the next block and re-call the
+// callback with the same match: Blocks[0] then holds the data from the block
+// where the match starts through the block it was reported with, and
+// Blocks[1] the block after it, or nil if that block was skipped or the
+// stream ended. Returning ErrSearchForward again extends Blocks[0] by one
+// more block. Every match that returns it is re-called.
 var ErrSearchForward = errors.New("minlz: forward to next block")
 
 // SearchResult is passed to the search callback for each pattern match.
@@ -310,9 +314,24 @@ type pendingBlock struct {
 
 type deferredMatch struct {
 	streamOff int64  // absolute stream offset of the match
-	blockOff  int64  // block start of the block containing the match
-	matchOff  int    // offset within that block
-	blk       []byte // the block containing the match; becomes Blocks[0] in re-call
+	blockOff  int64  // stream offset of blk
+	matchOff  int    // offset of the match within blk
+	blk       []byte // data from the block where the match starts; becomes Blocks[0] in re-call
+}
+
+// forwardMatch returns r deferred for a re-call after the callback returned
+// ErrSearchForward: its context is Blocks[1], or a copy of Blocks[0]+Blocks[1]
+// when the match starts in Blocks[0].
+func forwardMatch(r SearchResult) deferredMatch {
+	d := deferredMatch{streamOff: r.StreamOffset, blockOff: r.BlockStart, matchOff: r.Offset}
+	if r.Offset >= r.PrevBlockLen {
+		d.blockOff += int64(r.PrevBlockLen)
+		d.matchOff -= r.PrevBlockLen
+		d.blk = r.Blocks[1]
+	} else {
+		d.blk = append(append([]byte(nil), r.Blocks[0]...), r.Blocks[1]...)
+	}
+	return d
 }
 
 // BlockSearcher reads a MinLZ stream and searches for patterns using
@@ -351,9 +370,9 @@ type BlockSearcher struct {
 	// across iterations to avoid a per-skipped-block heap alloc.
 	prevLazy      *lazyBlock
 	prevLazyStore lazyBlock
-	deferred      *deferredMatch // pending ErrSearchForward re-dispatch
-	pending       *pendingBlock  // block deferred pending next table check
-	cstDec        *cstDecoder    // lazy decoder state for 0x46 chunks
+	deferred      []deferredMatch // pending ErrSearchForward re-dispatches, in stream order
+	pending       *pendingBlock   // block deferred pending next table check
+	cstDec        *cstDecoder     // lazy decoder state for 0x46 chunks
 	// tailRescue is set when the most recently processed block was skipped only
 	// because its (prefix) search table was all-zero. That skip is sound for any
 	// block with forward overlap, but a stream's final block is tabled without
@@ -502,7 +521,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 				if err := s.rescueTail(pattern, fn); err != nil {
 					return err
 				}
-				if s.deferred != nil {
+				if len(s.deferred) > 0 {
 					if err := s.flushDeferred(nil, fn); err != nil {
 						return err
 					}
@@ -544,7 +563,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			if err := s.rescueTail(pattern, fn); err != nil {
 				return err
 			}
-			if s.deferred != nil {
+			if len(s.deferred) > 0 {
 				if err := s.flushDeferred(nil, fn); err != nil {
 					return err
 				}
@@ -762,7 +781,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 						s.tailRescue = tableAllZero(savedTable)
 						s.tailRescueOff = s.blockStart
 						s.blockStart += int64(decompLen)
-						if s.deferred != nil {
+						if len(s.deferred) > 0 {
 							if err := s.flushDeferred(nil, fn); err != nil {
 								return err
 							}
@@ -842,7 +861,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			s.blockMatches = 0
 			blockOff := s.blockStart
 			s.blockStart += int64(n)
-			if s.deferred != nil {
+			if len(s.deferred) > 0 {
 				if err := s.flushDeferred(blk, fn); err != nil {
 					return err
 				}
@@ -898,7 +917,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 						s.tailRescue = tableAllZero(savedTable)
 						s.tailRescueOff = s.blockStart
 						s.blockStart += int64(decompLen)
-						if s.deferred != nil {
+						if len(s.deferred) > 0 {
 							if err := s.flushDeferred(nil, fn); err != nil {
 								return err
 							}
@@ -962,7 +981,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 			s.blockStart += int64(n)
 			blk := s.decoded[di][:n]
 			s.decIdx = di
-			if s.deferred != nil {
+			if len(s.deferred) > 0 {
 				if err := s.flushDeferred(blk, fn); err != nil {
 					return err
 				}
@@ -1071,19 +1090,14 @@ func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []by
 			// Prefer the full previous block for context; fall back to the tail
 			// when the match starts before prevBlock (a 3+ block straddle).
 			var result SearchResult
-			var defOff int
-			var defStart int64
-			var defBlk []byte
 			if s.prevBlock != nil && streamOff >= prevBlockStart {
-				off := int(streamOff - prevBlockStart)
 				result = SearchResult{
 					Blocks:       [2][]byte{s.prevBlock, blk},
-					Offset:       off,
+					Offset:       int(streamOff - prevBlockStart),
 					StreamOffset: streamOff,
 					BlockStart:   prevBlockStart,
 					PrevBlockLen: len(s.prevBlock),
 				}
-				defOff, defStart, defBlk = off, prevBlockStart, s.prevBlock
 			} else {
 				result = SearchResult{
 					Blocks:       [2][]byte{tail, blk},
@@ -1092,24 +1106,14 @@ func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []by
 					BlockStart:   s.tailOff,
 					PrevBlockLen: len(tail),
 				}
-				defOff, defStart = absIdx, s.tailOff
 			}
 			s.blockMatches++
 			err := fn(result)
 			if err != nil {
-				if errors.Is(err, ErrSearchForward) {
-					if defBlk == nil { // tailBuf is reused next block; copy it
-						defBlk = append([]byte(nil), tail...)
-					}
-					s.deferred = &deferredMatch{
-						streamOff: streamOff,
-						blockOff:  defStart,
-						matchOff:  defOff,
-						blk:       defBlk,
-					}
-				} else {
+				if !errors.Is(err, ErrSearchForward) {
 					return err
 				}
+				s.deferred = append(s.deferred, forwardMatch(result))
 			}
 			bOff = absIdx + 1
 		}
@@ -1159,45 +1163,43 @@ func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []by
 			return err
 		}
 		// Save deferred match for the main loop to re-dispatch with the next block.
-		s.deferred = &deferredMatch{
-			streamOff: streamOff,
-			blockOff:  blockOff,
-			matchOff:  matchOff,
-			blk:       blk,
-		}
+		s.deferred = append(s.deferred, forwardMatch(result))
 		off = matchOff + 1
 	}
 }
 
-// flushDeferred re-dispatches a deferred match with nextBlk as forward context.
-// nextBlk may be nil (EOF or skipped block).
+// flushDeferred re-dispatches the deferred matches with nextBlk as forward
+// context. nextBlk may be nil (EOF or skipped block).
 func (s *BlockSearcher) flushDeferred(nextBlk []byte, fn func(SearchResult) error) error {
-	d := s.deferred
-	s.deferred = nil
-	result := SearchResult{
-		Blocks:       [2][]byte{d.blk, nextBlk},
-		Offset:       d.matchOff,
-		StreamOffset: d.streamOff,
-		BlockStart:   d.blockOff,
-		PrevBlockLen: len(d.blk),
-	}
-	err := fn(result)
-	if err == nil {
-		return nil
-	}
-	if !errors.Is(err, ErrSearchForward) {
-		return err
-	}
-	// Caller wants another forward block. Save again with shifted context.
-	if nextBlk != nil {
-		s.deferred = &deferredMatch{
-			streamOff: d.streamOff,
-			blockOff:  d.blockOff,
-			matchOff:  d.matchOff,
-			blk:       nextBlk,
+	var err error
+	s.deferred, err = flushForward(s.deferred, nextBlk, fn)
+	return err
+}
+
+// flushForward re-calls fn for each deferred match with nextBlk as forward
+// context, and returns the matches that ask for more.
+func flushForward(deferred []deferredMatch, nextBlk []byte, fn func(SearchResult) error) ([]deferredMatch, error) {
+	var again []deferredMatch
+	for _, d := range deferred {
+		result := SearchResult{
+			Blocks:       [2][]byte{d.blk, nextBlk},
+			Offset:       d.matchOff,
+			StreamOffset: d.streamOff,
+			BlockStart:   d.blockOff,
+			PrevBlockLen: len(d.blk),
+		}
+		err := fn(result)
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, ErrSearchForward) {
+			return nil, err
+		}
+		if nextBlk != nil {
+			again = append(again, forwardMatch(result))
 		}
 	}
-	return nil
+	return again, nil
 }
 
 func (s *BlockSearcher) readFull(buf []byte) bool {
@@ -1375,7 +1377,7 @@ func (s *BlockSearcher) resolvePending(pattern []byte, fn func(SearchResult) err
 			s.stats.BlocksDeferredSkipped++
 			s.stats.CompBytesSkipped += int64(len(p.lazy.chunkData))
 		}
-		if s.deferred != nil {
+		if len(s.deferred) > 0 {
 			if err := s.flushDeferred(nil, fn); err != nil {
 				return err
 			}
@@ -1396,7 +1398,7 @@ func (s *BlockSearcher) resolvePending(pattern []byte, fn func(SearchResult) err
 		s.stats.UncompBytesSearched += int64(len(blk))
 	}
 	s.blockMatches = 0
-	if s.deferred != nil {
+	if len(s.deferred) > 0 {
 		if err := s.flushDeferred(blk, fn); err != nil {
 			return err
 		}

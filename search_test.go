@@ -2171,6 +2171,36 @@ func TestSearchForwardEOF(t *testing.T) {
 	}
 }
 
+// Every ErrSearchForward request is re-called with the next block, including
+// matches straddling a block boundary, several per block, and repeated ones.
+func TestSearchForwardPolicies(t *testing.T) {
+	const bs = 8 << 10
+	data := makeTestData(1 << 20)
+	for _, off := range []int{100, 50*bs - 4, 51*bs - 9, 100 * bs, len(data) - 30} {
+		copy(data[off:], "RARE-NEEDLE")
+	}
+	var buf bytes.Buffer
+	w := NewWriter(&buf, WriterBlockSize(bs), WriterConcurrency(1), WriterSearchTable(NewSearchTableConfig().WithMatchLen(6)))
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, pat := range [][]byte{[]byte("RARE-NEEDLE"), []byte(`"level":"WARN"`), []byte("}\n{\"timestamp\"")} {
+		for policy := 1; policy <= 3; policy++ {
+			ft := newForwardTester(t, data, pat, policy)
+			if err := NewBlockSearcher(bytes.NewReader(buf.Bytes())).Search(pat, ft.callback); err != nil {
+				t.Fatal(err)
+			}
+			ft.done()
+			if len(ft.found) != countOccurrences(data, pat) {
+				t.Fatalf("%q policy %d: %d matches, want %d", pat, policy, len(ft.found), countOccurrences(data, pat))
+			}
+		}
+	}
+}
+
 // TestSearchBlockOffsets verifies block offsets are correct.
 func TestSearchBlockOffsets(t *testing.T) {
 	blockSize := minBlockSize
@@ -2421,6 +2451,62 @@ func resultChecker(t *testing.T, data, pattern []byte) func(r SearchResult, with
 	}
 }
 
+// forwardTester is a search callback that requests forward context by policy:
+// 0 never, 1 for every 3rd match, 2 for every match, 3 twice for every match.
+// It checks every call with resultChecker, and done checks that each request
+// made with a next block was re-called.
+type forwardTester struct {
+	t      *testing.T
+	check  func(SearchResult, bool)
+	policy int
+	found  []int64  // matches in order of their first call
+	calls  []string // every call
+	limit  map[int64]int
+	asked  map[int64]int
+	owed   map[int64]int
+}
+
+func newForwardTester(t *testing.T, data, pattern []byte, policy int) *forwardTester {
+	return &forwardTester{t: t, check: resultChecker(t, data, pattern), policy: policy,
+		limit: map[int64]int{}, asked: map[int64]int{}, owed: map[int64]int{}}
+}
+
+func (f *forwardTester) callback(r SearchResult) error {
+	f.t.Helper()
+	f.check(r, true)
+	f.calls = append(f.calls, fmt.Sprint(r.StreamOffset, r.BlockStart, r.PrevBlockLen, len(r.Blocks[1])))
+	so := r.StreamOffset
+	switch {
+	case f.owed[so] > 0:
+		f.owed[so]--
+	case f.asked[so] > 0:
+		f.t.Fatalf("match at %d called again without a forward request", so)
+	default:
+		f.found = append(f.found, so)
+		f.limit[so] = [4]int{0, 0, 1, 2}[f.policy]
+		if f.policy == 1 && len(f.found)%3 == 0 {
+			f.limit[so] = 1
+		}
+	}
+	if f.asked[so] < f.limit[so] {
+		f.asked[so]++
+		if r.Blocks[1] != nil {
+			f.owed[so]++
+		}
+		return ErrSearchForward
+	}
+	return nil
+}
+
+func (f *forwardTester) done() {
+	f.t.Helper()
+	for so, n := range f.owed {
+		if n > 0 {
+			f.t.Fatalf("match at %d asked for forward context but was not re-called", so)
+		}
+	}
+}
+
 func FuzzSearchRoundtrip(f *testing.F) {
 	f.Add([]byte("hello world this is a test with NEEDLE inside"), []byte("NEEDLE"), 4, true)
 	// data[2] odd selects the prefix-only arm (long prefix == whole pattern);
@@ -2428,6 +2514,17 @@ func FuzzSearchRoundtrip(f *testing.F) {
 	f.Add([]byte("xx\x01 a co64 box here and one final co64"), []byte("co64"), 6, true)
 	// data[0] >= 0x80 selects a SIMD level.
 	f.Add([]byte("\x8a hello world, this is a SIMD test with NEEDLE inside, hello world, NEEDLE"), []byte("NEEDLE"), 4, false)
+	// data[3]%4 selects ErrSearchForward requests: several in one block ('1':
+	// every 3rd match), repeated ('3': twice per match), and for a match
+	// straddling a block boundary ('2': every match).
+	f.Add([]byte("00010000000000000000000000000000"), []byte("0"), 4, true)
+	f.Add([]byte("00030000000000000000000000000000"), []byte("0"), 4, true)
+	straddle := bytes.Repeat([]byte("x"), 3*minBlockSize)
+	straddle[0] = 0x10 // a single Write, so blocks end at minBlockSize multiples
+	straddle[3] = '2'
+	copy(straddle[minBlockSize-3:], "NEEDLE")
+	copy(straddle[2*minBlockSize+100:], "NEEDLE") // so the next block is not skipped
+	f.Add(straddle, []byte("NEEDLE"), 4, false)
 	f.Fuzz(func(t *testing.T, data, pattern []byte, matchLen int, usePrefix bool) {
 		if len(data) < 32 || len(pattern) < 1 || len(pattern) > 100 {
 			return
@@ -2594,18 +2691,17 @@ func FuzzSearchRoundtrip(f *testing.F) {
 			}
 		}
 
+		// Matches request forward context: never, every 3rd, always, or twice.
+		fwd := int(data[3] % 4)
 		if len(expected) > 0 {
 			searcher := NewBlockSearcher(bytes.NewReader(buf.Bytes()), BlockSearchCollectStats())
-			var found []int64
-			check := resultChecker(t, data, pattern)
-			err = searcher.Search(pattern, func(r SearchResult) error {
-				check(r, true)
-				found = append(found, r.StreamOffset)
-				return nil
-			})
+			ft := newForwardTester(t, data, pattern, fwd)
+			err = searcher.Search(pattern, ft.callback)
 			if err != nil {
 				t.Fatalf("search failed: %v", err)
 			}
+			ft.done()
+			found := ft.found
 
 			// Every expected offset must appear in found.
 			foundSet := make(map[int64]bool, len(found))
@@ -2648,37 +2744,19 @@ func FuzzSearchRoundtrip(f *testing.F) {
 			t.Fatalf("sidecar main stream not decodable/equal: err=%v", derr)
 		}
 		if len(expected) > 0 {
-			// Matches request forward context: never, every 3rd, or always.
-			fwd := data[3] % 3
 			var want []string
 			for _, conc := range []int{1, 3} {
 				ss := NewSidecarSearcher(bytes.NewReader(main.Bytes()), bytes.NewReader(side.Bytes()), BlockSearchCollectStats(), BlockSearchConcurrency(conc))
-				var found []int64
-				var calls []string
-				forwarded, straddled := map[int64]bool{}, map[int64]bool{}
-				check := resultChecker(t, data, pattern)
-				if serr := ss.Search(pattern, func(r SearchResult) error {
-					// TODO: a forward re-call of a straddling match is not given
-					// the block after Blocks[0] yet.
-					check(r, !straddled[r.StreamOffset])
-					calls = append(calls, fmt.Sprint(r.StreamOffset, r.BlockStart, r.PrevBlockLen, len(r.Blocks[1])))
-					if forwarded[r.StreamOffset] {
-						return nil
-					}
-					found = append(found, r.StreamOffset)
-					if fwd == 2 || fwd == 1 && len(found)%3 == 0 {
-						forwarded[r.StreamOffset] = true
-						straddled[r.StreamOffset] = r.Offset < r.PrevBlockLen && r.Offset+len(pattern) > r.PrevBlockLen
-						return ErrSearchForward
-					}
-					return nil
-				}); serr != nil {
+				ft := newForwardTester(t, data, pattern, fwd)
+				if serr := ss.Search(pattern, ft.callback); serr != nil {
 					t.Fatalf("sidecar search failed: %v", serr)
 				}
+				ft.done()
+				found := ft.found
 				if conc == 1 {
-					want = calls
-				} else if !slices.Equal(calls, want) {
-					t.Fatalf("sidecar: concurrency %d gave %d callbacks, concurrency 1 gave %d, or they differ", conc, len(calls), len(want))
+					want = ft.calls
+				} else if !slices.Equal(ft.calls, want) {
+					t.Fatalf("sidecar: concurrency %d gave %d callbacks, concurrency 1 gave %d, or they differ", conc, len(ft.calls), len(want))
 				}
 				foundSet := make(map[int64]bool, len(found))
 				for _, fo := range found {

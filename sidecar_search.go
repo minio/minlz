@@ -88,7 +88,7 @@ type SidecarSearcher struct {
 	// Search state.
 	prevBlock []byte // decoded previous block (nil if not yet decoded / skipped)
 	prevLazy  *lazyMainBlock
-	deferred  *deferredMatch
+	deferred  []deferredMatch // pending ErrSearchForward re-dispatches, in stream order
 	// tailBuf holds the last len(pattern)-1 bytes of the current contiguous run
 	// of decoded blocks (mirrors BlockSearcher.tailBuf). It lets the boundary
 	// scan and the skip/defer guards see a match that straddles 3+ blocks — e.g.
@@ -471,7 +471,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 					s.tailRescue = emptySkip
 					s.tailRescueRef = ref
 					s.tailRescueOff = s.blockStart
-					if s.deferred != nil {
+					if len(s.deferred) > 0 {
 						if err := s.flushDeferred(nil, fn); err != nil {
 							return err
 						}
@@ -563,7 +563,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 				return err
 			}
 			s.countLastSkipped()
-			if s.deferred != nil {
+			if len(s.deferred) > 0 {
 				if err := s.flushDeferred(nil, fn); err != nil {
 					return err
 				}
@@ -651,7 +651,7 @@ func (s *SidecarSearcher) finalize(pattern []byte, fn func(SearchResult) error, 
 		return err
 	}
 	s.countLastSkipped()
-	if s.deferred != nil {
+	if len(s.deferred) > 0 {
 		if err := s.flushDeferred(nil, fn); err != nil {
 			return err
 		}
@@ -754,7 +754,7 @@ func (s *SidecarSearcher) resolveSideDeferred(nextTables []blockTableEntry, batc
 		}
 		s.skippedOff = s.sideDeferred.offset
 		// No forward context: the next block is skipped.
-		if s.deferred != nil {
+		if len(s.deferred) > 0 {
 			if err := s.flushDeferred(nil, fn); err != nil {
 				return err
 			}
@@ -997,7 +997,7 @@ func (s *SidecarSearcher) processBlock(r blockScan, pd pendingDecode, pattern []
 	s.blockMatches = 0
 	blockOff := s.blockStart
 	s.blockStart += int64(len(decoded))
-	if s.deferred != nil {
+	if len(s.deferred) > 0 {
 		if err := s.flushDeferred(decoded, fn); err != nil {
 			return err
 		}
@@ -1031,8 +1031,13 @@ func (s *SidecarSearcher) processBlock(r blockScan, pd pendingDecode, pattern []
 // recycle offers a decoded block for reuse unless a deferred match still holds
 // it. SearchResult.Blocks are only valid during the callback.
 func (s *SidecarSearcher) recycle(b []byte) {
-	if len(b) == 0 || s.deferred != nil && len(s.deferred.blk) > 0 && &s.deferred.blk[0] == &b[0] {
+	if len(b) == 0 {
 		return
+	}
+	for _, d := range s.deferred {
+		if len(d.blk) > 0 && &d.blk[0] == &b[0] {
+			return
+		}
 	}
 	select {
 	case s.bufs <- b:
@@ -1094,19 +1099,14 @@ func (s *SidecarSearcher) dispatchSidecarMatches(blk []byte, matches []int, rest
 			// Prefer the full previous block for context; fall back to the tail
 			// when the match starts before prevBlock (a 3+ block straddle).
 			var result SearchResult
-			var defOff int
-			var defStart int64
-			var defBlk []byte
 			if s.prevBlock != nil && streamOff >= prevBlockStart {
-				off := int(streamOff - prevBlockStart)
 				result = SearchResult{
 					Blocks:       [2][]byte{s.prevBlock, blk},
-					Offset:       off,
+					Offset:       int(streamOff - prevBlockStart),
 					StreamOffset: streamOff,
 					BlockStart:   prevBlockStart,
 					PrevBlockLen: len(s.prevBlock),
 				}
-				defOff, defStart, defBlk = off, prevBlockStart, s.prevBlock
 			} else {
 				result = SearchResult{
 					Blocks:       [2][]byte{tail, blk},
@@ -1115,22 +1115,13 @@ func (s *SidecarSearcher) dispatchSidecarMatches(blk []byte, matches []int, rest
 					BlockStart:   s.tailOff,
 					PrevBlockLen: len(tail),
 				}
-				defOff, defStart = absIdx, s.tailOff
 			}
 			s.blockMatches++
 			if err := fn(result); err != nil {
 				if !errors.Is(err, ErrSearchForward) {
 					return err
 				}
-				if defBlk == nil { // tailBuf is reused next block; copy it
-					defBlk = append([]byte(nil), tail...)
-				}
-				s.deferred = &deferredMatch{
-					streamOff: streamOff,
-					blockOff:  defStart,
-					matchOff:  defOff,
-					blk:       defBlk,
-				}
+				s.deferred = append(s.deferred, forwardMatch(result))
 			}
 			bOff = absIdx + 1
 		}
@@ -1186,46 +1177,19 @@ func (s *SidecarSearcher) dispatchSidecarMatches(blk []byte, matches []int, rest
 			if !errors.Is(err, ErrSearchForward) {
 				return err
 			}
-			s.deferred = &deferredMatch{
-				streamOff: streamOff,
-				blockOff:  blockOff,
-				matchOff:  matchOff,
-				blk:       blk,
-			}
+			s.deferred = append(s.deferred, forwardMatch(result))
 		}
 	}
 	s.updateTail(blk, blockOff+int64(len(blk)), len(pattern)-1)
 	return nil
 }
 
-// flushDeferred re-dispatches a deferred ErrSearchForward match with nextBlk
-// as forward context.
+// flushDeferred re-dispatches the deferred ErrSearchForward matches with
+// nextBlk as forward context.
 func (s *SidecarSearcher) flushDeferred(nextBlk []byte, fn func(SearchResult) error) error {
-	d := s.deferred
-	s.deferred = nil
-	result := SearchResult{
-		Blocks:       [2][]byte{d.blk, nextBlk},
-		Offset:       d.matchOff,
-		StreamOffset: d.streamOff,
-		BlockStart:   d.blockOff,
-		PrevBlockLen: len(d.blk),
-	}
-	err := fn(result)
-	if err == nil {
-		return nil
-	}
-	if !errors.Is(err, ErrSearchForward) {
-		return err
-	}
-	if nextBlk != nil {
-		s.deferred = &deferredMatch{
-			streamOff: d.streamOff,
-			blockOff:  d.blockOff,
-			matchOff:  d.matchOff,
-			blk:       nextBlk,
-		}
-	}
-	return nil
+	var err error
+	s.deferred, err = flushForward(s.deferred, nextBlk, fn)
+	return err
 }
 
 // statsAccumTable records per-table stats consistent with BlockSearcher.
