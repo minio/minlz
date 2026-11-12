@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/minio/minlz"
@@ -74,6 +75,7 @@ func mainSidecarBuild(args []string) {
 		searchMax          = fs.Int("search.max", 75, "Discard search-table entries with population % > this")
 		searchLim          = fs.Int("search.lim", 25, "Stop reducing search tables when reduced population exceeds this %. Auto-tightened to 10 when a prefix is set, unless explicitly overridden.")
 		searchUncompressed = fs.Bool("search.uncompressed", false, "Disable per-block search-table compression (default emits 0x46 chunks)")
+		cpu                = fs.Int("cpu", runtime.GOMAXPROCS(0), "Maximum number of threads to use")
 		safe               = fs.Bool("safe", false, "Do not overwrite an existing sidecar")
 		quiet              = fs.Bool("q", false, "Quiet")
 		help               = fs.Bool("help", false, "Display help")
@@ -174,6 +176,7 @@ Options:`)
 	if len(opts) == 0 {
 		exitErr(errors.New("no usable search configs"))
 	}
+	opts = append(opts, minlz.SidecarConcurrency(*cpu))
 
 	// Open files.
 	in, err := os.Open(src)

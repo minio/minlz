@@ -809,6 +809,97 @@ func TestBuildSidecar_ConcatenatedStreams(t *testing.T) {
 	}
 }
 
+// Blocks of the first stream are still indexing when the second stream's
+// identifier changes the table size.
+func TestBuildSidecar_ConcatenatedBlockSizes(t *testing.T) {
+	pat := []byte("UNIQUE-NEEDLE")
+	var main bytes.Buffer
+	var all []byte
+	for _, bs := range []int{32 << 10, 256 << 10} {
+		d := makeTestData(600 << 10)
+		copy(d[bs-5:], pat) // straddles the first block boundary
+		all = append(all, d...)
+		w := NewWriter(&main, WriterBlockSize(bs), WriterConcurrency(1))
+		if _, err := w.Write(d); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var side bytes.Buffer
+	if err := BuildSidecar(&side, bytes.NewReader(main.Bytes()), SidecarSearchTable(NewSearchTableConfig().WithMatchLen(6)), SidecarConcurrency(4)); err != nil {
+		t.Fatal("BuildSidecar:", err)
+	}
+	matches := 0
+	ss := NewSidecarSearcher(bytes.NewReader(main.Bytes()), bytes.NewReader(side.Bytes()))
+	if err := ss.Search(pat, func(SearchResult) error {
+		matches++
+		return nil
+	}); err != nil {
+		t.Fatal("search:", err)
+	}
+	if want := countOccurrences(all, pat); matches != want {
+		t.Fatalf("got %d matches, want %d", matches, want)
+	}
+}
+
+// The Writer takes block overlap from its input, BuildSidecar from the next decoded block.
+func TestBuildSidecar_MatchesWriterSidecar(t *testing.T) {
+	const bs = 32 << 10
+	data := makeTestData(40 * bs)
+	for i := bs; i < len(data); i += bs {
+		copy(data[i-(i/bs)%12:], `"msg":"UNIQUE-NEEDLE"`)
+	}
+	for _, cfg := range []SearchTableConfig{
+		NewSearchTableConfig().WithMatchLen(6),
+		NewSearchTableConfig().WithMatchLen(4).WithBytePrefix('"'),
+		NewSearchTableConfig().WithMatchLen(4).WithLongPrefix([]byte(`"msg":"`)).WithExtras(8),
+	} {
+		var main, want, got bytes.Buffer
+		w := NewWriter(&main, WriterBlockSize(bs), WriterConcurrency(1), WriterSearchTable(cfg), WriterSidecar(&want))
+		if _, err := w.Write(data); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := BuildSidecar(&got, bytes.NewReader(main.Bytes()), SidecarSearchTable(cfg), SidecarConcurrency(8)); err != nil {
+			t.Fatal("BuildSidecar:", err)
+		}
+		if !bytes.Equal(got.Bytes(), want.Bytes()) {
+			t.Errorf("%v: BuildSidecar output (%d bytes) differs from WriterSidecar (%d bytes)", cfg, got.Len(), want.Len())
+		}
+	}
+}
+
+type failAfterWriter struct{ n int }
+
+func (w *failAfterWriter) Write(b []byte) (int, error) {
+	if len(b) > w.n {
+		return 0, errors.New("write failed")
+	}
+	w.n -= len(b)
+	return len(b), nil
+}
+
+func TestBuildSidecar_WriteError(t *testing.T) {
+	var main bytes.Buffer
+	w := NewWriter(&main, WriterBlockSize(32<<10), WriterConcurrency(1))
+	if _, err := w.Write(makeTestData(1 << 20)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []int{0, 100, 1000} {
+		err := BuildSidecar(&failAfterWriter{n: n}, bytes.NewReader(main.Bytes()), SidecarSearchTable(NewSearchTableConfig()))
+		if err == nil || err.Error() != "write failed" {
+			t.Errorf("n=%d: got %v, want write failed", n, err)
+		}
+	}
+}
+
 func TestExtractSidecar_ConcatenatedStreams(t *testing.T) {
 	d1 := makeTestData(80 << 10)
 	d2 := makeTestData(80 << 10)
