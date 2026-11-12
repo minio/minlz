@@ -319,19 +319,32 @@ type deferredMatch struct {
 	blk       []byte // data from the block where the match starts; becomes Blocks[0] in re-call
 }
 
+// fwdCtx lets deferred matches with the same Blocks share one copy of them,
+// so a dense pattern doesn't copy the blocks once per match.
+type fwdCtx struct{ b0, b1, ctx []byte }
+
 // forwardMatch returns r deferred for a re-call after the callback returned
 // ErrSearchForward: its context is Blocks[1], or a copy of Blocks[0]+Blocks[1]
-// when the match starts in Blocks[0].
-func forwardMatch(r SearchResult) deferredMatch {
+// when the match starts in Blocks[0], shared via c with the previous match
+// from the same Blocks.
+func forwardMatch(r SearchResult, c *fwdCtx) deferredMatch {
 	d := deferredMatch{streamOff: r.StreamOffset, blockOff: r.BlockStart, matchOff: r.Offset}
 	if r.Offset >= r.PrevBlockLen {
 		d.blockOff += int64(r.PrevBlockLen)
 		d.matchOff -= r.PrevBlockLen
 		d.blk = r.Blocks[1]
 	} else {
-		d.blk = append(append([]byte(nil), r.Blocks[0]...), r.Blocks[1]...)
+		if !sameSlice(c.b0, r.Blocks[0]) || !sameSlice(c.b1, r.Blocks[1]) {
+			*c = fwdCtx{r.Blocks[0], r.Blocks[1], append(append([]byte(nil), r.Blocks[0]...), r.Blocks[1]...)}
+		}
+		d.blk = c.ctx
 	}
 	return d
+}
+
+// sameSlice reports whether a and b are the same bytes in memory.
+func sameSlice(a, b []byte) bool {
+	return len(a) == len(b) && (len(a) == 0 || &a[0] == &b[0])
 }
 
 // BlockSearcher reads a MinLZ stream and searches for patterns using
@@ -1055,6 +1068,7 @@ func (s *BlockSearcher) updateTail(blk []byte, endOff int64, keep int) {
 // loop to re-dispatch after loading the next block. Remaining matches in this
 // block are still dispatched.
 func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []byte, fn func(SearchResult) error) error {
+	var fc fwdCtx
 	prevBlockStart := blockOff - int64(len(s.prevBlock))
 	if s.prevBlock == nil {
 		if s.prevLazy != nil {
@@ -1113,7 +1127,7 @@ func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []by
 				if !errors.Is(err, ErrSearchForward) {
 					return err
 				}
-				s.deferred = append(s.deferred, forwardMatch(result))
+				s.deferred = append(s.deferred, forwardMatch(result, &fc))
 			}
 			bOff = absIdx + 1
 		}
@@ -1163,7 +1177,7 @@ func (s *BlockSearcher) dispatchMatches(blk []byte, blockOff int64, pattern []by
 			return err
 		}
 		// Save deferred match for the main loop to re-dispatch with the next block.
-		s.deferred = append(s.deferred, forwardMatch(result))
+		s.deferred = append(s.deferred, forwardMatch(result, &fc))
 		off = matchOff + 1
 	}
 }
@@ -1180,6 +1194,7 @@ func (s *BlockSearcher) flushDeferred(nextBlk []byte, fn func(SearchResult) erro
 // context, and returns the matches that ask for more.
 func flushForward(deferred []deferredMatch, nextBlk []byte, fn func(SearchResult) error) ([]deferredMatch, error) {
 	var again []deferredMatch
+	var fc fwdCtx
 	for _, d := range deferred {
 		result := SearchResult{
 			Blocks:       [2][]byte{d.blk, nextBlk},
@@ -1196,7 +1211,7 @@ func flushForward(deferred []deferredMatch, nextBlk []byte, fn func(SearchResult
 			return nil, err
 		}
 		if nextBlk != nil {
-			again = append(again, forwardMatch(result))
+			again = append(again, forwardMatch(result, &fc))
 		}
 	}
 	return again, nil

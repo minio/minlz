@@ -2201,6 +2201,49 @@ func TestSearchForwardPolicies(t *testing.T) {
 	}
 }
 
+// TestSearchForwardSharedContext: matches that ask for forward context from
+// the same blocks share one copy of them, not one copy per match.
+func TestSearchForwardSharedContext(t *testing.T) {
+	const bs, blocks = 4 << 10, 4
+	data := bytes.Repeat([]byte("A"), blocks*bs)
+	pat := []byte("AAAA")
+	var main, side bytes.Buffer
+	w := NewWriter(&main, WriterBlockSize(bs), WriterConcurrency(1),
+		WriterSearchTable(NewSearchTableConfig().WithMatchLen(4)), WriterSidecar(&side))
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for name, search := range map[string]func(func(SearchResult) error) error{
+		"block": func(fn func(SearchResult) error) error {
+			return NewBlockSearcher(bytes.NewReader(main.Bytes())).Search(pat, fn)
+		},
+		"sidecar": func(fn func(SearchResult) error) error {
+			return NewSidecarSearcher(bytes.NewReader(main.Bytes()), bytes.NewReader(side.Bytes())).Search(pat, fn)
+		},
+	} {
+		ft := newForwardTester(t, data, pat, 3)
+		ctxs := map[*byte]bool{}
+		if err := search(func(r SearchResult) error {
+			if len(r.Blocks[0]) > 0 {
+				ctxs[&r.Blocks[0][0]] = true
+			}
+			return ft.callback(r)
+		}); err != nil {
+			t.Fatal(name, err)
+		}
+		ft.done()
+		if len(ft.found) != countOccurrences(data, pat) {
+			t.Fatalf("%s: %d matches, want %d", name, len(ft.found), countOccurrences(data, pat))
+		}
+		if len(ctxs) > 8*blocks {
+			t.Errorf("%s: %d distinct Blocks[0] for %d matches; forward context is not shared", name, len(ctxs), len(ft.found))
+		}
+	}
+}
+
 // TestSearchBlockOffsets verifies block offsets are correct.
 func TestSearchBlockOffsets(t *testing.T) {
 	blockSize := minBlockSize

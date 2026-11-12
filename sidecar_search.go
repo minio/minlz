@@ -1070,6 +1070,7 @@ func (s *SidecarSearcher) updateTail(blk []byte, endOff int64, keep int) {
 // of pattern in blk; if rest >= 0 it scans for more from there (see
 // indexMatches).
 func (s *SidecarSearcher) dispatchSidecarMatches(blk []byte, matches []int, rest int, blockOff int64, pattern []byte, fn func(SearchResult) error) error {
+	var fc fwdCtx
 	prevBlockStart := blockOff
 	if s.prevBlock != nil {
 		prevBlockStart = blockOff - int64(len(s.prevBlock))
@@ -1121,7 +1122,7 @@ func (s *SidecarSearcher) dispatchSidecarMatches(blk []byte, matches []int, rest
 				if !errors.Is(err, ErrSearchForward) {
 					return err
 				}
-				s.deferred = append(s.deferred, forwardMatch(result))
+				s.deferred = append(s.deferred, forwardMatch(result, &fc))
 			}
 			bOff = absIdx + 1
 		}
@@ -1177,7 +1178,7 @@ func (s *SidecarSearcher) dispatchSidecarMatches(blk []byte, matches []int, rest
 			if !errors.Is(err, ErrSearchForward) {
 				return err
 			}
-			s.deferred = append(s.deferred, forwardMatch(result))
+			s.deferred = append(s.deferred, forwardMatch(result, &fc))
 		}
 	}
 	s.updateTail(blk, blockOff+int64(len(blk)), len(pattern)-1)
