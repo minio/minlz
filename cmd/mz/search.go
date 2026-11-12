@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -41,6 +42,7 @@ func mainSearch(args []string) {
 		winStats  = fs.Bool("window-stats", false, "Print per-pattern-window table presence counts after the search (implies -v)")
 		sidecar   = fs.String("sidecar", "", "Search using the given sidecar (.mzs) file; the input must support random access. If empty, <input>"+minlzSidecarExt+" is auto-detected when present.")
 		noSidecar = fs.Bool("no-sidecar", false, "Disable sidecar auto-detection; force inline search")
+		cpu       = fs.Int("cpu", runtime.GOMAXPROCS(0), "Maximum number of threads to use for sidecar search")
 		help      = fs.Bool("help", false, "Display help")
 	)
 	fs.Usage = func() {
@@ -93,6 +95,7 @@ Options:`)
 				multiFile: multiFile,
 				sidecar:   *sidecar,
 				noSidecar: *noSidecar,
+				cpu:       *cpu,
 			})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s: %v\n", file, err)
@@ -132,6 +135,7 @@ type searchOpts struct {
 	multiFile bool
 	sidecar   string
 	noSidecar bool
+	cpu       int
 }
 
 func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats minlz.SearchStats, err error) {
@@ -148,6 +152,9 @@ func searchFile(file string, pattern []byte, opts searchOpts) (found bool, stats
 	}
 
 	var bsOpts []minlz.BlockSearchOption
+	if opts.cpu > 0 {
+		bsOpts = append(bsOpts, minlz.BlockSearchConcurrency(opts.cpu))
+	}
 	if opts.bail {
 		bsOpts = append(bsOpts, minlz.BlockSearchBailOnMissing())
 	}

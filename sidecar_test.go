@@ -22,6 +22,7 @@ import (
 	"io"
 	"math/rand"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -190,6 +191,151 @@ func TestSidecarSearcher_MatchesBlockSearcher(t *testing.T) {
 			})
 		}
 	})
+}
+
+// Concurrent decoding must not change what callbacks see, including blocks
+// held by ErrSearchForward and an early stop.
+func TestSidecarSearcher_ConcurrencyParity(t *testing.T) {
+	const bs = 8 << 10
+	data := makeTestData(4 << 20)
+	for _, off := range []int{100, 50*bs - 4, 51*bs - 9, 300 * bs, len(data) - 30} {
+		copy(data[off:], "RARE-NEEDLE")
+	}
+	cfg := NewSearchTableConfig().WithMatchLen(6)
+	var main, side bytes.Buffer
+	w := NewWriter(&main, WriterBlockSize(bs), WriterConcurrency(1), WriterSearchTable(cfg), WriterSidecar(&side))
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	errStop := errors.New("stop")
+	search := func(pat []byte, policy, conc, stopAfter int) ([]string, error) {
+		ft := newForwardTester(t, data, pat, policy)
+		ss := NewSidecarSearcher(bytes.NewReader(main.Bytes()), bytes.NewReader(side.Bytes()), BlockSearchConcurrency(conc))
+		err := ss.Search(pat, func(r SearchResult) error {
+			err := ft.callback(r)
+			if len(ft.calls) == stopAfter {
+				return errStop
+			}
+			return err
+		})
+		if err == nil {
+			ft.done()
+		}
+		return ft.calls, err
+	}
+	for _, pat := range [][]byte{[]byte("RARE-NEEDLE"), []byte(`"level":"WARN"`), []byte("}\n{\"timestamp\""), []byte("absent-pattern")} {
+		// Forward context for every 3rd match, every match, or twice for every match.
+		for policy := 1; policy <= 3; policy++ {
+			want, err := search(pat, policy, 1, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(want) < countOccurrences(data, pat) {
+				t.Fatalf("%q: got %d callbacks, want at least %d", pat, len(want), countOccurrences(data, pat))
+			}
+			concs := []int{3, 16}
+			if testing.Short() {
+				concs = concs[:1]
+			}
+			for _, conc := range concs {
+				if got, err := search(pat, policy, conc, 0); err != nil || !slices.Equal(got, want) {
+					t.Fatalf("%q policy %d conc %d: %v, %d callbacks differ from concurrency 1 (%d)", pat, policy, conc, err, len(got), len(want))
+				}
+				if stop := len(want) / 2; stop > 0 {
+					if got, err := search(pat, policy, conc, stop); err != errStop || !slices.Equal(got, want[:stop]) {
+						t.Fatalf("%q policy %d conc %d: early stop got %v after %d callbacks", pat, policy, conc, err, len(got))
+					}
+				}
+			}
+		}
+	}
+}
+
+// More matches in a block than a concurrent scan stores (maxScanMatches).
+func TestSidecarSearcher_DenseMatches(t *testing.T) {
+	const bs = 8 << 10
+	data := bytes.Repeat([]byte("A"), 8*bs)
+	var main, side bytes.Buffer
+	w := NewWriter(&main, WriterBlockSize(bs), WriterConcurrency(1), WriterSearchTable(NewSearchTableConfig().WithMatchLen(6)), WriterSidecar(&side))
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	pat := []byte("AAA")
+	for _, conc := range []int{1, 3} {
+		var got []int64
+		check := resultChecker(t, data, pat)
+		ss := NewSidecarSearcher(bytes.NewReader(main.Bytes()), bytes.NewReader(side.Bytes()), BlockSearchConcurrency(conc))
+		if err := ss.Search(pat, func(r SearchResult) error {
+			check(r, true)
+			if len(got) > 0 && r.StreamOffset <= got[len(got)-1] {
+				t.Fatalf("conc %d: match at %d after %d", conc, r.StreamOffset, got[len(got)-1])
+			}
+			got = append(got, r.StreamOffset)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if want := countOccurrences(data, pat); len(got) != want {
+			t.Fatalf("conc %d: got %d matches, want %d", conc, len(got), want)
+		}
+	}
+}
+
+// A batch spanning several read pieces: concurrent ReadAt calls, identical
+// callbacks, and an early stop while pieces are in flight.
+func TestSidecarSearcher_ReadPieces(t *testing.T) {
+	const bs = 8 << 10
+	data := make([]byte, 12<<20)
+	rand.New(rand.NewSource(1)).Read(data)
+	pat := []byte("NEEDLE-IN-EVERY-BLOCK")
+	for i := 0; i < len(data); i += bs {
+		copy(data[i+100:], pat)
+	}
+	// Incompressible blocks get no no-prefix table, so none is skipped and
+	// one batch spans the stream.
+	var main, side bytes.Buffer
+	w := NewWriter(&main, WriterBlockSize(bs), WriterConcurrency(1), WriterSearchTable(NewSearchTableConfig().WithMatchLen(6)), WriterSidecar(&side))
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	errStop := errors.New("stop")
+	search := func(conc, stopAfter int) (got []int64, reads int, err error) {
+		rr := &rangeRecorderReaderAt{r: bytes.NewReader(main.Bytes())}
+		check := resultChecker(t, data, pat)
+		ss := NewSidecarSearcher(rr, bytes.NewReader(side.Bytes()), BlockSearchConcurrency(conc))
+		err = ss.Search(pat, func(r SearchResult) error {
+			check(r, true)
+			got = append(got, r.StreamOffset)
+			if len(got) == stopAfter {
+				return errStop
+			}
+			return nil
+		})
+		return got, len(rr.ranges), err
+	}
+	want, reads1, err := search(1, 0)
+	if err != nil || len(want) != countOccurrences(data, pat) {
+		t.Fatalf("conc 1: %v, %d matches, want %d", err, len(want), countOccurrences(data, pat))
+	}
+	got, reads4, err := search(4, 0)
+	if err != nil || !slices.Equal(got, want) {
+		t.Fatalf("conc 4: %v, %d matches differ from concurrency 1", err, len(got))
+	}
+	if reads4 <= reads1 {
+		t.Fatalf("conc 4 made %d reads, conc 1 %d: batches were not split into pieces", reads4, reads1)
+	}
+	if got, _, err := search(4, 10); err != errStop || !slices.Equal(got, want[:10]) {
+		t.Fatalf("early stop: got %v after %d matches", err, len(got))
+	}
 }
 
 func TestBuildSidecar_RoundTrip(t *testing.T) {
@@ -1156,14 +1302,16 @@ func TestSidecarSearcher_InlineParity(t *testing.T) {
 	copy(data[200<<10:], []byte("UNIQUE-PARITY-NEEDLE"))
 
 	type cfgCase struct {
-		name string
-		cfg  SearchTableConfig
+		name  string
+		cfg   SearchTableConfig
+		level int
 	}
 	cases := []cfgCase{
-		{"no-prefix-ml6", NewSearchTableConfig().WithMatchLen(6)},
-		{"no-prefix-ml4", NewSearchTableConfig().WithMatchLen(4)},
-		{"byte-prefix", NewSearchTableConfig().WithMatchLen(6).WithBytePrefix('"', ':')},
-		{"long-prefix", NewSearchTableConfig().WithMatchLen(4).WithLongPrefix([]byte(`":"`))},
+		{"no-prefix-ml6", NewSearchTableConfig().WithMatchLen(6), LevelBalanced},
+		{"no-prefix-ml4", NewSearchTableConfig().WithMatchLen(4), LevelBalanced},
+		{"byte-prefix", NewSearchTableConfig().WithMatchLen(6).WithBytePrefix('"', ':'), LevelBalanced},
+		{"long-prefix", NewSearchTableConfig().WithMatchLen(4).WithLongPrefix([]byte(`":"`)), LevelBalanced},
+		{"byte-prefix-simd", NewSearchTableConfig().WithMatchLen(6).WithBytePrefix('"', ':'), LevelBalancedSIMD},
 	}
 	patterns := [][]byte{
 		[]byte("UNIQUE-PARITY-NEEDLE"),                             // exists
@@ -1180,6 +1328,7 @@ func TestSidecarSearcher_InlineParity(t *testing.T) {
 			w := NewWriter(&inline,
 				WriterBlockSize(32<<10),
 				WriterConcurrency(1),
+				WriterLevel(tc.level),
 				WriterSearchTable(tc.cfg),
 			)
 			if _, err := w.Write(data); err != nil {
@@ -1193,6 +1342,7 @@ func TestSidecarSearcher_InlineParity(t *testing.T) {
 			w2 := NewWriter(&main,
 				WriterBlockSize(32<<10),
 				WriterConcurrency(1),
+				WriterLevel(tc.level),
 				WriterSearchTable(tc.cfg),
 				WriterSidecar(&side),
 			)
@@ -1266,6 +1416,9 @@ func TestSidecarSearcher_InlineParity(t *testing.T) {
 					if bsStats.UncompBytesSearched != ssStats.UncompBytesSearched {
 						t.Errorf("UncompBytesSearched: inline=%d sidecar=%d",
 							bsStats.UncompBytesSearched, ssStats.UncompBytesSearched)
+					}
+					if bsStats.CompBytesSkipped != ssStats.CompBytesSkipped {
+						t.Errorf("CompBytesSkipped: inline=%d sidecar=%d", bsStats.CompBytesSkipped, ssStats.CompBytesSkipped)
 					}
 				})
 			}
