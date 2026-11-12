@@ -105,6 +105,11 @@ type SidecarSearcher struct {
 	tailRescueRef remoteRef // location of the held-back block in the main stream
 	tailRescueOff int64     // stream offset where it starts
 
+	// skippedOff is the main-stream offset of a skipped block not yet counted
+	// in CompBytesSkipped, or -1. The sidecar has no compressed sizes, so it is
+	// counted from the offset of the block after it.
+	skippedOff int64
+
 	// Options.
 	bail         bool
 	ignoreCRC    bool
@@ -221,6 +226,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 	s.prevLazy = nil
 	s.tailBuf = s.tailBuf[:0]
 	s.tailRescue = false
+	s.skippedOff = -1
 	s.winInit = false
 	s.blockStart = 0
 	s.pending = s.pending[:0]
@@ -423,6 +429,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 				if s.collectStats {
 					s.stats.BlocksTotal++
 				}
+				s.countSkipped(ref.offset)
 				s.tailRescue = false
 				skip, anyUsable, emptySkip := s.blockDecision(tables, pattern)
 				if s.bail && !anyUsable {
@@ -442,6 +449,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 					if s.collectStats {
 						s.stats.BlocksSkipped++
 					}
+					s.skippedOff = ref.offset
 					// The skipped block's compressed data stays in main for
 					// lazy retrieval via SearchResult.PrevBlock().
 					s.prevLazy = &lazyMainBlock{
@@ -550,6 +558,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			if err := s.rescueTail(pattern, fn); err != nil {
 				return err
 			}
+			s.countLastSkipped()
 			if s.deferred != nil {
 				if err := s.flushDeferred(nil, fn); err != nil {
 					return err
@@ -590,6 +599,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			if err := s.rescueTail(pattern, fn); err != nil {
 				return err
 			}
+			s.countLastSkipped()
 			if cl != magicBodyLen {
 				return ErrSidecarInvalid
 			}
@@ -636,12 +646,36 @@ func (s *SidecarSearcher) finalize(pattern []byte, fn func(SearchResult) error, 
 	if err := s.rescueTail(pattern, fn); err != nil {
 		return err
 	}
+	s.countLastSkipped()
 	if s.deferred != nil {
 		if err := s.flushDeferred(nil, fn); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// countSkipped counts the pending skipped block in CompBytesSkipped, given
+// the offset of the block after it: the distance less the chunk header,
+// which matches BlockSearcher unless other chunks lie in between (they are
+// not read either).
+func (s *SidecarSearcher) countSkipped(next int64) {
+	if s.collectStats && s.skippedOff >= 0 && next > s.skippedOff {
+		s.stats.CompBytesSkipped += next - s.skippedOff - 4
+	}
+	s.skippedOff = -1
+}
+
+// countLastSkipped counts a skipped final block of a stream, which has no
+// next block, by reading its chunk header.
+func (s *SidecarSearcher) countLastSkipped() {
+	if s.collectStats && s.skippedOff >= 0 {
+		var hdr [4]byte
+		if _, err := s.main.ReadAt(hdr[:], s.skippedOff); err == nil {
+			s.stats.CompBytesSkipped += int64(hdr[1]) | int64(hdr[2])<<8 | int64(hdr[3])<<16
+		}
+	}
+	s.skippedOff = -1
 }
 
 // rescueTail fetches and scans a block that was skipped only because its
@@ -653,6 +687,7 @@ func (s *SidecarSearcher) rescueTail(pattern []byte, fn func(SearchResult) error
 		return nil
 	}
 	s.tailRescue = false
+	s.skippedOff = -1 // the block is searched after all
 	blk, err := readAndDecodeMainBlock(s.main, s.tailRescueRef.offset, s.tailRescueRef.uncompSize, s.maxBlock, s.simd, s.ignoreCRC)
 	if err != nil {
 		return err
@@ -713,6 +748,7 @@ func (s *SidecarSearcher) resolveSideDeferred(nextTables []blockTableEntry, batc
 			s.stats.BlocksSkipped++
 			s.stats.BlocksDeferredSkipped++
 		}
+		s.skippedOff = s.sideDeferred.offset
 		// No forward context: the next block is skipped.
 		if s.deferred != nil {
 			if err := s.flushDeferred(nil, fn); err != nil {

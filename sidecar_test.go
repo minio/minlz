@@ -1113,14 +1113,16 @@ func TestSidecarSearcher_InlineParity(t *testing.T) {
 	copy(data[200<<10:], []byte("UNIQUE-PARITY-NEEDLE"))
 
 	type cfgCase struct {
-		name string
-		cfg  SearchTableConfig
+		name  string
+		cfg   SearchTableConfig
+		level int
 	}
 	cases := []cfgCase{
-		{"no-prefix-ml6", NewSearchTableConfig().WithMatchLen(6)},
-		{"no-prefix-ml4", NewSearchTableConfig().WithMatchLen(4)},
-		{"byte-prefix", NewSearchTableConfig().WithMatchLen(6).WithBytePrefix('"', ':')},
-		{"long-prefix", NewSearchTableConfig().WithMatchLen(4).WithLongPrefix([]byte(`":"`))},
+		{"no-prefix-ml6", NewSearchTableConfig().WithMatchLen(6), LevelBalanced},
+		{"no-prefix-ml4", NewSearchTableConfig().WithMatchLen(4), LevelBalanced},
+		{"byte-prefix", NewSearchTableConfig().WithMatchLen(6).WithBytePrefix('"', ':'), LevelBalanced},
+		{"long-prefix", NewSearchTableConfig().WithMatchLen(4).WithLongPrefix([]byte(`":"`)), LevelBalanced},
+		{"byte-prefix-simd", NewSearchTableConfig().WithMatchLen(6).WithBytePrefix('"', ':'), LevelBalancedSIMD},
 	}
 	patterns := [][]byte{
 		[]byte("UNIQUE-PARITY-NEEDLE"),                             // exists
@@ -1137,6 +1139,7 @@ func TestSidecarSearcher_InlineParity(t *testing.T) {
 			w := NewWriter(&inline,
 				WriterBlockSize(32<<10),
 				WriterConcurrency(1),
+				WriterLevel(tc.level),
 				WriterSearchTable(tc.cfg),
 			)
 			if _, err := w.Write(data); err != nil {
@@ -1150,6 +1153,7 @@ func TestSidecarSearcher_InlineParity(t *testing.T) {
 			w2 := NewWriter(&main,
 				WriterBlockSize(32<<10),
 				WriterConcurrency(1),
+				WriterLevel(tc.level),
 				WriterSearchTable(tc.cfg),
 				WriterSidecar(&side),
 			)
@@ -1223,6 +1227,9 @@ func TestSidecarSearcher_InlineParity(t *testing.T) {
 					if bsStats.UncompBytesSearched != ssStats.UncompBytesSearched {
 						t.Errorf("UncompBytesSearched: inline=%d sidecar=%d",
 							bsStats.UncompBytesSearched, ssStats.UncompBytesSearched)
+					}
+					if bsStats.CompBytesSkipped != ssStats.CompBytesSkipped {
+						t.Errorf("CompBytesSkipped: inline=%d sidecar=%d", bsStats.CompBytesSkipped, ssStats.CompBytesSkipped)
 					}
 				})
 			}
