@@ -640,6 +640,9 @@ func simdTier(t *testing.T, name string, pv kernel.Tier, f func(t *testing.T)) {
 			if d.pv.Tier() != pv {
 				t.Fatalf("pivco decoder tier %v, want %v", d.pv.Tier(), pv)
 			}
+			if d.litSec != nil {
+				t.Fatal("pooled decoder holds its input")
+			}
 			dp.Put(d)
 		}
 		if e, _ := simdEncoders.Get().(*simdEncoder); e != nil {

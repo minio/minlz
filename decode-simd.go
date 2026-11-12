@@ -284,6 +284,8 @@ func decodeSIMDHash(dst, block []byte, hash bool) (uint64, error) {
 	if h != nil {
 		sum = h.Sum64()
 	}
+	// The pooled decoder must not keep the input alive.
+	s.litSec = nil
 	simdDecoders.Put(s)
 	if !ok {
 		// Literals of earlier blocks may have been copied.
