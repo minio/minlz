@@ -22,6 +22,8 @@ import (
 	"io"
 	"math"
 	"math/bits"
+	"runtime"
+	"slices"
 )
 
 // blockTableEntry is one search table associated with a block.
@@ -34,6 +36,10 @@ type blockTableEntry struct {
 // maxSidecarBatchSpan caps the main-stream span one coalesced ReadAt may cover,
 // excluding the last block.
 const maxSidecarBatchSpan = 16 << 20
+
+// minSidecarReadPiece is the smallest piece a batch read is split into, so
+// blocks can be decoded while the rest of the batch is still being read.
+const minSidecarReadPiece = 4 << 20
 
 // pendingDecode is one batched decode-and-search entry.
 type pendingDecode struct {
@@ -103,9 +109,11 @@ type SidecarSearcher struct {
 	bail         bool
 	ignoreCRC    bool
 	collectStats bool
-	maxBlock     int  // per-stream effective cap = min(maxBlockCfg, stream's declared max)
-	maxBlockCfg  int  // configured ceiling, set once at construction
-	simd         bool // the sidecar identifier allows SIMD chunks in the main stream
+	maxBlock     int         // per-stream effective cap = min(maxBlockCfg, stream's declared max)
+	maxBlockCfg  int         // configured ceiling, set once at construction
+	simd         bool        // the sidecar identifier allows SIMD chunks in the main stream
+	concurrency  int         // blocks decoded and scanned concurrently
+	bufs         chan []byte // decoded blocks for reuse
 
 	// Cumulative state during a single Search call.
 	blockStart   int64 // uncompressed offset where the next block begins
@@ -150,7 +158,7 @@ func NewSidecarSearcher(main io.ReaderAt, sidecar io.Reader, opts ...BlockSearch
 		maxBlock: maxBlockSize,
 	}
 	// Re-use BlockSearchOption by adapting a temporary BlockSearcher.
-	tmp := &BlockSearcher{maxBlock: maxBlockSize}
+	tmp := &BlockSearcher{maxBlock: maxBlockSize, concurrency: runtime.GOMAXPROCS(0)}
 	for _, opt := range opts {
 		if err := opt(tmp); err != nil {
 			s.err = err
@@ -163,6 +171,9 @@ func NewSidecarSearcher(main io.ReaderAt, sidecar io.Reader, opts ...BlockSearch
 	s.infoCB = tmp.infoCallback
 	s.maxBlock = tmp.maxBlock
 	s.maxBlockCfg = s.maxBlock
+	s.concurrency = tmp.concurrency
+	// Blocks in flight, plus prevBlock and a deferred match.
+	s.bufs = make(chan []byte, s.concurrency+2)
 	return s
 }
 
@@ -658,7 +669,7 @@ func (s *SidecarSearcher) rescueTail(pattern []byte, fn func(SearchResult) error
 	s.prevBlock = nil
 	s.prevLazy = nil
 	s.tailBuf = s.tailBuf[:0]
-	if err := s.dispatchSidecarMatches(blk, s.tailRescueOff, pattern, fn); err != nil {
+	if err := s.dispatchSidecarMatches(blk, indexAll(blk, pattern), s.tailRescueOff, pattern, fn); err != nil {
 		return err
 	}
 	if s.collectStats && s.blockMatches == 0 {
@@ -780,58 +791,153 @@ func (s *SidecarSearcher) decodeBatch(batch []pendingDecode, pattern []byte, fn 
 		s.scratch = make([]byte, rangeLenI)
 	}
 	buf := s.scratch[:rangeLenI]
-	n, err := s.main.ReadAt(buf, rangeStart)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return err
-	}
-	buf = buf[:n]
 
-	for i := range batch {
-		pd := batch[i]
-		// Locate this block's chunk in buf.
-		off := int(pd.ref.offset - rangeStart)
-		if off < 0 || off+4 > len(buf) {
-			return fmt.Errorf("%w: ReadAt did not return enough bytes for block at offset %d", ErrSidecarInvalid, pd.ref.offset)
+	// Read the range in concurrent pieces split at block starts, so blocks
+	// are decoded while later pieces are still being read.
+	pieceLen := int64(max(rangeLenI/s.concurrency, minSidecarReadPiece))
+	pieces := make([]*readPiece, 0, rangeLenI/minSidecarReadPiece+1)
+	inPiece := make([]*readPiece, len(batch))
+	for i, pd := range batch {
+		if np := len(pieces); np == 0 || pd.ref.offset-pieces[np-1].off >= pieceLen && pd.ref.offset < rangeEnd {
+			pieces = append(pieces, &readPiece{off: pd.ref.offset, done: make(chan struct{})})
 		}
-		hdr := buf[off : off+4]
-		ct := hdr[0]
-		cl := int(hdr[1]) | int(hdr[2])<<8 | int(hdr[3])<<16
-		end := off + 4 + cl
-		if end > len(buf) {
-			// Fall back to a per-block ReadAt for this oversize block.
-			full := make([]byte, 4+cl)
-			n, e := s.main.ReadAt(full, pd.ref.offset)
-			if e != nil && !errors.Is(e, io.EOF) {
-				return e
-			}
-			if n != len(full) {
-				return io.ErrUnexpectedEOF
-			}
-			if err := s.processBlock(ct, cl, full[4:], pd, pattern, fn); err != nil {
-				return err
-			}
-			continue
+		inPiece[i] = pieces[len(pieces)-1]
+	}
+	for i, p := range pieces {
+		end := rangeEnd
+		if i+1 < len(pieces) {
+			end = pieces[i+1].off
 		}
-		payload := buf[off+4 : end]
-		if err := s.processBlock(ct, cl, payload, pd, pattern, fn); err != nil {
+		go p.read(s.main, buf[p.off-rangeStart:end-rangeStart])
+	}
+
+	// Blocks are decoded and scanned concurrently, up to s.concurrency ahead
+	// of the block being dispatched; dispatch stays in stream order.
+	scans := make([]chan blockScan, len(batch))
+	defer func() {
+		// After an early return, wait for reads and scans still using buf,
+		// which is reused.
+		for _, c := range scans {
+			if c != nil {
+				<-c
+			}
+		}
+		for _, p := range pieces {
+			<-p.done
+		}
+	}()
+	next := 0
+	for i, pd := range batch {
+		for ; next < len(batch) && next < i+s.concurrency; next++ {
+			c := make(chan blockScan, 1)
+			scans[next] = c
+			go func(p *readPiece, ref remoteRef) {
+				<-p.done
+				if p.err != nil {
+					c <- blockScan{err: p.err}
+					return
+				}
+				c <- s.scanBlock(p.buf, p.off, ref, pattern)
+			}(inPiece[next], batch[next].ref)
+		}
+		r := <-scans[i]
+		scans[i] = nil
+		if r.err != nil {
+			return r.err
+		}
+		if err := s.processBlock(r, pd, pattern, fn); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// processBlock decodes a single block's payload and runs the search dispatch.
-func (s *SidecarSearcher) processBlock(chunkType byte, chunkLen int, payload []byte, pd pendingDecode, pattern []byte, fn func(SearchResult) error) error {
-	if !isDataChunk(chunkType) {
-		return fmt.Errorf("%w: expected data chunk at offset %d, got 0x%02x", ErrSidecarInvalid, pd.ref.offset, chunkType)
+// readPiece is part of a batch's main-stream range, read concurrently.
+type readPiece struct {
+	off  int64
+	buf  []byte // bytes read; valid once done is closed
+	err  error
+	done chan struct{}
+}
+
+func (p *readPiece) read(r io.ReaderAt, b []byte) {
+	n, err := r.ReadAt(b, p.off)
+	if err != nil && !errors.Is(err, io.EOF) {
+		p.err = err
 	}
-	if chunkLen < checksumSize {
-		return ErrCorrupt
+	p.buf = b[:n]
+	close(p.done)
+}
+
+// blockScan is a decoded main-stream block and the offsets of every pattern
+// occurrence in it.
+type blockScan struct {
+	decoded []byte
+	matches []int
+	err     error
+}
+
+// scanBlock locates the data chunk of ref in buf, which holds the main stream
+// from bufOff, then decodes it and finds every occurrence of pattern.
+// It only reads s, so blocks can be scanned concurrently.
+func (s *SidecarSearcher) scanBlock(buf []byte, bufOff int64, ref remoteRef, pattern []byte) blockScan {
+	off := int(ref.offset - bufOff)
+	if off < 0 || off+4 > len(buf) {
+		return blockScan{err: fmt.Errorf("%w: ReadAt did not return enough bytes for block at offset %d", ErrSidecarInvalid, ref.offset)}
 	}
-	decoded, err := decodeDataChunk(chunkType, payload, pd.ref.uncompSize, s.maxBlock, s.simd, s.ignoreCRC)
+	hdr := buf[off : off+4]
+	ct := hdr[0]
+	cl := int(hdr[1]) | int(hdr[2])<<8 | int(hdr[3])<<16
+	var payload []byte
+	if end := off + 4 + cl; end <= len(buf) {
+		payload = buf[off+4 : end]
+	} else {
+		// Fall back to a per-block ReadAt for this oversize block.
+		full := make([]byte, 4+cl)
+		n, e := s.main.ReadAt(full, ref.offset)
+		if e != nil && !errors.Is(e, io.EOF) {
+			return blockScan{err: e}
+		}
+		if n != len(full) {
+			return blockScan{err: io.ErrUnexpectedEOF}
+		}
+		payload = full[4:]
+	}
+	if !isDataChunk(ct) {
+		return blockScan{err: fmt.Errorf("%w: expected data chunk at offset %d, got 0x%02x", ErrSidecarInvalid, ref.offset, ct)}
+	}
+	if cl < checksumSize {
+		return blockScan{err: ErrCorrupt}
+	}
+	var dst []byte
+	select {
+	case dst = <-s.bufs:
+	default:
+	}
+	decoded, err := decodeDataChunk(dst, ct, payload, ref.uncompSize, s.maxBlock, s.simd, s.ignoreCRC)
 	if err != nil {
-		return err
+		return blockScan{err: err}
 	}
+	return blockScan{decoded: decoded, matches: indexAll(decoded, pattern)}
+}
+
+// indexAll returns the offsets of every occurrence of pattern in b,
+// including overlapping ones.
+func indexAll(b, pattern []byte) []int {
+	var idx []int
+	for off := 0; ; {
+		i := bytes.Index(b[off:], pattern)
+		if i < 0 {
+			return idx
+		}
+		idx = append(idx, off+i)
+		off += i + 1
+	}
+}
+
+// processBlock runs the search dispatch for a scanned block.
+func (s *SidecarSearcher) processBlock(r blockScan, pd pendingDecode, pattern []byte, fn func(SearchResult) error) error {
+	decoded := r.decoded
 	if s.collectStats {
 		s.stats.BlocksSearched++
 		s.stats.UncompBytesSearched += int64(len(decoded))
@@ -844,12 +950,13 @@ func (s *SidecarSearcher) processBlock(chunkType byte, chunkLen int, payload []b
 			return err
 		}
 	}
-	if err := s.dispatchSidecarMatches(decoded, blockOff, pattern, fn); err != nil {
+	if err := s.dispatchSidecarMatches(decoded, r.matches, blockOff, pattern, fn); err != nil {
 		return err
 	}
 	if s.collectStats && s.blockMatches == 0 {
 		s.stats.BlocksFalsePositive++
 	}
+	old := s.prevBlock
 	if pd.tableNoMatch {
 		// Block was decoded only because the prev block forced a boundary
 		// check. The table already proved no match inside this block — do
@@ -862,7 +969,23 @@ func (s *SidecarSearcher) processBlock(chunkType byte, chunkLen int, payload []b
 		s.prevBlock = decoded
 	}
 	s.prevLazy = nil
+	s.recycle(old)
+	if s.prevBlock == nil {
+		s.recycle(decoded)
+	}
 	return nil
+}
+
+// recycle offers a decoded block for reuse unless a deferred match still holds
+// it. SearchResult.Blocks are only valid during the callback.
+func (s *SidecarSearcher) recycle(b []byte) {
+	if len(b) == 0 || s.deferred != nil && len(s.deferred.blk) > 0 && &s.deferred.blk[0] == &b[0] {
+		return
+	}
+	select {
+	case s.bufs <- b:
+	default:
+	}
 }
 
 // updateTail records blk (ending at stream offset endOff) as the most recent
@@ -886,8 +1009,9 @@ func (s *SidecarSearcher) updateTail(blk []byte, endOff int64, keep int) {
 }
 
 // dispatchSidecarMatches mirrors BlockSearcher.dispatchMatches but uses
-// lazyMainBlock for prev-block lazy access.
-func (s *SidecarSearcher) dispatchSidecarMatches(blk []byte, blockOff int64, pattern []byte, fn func(SearchResult) error) error {
+// lazyMainBlock for prev-block lazy access. matches are the offsets of every
+// occurrence of pattern in blk (see indexAll).
+func (s *SidecarSearcher) dispatchSidecarMatches(blk []byte, matches []int, blockOff int64, pattern []byte, fn func(SearchResult) error) error {
 	prevBlockStart := blockOff
 	if s.prevBlock != nil {
 		prevBlockStart = blockOff - int64(len(s.prevBlock))
@@ -959,14 +1083,7 @@ func (s *SidecarSearcher) dispatchSidecarMatches(blk []byte, blockOff int64, pat
 		}
 	}
 
-	off := 0
-	for {
-		idx := bytes.Index(blk[off:], pattern)
-		if idx < 0 {
-			s.updateTail(blk, blockOff+int64(len(blk)), len(pattern)-1)
-			return nil
-		}
-		matchOff := off + idx
+	for _, matchOff := range matches {
 		streamOff := blockOff + int64(matchOff)
 
 		var result SearchResult
@@ -1009,8 +1126,9 @@ func (s *SidecarSearcher) dispatchSidecarMatches(blk []byte, blockOff int64, pat
 				blk:       blk,
 			}
 		}
-		off = matchOff + 1
 	}
+	s.updateTail(blk, blockOff+int64(len(blk)), len(pattern)-1)
+	return nil
 }
 
 // flushDeferred re-dispatches a deferred ErrSearchForward match with nextBlk
@@ -1131,12 +1249,12 @@ func readAndDecodeMainBlock(main io.ReaderAt, offset int64, uncomp, maxBlock int
 		}
 		buf = extra
 	}
-	return decodeDataChunk(ct, buf[4:4+cl], uncomp, maxBlock, simd, ignoreCRC)
+	return decodeDataChunk(nil, ct, buf[4:4+cl], uncomp, maxBlock, simd, ignoreCRC)
 }
 
-// decodeDataChunk decodes the payload of a data chunk into a fresh slice.
-// simd allows SIMD chunks.
-func decodeDataChunk(chunkType byte, payload []byte, uncompHint, maxBlock int, simd, ignoreCRC bool) ([]byte, error) {
+// decodeDataChunk decodes the payload of a data chunk into dst, which is
+// grown if needed. simd allows SIMD chunks.
+func decodeDataChunk(dst []byte, chunkType byte, payload []byte, uncompHint, maxBlock int, simd, ignoreCRC bool) ([]byte, error) {
 	if len(payload) < checksumSize {
 		return nil, ErrCorrupt
 	}
@@ -1150,7 +1268,7 @@ func decodeDataChunk(chunkType byte, payload []byte, uncompHint, maxBlock int, s
 		if uncompHint != 0 && len(body) != uncompHint {
 			return nil, fmt.Errorf("%w: uncompressed size mismatch: %d != %d", ErrSidecarInvalid, len(body), uncompHint)
 		}
-		out := make([]byte, len(body))
+		out := slices.Grow(dst[:0], len(body))[:len(body)]
 		copy(out, body)
 		return out, nil
 	case chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC:
@@ -1164,7 +1282,7 @@ func decodeDataChunk(chunkType byte, payload []byte, uncompHint, maxBlock int, s
 		if uncompHint != 0 && n != uncompHint {
 			return nil, fmt.Errorf("%w: decompressed size %d != hint %d", ErrSidecarInvalid, n, uncompHint)
 		}
-		out := make([]byte, n)
+		out := slices.Grow(dst[:0], n)[:n]
 		if ret := minLZDecode(out, body[hdrSize:]); ret != 0 {
 			return nil, ErrCorrupt
 		}
@@ -1187,7 +1305,7 @@ func decodeDataChunk(chunkType byte, payload []byte, uncompHint, maxBlock int, s
 		if uncompHint != 0 && n != uncompHint {
 			return nil, fmt.Errorf("%w: decompressed size %d != hint %d", ErrSidecarInvalid, n, uncompHint)
 		}
-		out := make([]byte, n)
+		out := slices.Grow(dst[:0], n)[:n]
 		if err := decodeSIMDChunk(out, payload, block, ignoreCRC); err != nil {
 			return nil, err
 		}

@@ -365,6 +365,7 @@ type BlockSearcher struct {
 	tailRescueOff int64 // stream offset where the pending block starts
 	infoCallback  func(SearchTableConfig)
 	maxBlock      int
+	concurrency   int
 	readHeader    bool
 	simd          bool // the stream identifier allows SIMD chunks
 	ignoreCRC     bool
@@ -430,6 +431,20 @@ func BlockSearchMaxBlockSize(n int) BlockSearchOption {
 			return fmt.Errorf("minlz: invalid block size")
 		}
 		s.maxBlock = n
+		return nil
+	}
+}
+
+// BlockSearchConcurrency sets how many blocks a SidecarSearcher decodes and
+// scans concurrently. Default is runtime.GOMAXPROCS(0). Matches are still
+// delivered in stream order on the calling goroutine.
+// BlockSearcher reads its input sequentially and ignores it.
+func BlockSearchConcurrency(n int) BlockSearchOption {
+	return func(s *BlockSearcher) error {
+		if n <= 0 {
+			return errors.New("concurrency must be at least 1")
+		}
+		s.concurrency = n
 		return nil
 	}
 }
