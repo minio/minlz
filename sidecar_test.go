@@ -221,21 +221,12 @@ func TestSidecarSearcher_ConcurrencyParity(t *testing.T) {
 	}
 	search := func(pat []byte, policy, conc, stopAfter int) (got []string, err error) {
 		forwarded, straddled := map[int64]bool{}, map[int64]bool{}
+		check := resultChecker(t, data, pat)
 		ss := NewSidecarSearcher(bytes.NewReader(main.Bytes()), bytes.NewReader(side.Bytes()), BlockSearchConcurrency(conc))
 		err = ss.Search(pat, func(r SearchResult) error {
 			// TODO: a forward re-call of a straddling match is not given the
 			// block after Blocks[0] yet, so only Blocks[0] is checked for it.
-			ctx := r.PrevBlock()
-			if !straddled[r.StreamOffset] {
-				ctx = append(append([]byte(nil), ctx...), r.Blocks[1]...)
-			}
-			end := r.BlockStart + int64(len(ctx))
-			if end > int64(len(data)) || !bytes.Equal(ctx, data[r.BlockStart:end]) {
-				t.Fatalf("conc %d: context at %d does not match the data", conc, r.BlockStart)
-			}
-			if !bytes.HasPrefix(data[r.StreamOffset:], pat) || r.Offset != int(r.StreamOffset-r.BlockStart) {
-				t.Fatalf("conc %d: no match at %d (offset %d)", conc, r.StreamOffset, r.Offset)
-			}
+			check(r, !straddled[r.StreamOffset])
 			got = append(got, fmt.Sprint(r.StreamOffset, r.BlockStart, r.PrevBlockLen, len(r.Blocks[1])))
 			if len(got) == stopAfter {
 				return errStop
