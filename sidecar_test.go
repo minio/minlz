@@ -22,6 +22,7 @@ import (
 	"io"
 	"math/rand"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -189,6 +190,90 @@ func TestSidecarSearcher_MatchesBlockSearcher(t *testing.T) {
 			})
 		}
 	})
+}
+
+// Concurrent decoding must not change what callbacks see, including blocks
+// held by ErrSearchForward and an early stop.
+func TestSidecarSearcher_ConcurrencyParity(t *testing.T) {
+	const bs = 8 << 10
+	data := makeTestData(4 << 20)
+	for _, off := range []int{100, 50*bs - 4, 51*bs - 9, 300 * bs, len(data) - 30} {
+		copy(data[off:], "RARE-NEEDLE")
+	}
+	cfg := NewSearchTableConfig().WithMatchLen(6)
+	var main, side bytes.Buffer
+	w := NewWriter(&main, WriterBlockSize(bs), WriterConcurrency(1), WriterSearchTable(cfg), WriterSidecar(&side))
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	errStop := errors.New("stop")
+	// Forward policies: every 3rd match, only matches straddling a block
+	// boundary (whose deferred context is the previous block), or all.
+	policies := []func(r SearchResult, pat []byte, n int) bool{
+		func(_ SearchResult, _ []byte, n int) bool { return n%3 == 0 },
+		func(r SearchResult, pat []byte, _ int) bool {
+			return r.Offset < r.PrevBlockLen && r.Offset+len(pat) > r.PrevBlockLen
+		},
+		func(SearchResult, []byte, int) bool { return true },
+	}
+	search := func(pat []byte, policy, conc, stopAfter int) (got []string, err error) {
+		forwarded, straddled := map[int64]bool{}, map[int64]bool{}
+		ss := NewSidecarSearcher(bytes.NewReader(main.Bytes()), bytes.NewReader(side.Bytes()), BlockSearchConcurrency(conc))
+		err = ss.Search(pat, func(r SearchResult) error {
+			// TODO: a forward re-call of a straddling match is not given the
+			// block after Blocks[0] yet, so only Blocks[0] is checked for it.
+			ctx := r.PrevBlock()
+			if !straddled[r.StreamOffset] {
+				ctx = append(append([]byte(nil), ctx...), r.Blocks[1]...)
+			}
+			end := r.BlockStart + int64(len(ctx))
+			if end > int64(len(data)) || !bytes.Equal(ctx, data[r.BlockStart:end]) {
+				t.Fatalf("conc %d: context at %d does not match the data", conc, r.BlockStart)
+			}
+			if !bytes.HasPrefix(data[r.StreamOffset:], pat) || r.Offset != int(r.StreamOffset-r.BlockStart) {
+				t.Fatalf("conc %d: no match at %d (offset %d)", conc, r.StreamOffset, r.Offset)
+			}
+			got = append(got, fmt.Sprint(r.StreamOffset, r.BlockStart, r.PrevBlockLen, len(r.Blocks[1])))
+			if len(got) == stopAfter {
+				return errStop
+			}
+			if !forwarded[r.StreamOffset] && policies[policy](r, pat, len(got)) {
+				forwarded[r.StreamOffset] = true
+				straddled[r.StreamOffset] = policies[1](r, pat, 0)
+				return ErrSearchForward
+			}
+			return nil
+		})
+		return got, err
+	}
+	for _, pat := range [][]byte{[]byte("RARE-NEEDLE"), []byte(`"level":"WARN"`), []byte("}\n{\"timestamp\""), []byte("absent-pattern")} {
+		for policy := range policies {
+			want, err := search(pat, policy, 1, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(want) < countOccurrences(data, pat) {
+				t.Fatalf("%q: got %d callbacks, want at least %d", pat, len(want), countOccurrences(data, pat))
+			}
+			concs := []int{3, 16}
+			if testing.Short() {
+				concs = concs[:1]
+			}
+			for _, conc := range concs {
+				if got, err := search(pat, policy, conc, 0); err != nil || !slices.Equal(got, want) {
+					t.Fatalf("%q policy %d conc %d: %v, %d callbacks differ from concurrency 1 (%d)", pat, policy, conc, err, len(got), len(want))
+				}
+				if stop := len(want) / 2; stop > 0 {
+					if got, err := search(pat, policy, conc, stop); err != errStop || !slices.Equal(got, want[:stop]) {
+						t.Fatalf("%q policy %d conc %d: early stop got %v after %d callbacks", pat, policy, conc, err, len(got))
+					}
+				}
+			}
+		}
+	}
 }
 
 func TestBuildSidecar_RoundTrip(t *testing.T) {

@@ -411,7 +411,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			// If all absent hashes from the deferred block are present in
 			// the new table, decode the deferred; otherwise skip it.
 			if s.sideDeferred != nil {
-				if err := s.resolveSideDeferred(tablesForFirst, &batch, flushBatch); err != nil {
+				if err := s.resolveSideDeferred(tablesForFirst, &batch, flushBatch, fn); err != nil {
 					return err
 				}
 			}
@@ -686,7 +686,7 @@ func (s *SidecarSearcher) rescueTail(pattern []byte, fn func(SearchResult) error
 // and the deferred block is skipped without decoding.
 //
 // If nextTables is empty the resolution falls back to "decode" (conservative).
-func (s *SidecarSearcher) resolveSideDeferred(nextTables []blockTableEntry, batch *[]pendingDecode, flushBatch func() error) error {
+func (s *SidecarSearcher) resolveSideDeferred(nextTables []blockTableEntry, batch *[]pendingDecode, flushBatch func() error, fn func(SearchResult) error) error {
 	if s.sideDeferred == nil {
 		return nil
 	}
@@ -712,6 +712,12 @@ func (s *SidecarSearcher) resolveSideDeferred(nextTables []blockTableEntry, batc
 		if s.collectStats {
 			s.stats.BlocksSkipped++
 			s.stats.BlocksDeferredSkipped++
+		}
+		// No forward context: the next block is skipped.
+		if s.deferred != nil {
+			if err := s.flushDeferred(nil, fn); err != nil {
+				return err
+			}
 		}
 		// The deferred block stays available lazily via main; prev was
 		// already set to its lazyMainBlock at defer time, leave it as-is.
