@@ -464,6 +464,8 @@ on compressed files.
 mz c -search file.log                              # default matchLen=6, no prefix, compressed tables
 mz c -search -search.len=4 file.log                # matchLen=4
 mz c -search -search.prefixes='":'  file.log       # byte prefixes " and :
+mz c -search -search.prefixes.esc=quote,:,nl file.log
+                                                    # same, plus newline
 mz c -search -search.prefix='id:"' file.log        # long prefix
 mz c -search -search.prefix='"timestamp":' -search.extras=8 -search.len=8 file.log
                                                     # long prefix + 9 hashes per occurrence (matchLen+extras ≤ 16)
@@ -476,6 +478,23 @@ mz c -search -search.compress.skip=5 file.log       # tighter popcount band arou
 `-search.lim` defaults to 25 %, auto-tightened to 10 % when a prefix is set.
 Pass the flag explicitly to override (lower = sparser tables, more
 compressible).
+
+`-search.prefixes` takes its bytes literally, so bytes a shell can't pass
+easily go in `-search.prefixes.esc`, a comma-separated list. Both flags can
+be combined, and repeated bytes count once:
+
+| Item | Adds |
+|---|---|
+| `10`, `0x0a` | the byte with that decimal or hex value; so `5` is byte 5, not `'5'` |
+| `nul`, `tab`, `nl`/`lf`, `cr`, `space`, `quote`, `apos`, `comma`, `backslash` | that byte |
+| `{`, `é`, `😀` | a single character; a multi-byte UTF-8 character adds all its bytes |
+| `0x80-0xbf`, `a-z` | a range; both ends must be single bytes |
+
+Up to 8 distinct bytes give a byte-prefix table, more a mask table. A prefix
+byte indexes the `matchLen` bytes after it, so a pattern can use the table
+when a prefix byte is followed by at least `matchLen` bytes of it. For
+example, to find an emoji the table needs its first byte as a prefix and
+`matchLen` at most its remaining length plus the pattern bytes after it.
 
 **Searching compressed files:**
 ```

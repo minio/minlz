@@ -66,13 +66,13 @@ func (c SearchTableConfig) String() string {
 		}
 		prefix = fmt.Sprintf("byte-prefix=%q", string(unique))
 	case searchTableTypeMaskPrefix:
-		n := 0
+		var set []byte
 		for i := range 256 {
 			if c.prefixMask[i>>3]&(1<<(i&7)) != 0 {
-				n++
+				set = append(set, byte(i))
 			}
 		}
-		prefix = fmt.Sprintf("mask-prefix (%d bytes)", n)
+		prefix = fmt.Sprintf("mask-prefix=%q (%d bytes)", string(set), len(set))
 	case searchTableTypeLongPrefix:
 		if c.extras > 0 {
 			prefix = fmt.Sprintf("long-prefix=%q extras=%d", string(c.longPrefix), c.extras)

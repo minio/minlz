@@ -29,6 +29,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/minio/minlz/cmd/internal/shttp"
 	"github.com/minio/minlz/internal/cpu"
@@ -358,4 +359,85 @@ func toSize(size string) (int64, error) {
 	default:
 		return 0, fmt.Errorf("unknown size suffix: %v", multiple)
 	}
+}
+
+// prefixesEscUsage documents -search.prefixes.esc.
+const prefixesEscUsage = "Comma-separated prefix bytes, added to -search.prefixes: decimal (10) or hex (0x0a) values, " +
+	"names (nul, tab, nl, lf, cr, space, quote, apos, comma, backslash), single characters " +
+	"(a multi-byte UTF-8 character adds all its bytes), and ranges of single bytes (0x80-0xbf, a-z). " +
+	"Example: 'space,quote,:,{,nl'"
+
+var prefixNames = map[string]byte{
+	"nul": 0, "tab": '\t', "nl": '\n', "lf": '\n', "cr": '\r', "space": ' ',
+	"quote": '"', "apos": '\'', "comma": ',', "backslash": '\\',
+}
+
+// searchPrefixBytes returns the bytes of -search.prefixes (literal) and
+// -search.prefixes.esc (see prefixesEscUsage), sorted and without duplicates,
+// so up to 8 distinct bytes get a byte-prefix table however often they repeat.
+func searchPrefixBytes(literal, esc string) ([]byte, error) {
+	var set [256]bool
+	for _, b := range []byte(literal) {
+		set[b] = true
+	}
+	if esc != "" {
+		for item := range strings.SplitSeq(esc, ",") {
+			item = strings.TrimSpace(item)
+			var lo, hi []byte
+			var err error
+			if l, h, ok := strings.Cut(item, "-"); ok && item != "-" {
+				lo, err = prefixEscValue(l)
+				if err == nil {
+					hi, err = prefixEscValue(h)
+				}
+				if err == nil && (len(lo) != 1 || len(hi) != 1 || lo[0] > hi[0]) {
+					err = errors.New("range ends must be single bytes in ascending order")
+				}
+				if err == nil {
+					for b := int(lo[0]); b <= int(hi[0]); b++ {
+						set[b] = true
+					}
+				}
+			} else if lo, err = prefixEscValue(item); err == nil {
+				for _, b := range lo {
+					set[b] = true
+				}
+			}
+			if err != nil {
+				return nil, fmt.Errorf("-search.prefixes.esc %q: %w", item, err)
+			}
+		}
+	}
+	var out []byte
+	for b, ok := range set {
+		if ok {
+			out = append(out, byte(b))
+		}
+	}
+	return out, nil
+}
+
+// prefixEscValue returns the bytes of one -search.prefixes.esc value: a number
+// (digits are byte values, not characters), a name or a single character.
+func prefixEscValue(s string) ([]byte, error) {
+	if b, ok := prefixNames[strings.ToLower(s)]; ok {
+		return []byte{b}, nil
+	}
+	if s != "" && s[0] >= '0' && s[0] <= '9' {
+		var v uint64
+		var err error
+		if h, ok := strings.CutPrefix(strings.ToLower(s), "0x"); ok {
+			v, err = strconv.ParseUint(h, 16, 8)
+		} else {
+			v, err = strconv.ParseUint(s, 10, 8)
+		}
+		if err != nil {
+			return nil, errors.New("not a byte value (0-255 or 0x00-0xff)")
+		}
+		return []byte{byte(v)}, nil
+	}
+	if utf8.RuneCountInString(s) != 1 {
+		return nil, errors.New("not a number, name or single character")
+	}
+	return []byte(s), nil
 }

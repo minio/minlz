@@ -287,6 +287,59 @@ func TestOutputModes(t *testing.T) {
 	}
 }
 
+func TestSearchPrefixBytes(t *testing.T) {
+	for _, tc := range []struct {
+		literal, esc, want string
+	}{
+		{"", "", ""},
+		{"::", "space, quote,nl,:,{", "\n \":{"},
+		{"", "0x10-0x12,65,a,-,!--", "\x10\x11\x12!\"#$%&'()*+,-Aa"},
+		{"", "NUL,Tab,cr,lf,apos,comma,backslash", "\x00\t\n\r',\\"},
+		{"", "5,0X0A,255", "\x05\n\xff"},
+		{"", "😀,é", "\x80\x98\x9f\xa9\xc3\xf0"},
+		{"", "\xff", "\xff"},
+	} {
+		got, err := searchPrefixBytes(tc.literal, tc.esc)
+		if err != nil || string(got) != tc.want {
+			t.Errorf("%q, %q: got %q, %v; want %q", tc.literal, tc.esc, got, err, tc.want)
+		}
+	}
+	for _, esc := range []string{"a,", "256", "0x100", "0x", "z-a", "é-ü", "-5", "ab", "nlx"} {
+		if got, err := searchPrefixBytes("", esc); err == nil {
+			t.Errorf("%q: got %q, want an error", esc, got)
+		}
+	}
+}
+
+// TestSearchPrefixesEsc checks that mz c and mz sidecar build use
+// -search.prefixes.esc, by the table config mz search -v prints.
+func TestSearchPrefixesEsc(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "x"), bytes.Repeat([]byte("prefix escape test: {\"a\": 1}\n"), 1000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		build [][]string
+		want  string
+	}{
+		// Repeats don't count towards the 8 bytes of a byte-prefix table.
+		{[][]string{{"c", "-q", "-search", "-search.prefixes", "::::", "-search.prefixes.esc", "space,quote,.,:,[,{,nl", "-o", "x.mz", "x"}},
+			`byte-prefix="\n \".:[{"`},
+		{[][]string{{"c", "-q", "-o", "x.mz", "x"}, {"sidecar", "build", "-q", "-search.prefixes.esc", "nl,0x80-0x87", "x.mz"}},
+			`mask-prefix="\n\x80\x81\x82\x83\x84\x85\x86\x87" (9 bytes)`},
+	} {
+		for _, args := range tc.build {
+			if output, err := runMZ(t, dir, "", args...); err != nil {
+				t.Fatalf("mz %v: %v\n%s", args, err, output)
+			}
+		}
+		output, _ := runMZ(t, dir, "", "search", "-v", "-c", "test", "x.mz")
+		if !bytes.Contains(output, []byte(tc.want)) {
+			t.Errorf("mz %v: want %s in:\n%s", tc.build, tc.want, output)
+		}
+	}
+}
+
 // runMZ runs mz in dir, with stdin read from the file stdin if set.
 func runMZ(t *testing.T, dir, stdin string, args ...string) ([]byte, error) {
 	t.Helper()
