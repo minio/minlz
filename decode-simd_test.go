@@ -452,9 +452,14 @@ func simdTestDecode(t testing.TB, block, want []byte) {
 	}
 	// Guard bytes after the capacity.
 	buf := bytes.Repeat([]byte{0xfe}, n+64)
+	orig := bytes.Clone(block)
 	got, err := Decode(buf[:0:n], block)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Chunks read stored literals from the block.
+	if !bytes.Equal(block, orig) {
+		t.Fatal("decoding changed the block")
 	}
 	if !bytes.Equal(got, want) {
 		for i := range got {
@@ -2149,8 +2154,68 @@ func testSIMDLitLazy(t *testing.T) {
 	}
 }
 
+// TestSIMDChunkLits checks that chunks read a run of stored literal blocks in place when it holds their literals
+// and the simdPad bytes after them, and otherwise get them copied.
+func TestSIMDChunkLits(t *testing.T) {
+	rng := rand.New(rand.NewSource(13))
+	b := newSIMDTestBuilder(t)
+	lits := make([]byte, 6000)
+	for i := range lits {
+		lits[i] = "abcdefgh"[rng.Intn(8)]
+	}
+	// setup returns a decoder with literal blocks of 1000 literals, in modes, and the literal section.
+	setup := func(modes ...int) (*simdDecoder, []byte) {
+		e := simdTestEnc{typ: simdBlockType, size: len(lits), noLZ: true}
+		for i := 0; i < len(lits); i += 1000 {
+			e.lits = append(e.lits, b.stream(simdLits, modes[len(e.lits)%len(modes)], lits[i:i+1000]))
+		}
+		raw := e.bytes()
+		_, h := binary.Uvarint(raw[1:])
+		body := raw[2+h:]
+		_, n := rvarint(body)
+		sec := body[:len(body)-n]
+		s := new(simdDecoder)
+		r, ok := s.literals(sec, len(lits))
+		if !ok || !s.fill(&r, 0, len(lits), len(lits)) {
+			t.Fatal("no literals")
+		}
+		return s, sec
+	}
+	check := func(name string, s *simdDecoder, sec []byte, a, b int, inPlace bool) {
+		t.Helper()
+		got, at := s.chunkLits(a, b)
+		if !bytes.Equal(got[a-at:b-at], lits[a:b]) {
+			t.Fatalf("%s: literals %d to %d differ", name, a, b)
+		}
+		if off := cap(sec) - cap(got); (off >= 0 && &got[0] == &sec[off]) != inPlace {
+			t.Fatalf("%s: literals %d to %d read in place: %v", name, a, b, !inPlace)
+		}
+	}
+	modes := [][]int{{simdStored}, {simdStored, simdStored, simdCodeLens, simdStored, simdCurrent}}
+	s, sec := setup(modes[1]...)
+	check("in a stored block", s, sec, 100, 900, true)
+	check("across stored blocks", s, sec, 500, 1500, true)
+	check("into a coded block", s, sec, 1500, 2500, false)
+	check("in a coded block", s, sec, 2100, 2900, false)
+	check("from a coded block", s, sec, 2900, 3500, false)
+	// The literal records of a section of stored blocks are shorter than simdPad.
+	s, sec = setup(modes[0]...)
+	check("before the records", s, sec, 0, 5900, true)
+	check("at the records", s, sec, 5990, 6000, false)
+	for _, m := range modes {
+		s, _ := setup(m...)
+		for a := 0; a < len(lits); a += rng.Intn(300) {
+			b := min(a+rng.Intn(700), len(lits))
+			got, at := s.chunkLits(a, b)
+			if !bytes.Equal(got[a-at:b-at], lits[a:b]) {
+				t.Fatalf("modes %v: literals %d to %d differ", m, a, b)
+			}
+		}
+	}
+}
+
 // TestSIMDLitFill checks that fill decodes literal blocks only until the literals a chunk needs are decoded,
-// and that zeros follow them.
+// and that zeros follow them. Stored literals are left in place until copyStored copies them.
 func TestSIMDLitFill(t *testing.T) {
 	rng := rand.New(rand.NewSource(12))
 	b := newSIMDTestBuilder(t)
@@ -2183,6 +2248,7 @@ func TestSIMDLitFill(t *testing.T) {
 		if !s.fill(&r, l, need, len(lits)) {
 			t.Fatal("fill failed")
 		}
+		s.copyStored(0, len(s.lits))
 		if len(s.lits) != want || !bytes.Equal(s.lits, lits[:want]) || !bytes.Equal(s.lits[want:want+simdPad], make([]byte, simdPad)) {
 			t.Fatalf("%d literals from %d: decoded %d, want %d", need, l, len(s.lits), want)
 		}

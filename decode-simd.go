@@ -217,9 +217,14 @@ type simdDecoder struct {
 	tab  [simdLits + 1]pivco.Table
 	have [simdLits + 1]bool
 	// lits holds the literals decoded so far. Its capacity holds every literal of the block and simdPad.
+	// Stored literal blocks are not copied to it unless a chunk needs that (see chunkLits).
 	lits []byte
 	// litBlocks is the number of literal blocks decoded so far.
 	litBlocks int
+	// stored holds the runs of stored literal blocks, of the literal section litSec. Runs before run are read.
+	stored []simdLitRun
+	run    int
+	litSec []byte
 
 	tok, ll, offc [simdMaxChunk + simdPad]byte
 	esc           [2*simdMaxChunk + simdPad]byte
@@ -237,6 +242,9 @@ type simdChunk struct {
 	// so copying 32 bytes at a time needs no overlap test. Longer matches can still overlap their output.
 	flat bool
 }
+
+// simdLitRun is a run of consecutive stored literal blocks: the literals at to at+n, stored at litSec[off:off+n].
+type simdLitRun struct{ at, off, n int }
 
 // simdReader reads stream entries from recs, and their data from body[pos:end].
 type simdReader struct {
@@ -310,6 +318,7 @@ func (s *simdDecoder) decode(dst, block []byte, h *xxh3.Hasher) bool {
 	if nLits == 0 || lr.pos != lr.end || d+nLits-l != len(dst) {
 		return false
 	}
+	s.copyStored(l, nLits)
 	copy(dst[d:], s.lits[l:nLits])
 	if h != nil {
 		// ops added dst[:d].
@@ -330,6 +339,7 @@ func (s *simdDecoder) literals(sec []byte, size int) (simdReader, bool) {
 		s.lits = make([]byte, 0, size+simdPad)
 	}
 	s.lits, s.litBlocks = s.lits[:0], 0
+	s.stored, s.run, s.litSec = s.stored[:0], 0, sec
 	return simdReader{recs: sec[end : len(sec)-n], body: sec, end: end}, true
 }
 
@@ -342,20 +352,54 @@ func (s *simdDecoder) fill(r *simdReader, l, need, size int) bool {
 			return false
 		}
 		s.litBlocks++
-		v, nv, stored, ok := s.stream(r, simdLits, 1, min(pivco.MaxBlockSize, size-len(lits)), lits[len(lits):])
+		pos := r.pos
+		_, nv, stored, ok := s.stream(r, simdLits, 1, min(pivco.MaxBlockSize, size-len(lits)), lits[len(lits):])
 		if !ok {
 			return false
 		}
 		if stored {
-			lits = append(lits, v[:nv]...)
-		} else {
-			lits = lits[:len(lits)+nv]
+			// Literal blocks are stored back to back, so stored blocks in a row are one run.
+			if k := len(s.stored) - 1; k >= s.run && s.stored[k].off+s.stored[k].n == pos {
+				s.stored[k].n += nv
+			} else {
+				s.stored = append(s.stored, simdLitRun{at: len(lits), off: pos, n: nv})
+			}
 		}
+		lits = lits[:len(lits)+nv]
 	}
 	// The executors read up to 32 bytes past the literals of a chunk.
 	clear(lits[len(lits) : len(lits)+simdPad])
 	s.lits = lits
 	return true
+}
+
+// chunkLits returns the literals for a chunk that reads literals a to b, and the position of their first literal.
+// The executors read up to simdPad bytes past b. A run of stored literal blocks is read in place when it holds
+// a to b and the literal section holds the bytes after them. Otherwise the stored literals read are copied to lits.
+func (s *simdDecoder) chunkLits(a, b int) ([]byte, int) {
+	for s.run < len(s.stored) && s.stored[s.run].at+s.stored[s.run].n <= a {
+		s.run++
+	}
+	if s.run < len(s.stored) {
+		if r := s.stored[s.run]; r.at <= a && b <= r.at+r.n && r.off+b-r.at+simdPad <= len(s.litSec) {
+			return s.litSec[r.off:], r.at
+		}
+	}
+	s.copyStored(a, b+simdPad)
+	return s.lits[:cap(s.lits)], 0
+}
+
+// copyStored copies the stored literals from position a to b to lits.
+func (s *simdDecoder) copyStored(a, b int) {
+	lits := s.lits[:cap(s.lits)]
+	for _, r := range s.stored[s.run:] {
+		if r.at >= b {
+			break
+		}
+		if from, to := max(r.at, a), min(r.at+r.n, b); from < to {
+			copy(lits[from:to], s.litSec[r.off+from-r.at:])
+		}
+	}
 }
 
 // ops runs the chunks of the LZ section body[:end], with the literal blocks of lr.
@@ -366,7 +410,6 @@ func (s *simdDecoder) ops(dst, body []byte, end, limit int, st *[4]int, lr *simd
 		return false
 	}
 	r := simdReader{recs: body[end-n-int(t) : end-n], body: body, end: end - n - int(t)}
-	lits := s.lits[:cap(s.lits)]
 	for i := 0; len(r.recs) > 0; i++ {
 		flags := r.recs[0]
 		r.recs = r.recs[1:]
@@ -412,11 +455,15 @@ func (s *simdDecoder) ops(dst, body []byte, end, limit int, st *[4]int, lr *simd
 		c.raw = body[r.pos:]
 		r.pos += nb
 		// Each literal escape adds at most 255; the escapes of long matches can add far more.
-		if need := sumLL + min(sumEsc, 255*nLLEsc); st[1]+need > len(s.lits) && !s.fill(lr, st[1], need, len(dst)) {
+		need := sumLL + min(sumEsc, 255*nLLEsc)
+		if st[1]+need > len(s.lits) && !s.fill(lr, st[1], need, len(dst)) {
 			return false
 		}
+		lits, at := s.chunkLits(st[1], st[1]+need)
 		d := st[0]
+		st[1] -= at
 		c.run(dst, lits, out, st)
+		st[1] += at
 		// Chunks only use more literals than are decoded once the literal blocks run out.
 		if st[3] != 0 || st[1] > len(s.lits) {
 			return false
