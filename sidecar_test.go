@@ -28,6 +28,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -308,7 +309,7 @@ func TestSidecarSearcher_ReadPieces(t *testing.T) {
 		t.Fatal(err)
 	}
 	errStop := errors.New("stop")
-	search := func(ra io.ReaderAt, conc, stopAfter int, onStop func()) (got []int64, err error) {
+	search := func(t *testing.T, ra io.ReaderAt, conc, stopAfter int, onStop func()) (got []int64, err error) {
 		check := resultChecker(t, data, pat)
 		ss := NewSidecarSearcher(ra, bytes.NewReader(side.Bytes()), BlockSearchConcurrency(conc))
 		err = ss.Search(pat, func(r SearchResult) error {
@@ -322,31 +323,38 @@ func TestSidecarSearcher_ReadPieces(t *testing.T) {
 		})
 		return got, err
 	}
-	want, err := search(bytes.NewReader(main.Bytes()), 1, 0, nil)
+	want, err := search(t, bytes.NewReader(main.Bytes()), 1, 0, nil)
 	if err != nil || len(want) != countOccurrences(data, pat) {
 		t.Fatalf("conc 1: %v, %d matches, want %d", err, len(want), countOccurrences(data, pat))
 	}
 	g := newGatedReaderAt(main.Bytes())
 	close(g.release)
-	if got, err := search(g, 4, 0, nil); err != nil || !slices.Equal(got, want) {
+	if got, err := search(t, g, 4, 0, nil); err != nil || !slices.Equal(got, want) {
 		t.Fatalf("conc 4: %v, %d matches differ from concurrency 1", err, len(got))
 	}
-	// Stop while a later piece is still being read: Search must wait for it.
-	g = newGatedReaderAt(main.Bytes())
-	got, err := search(g, 4, 10, func() {
-		select {
-		case <-g.held:
-		case <-time.After(10 * time.Second):
-			t.Error("early stop: no read of the second half started")
+	// Stop while a later piece is still being read. Once every other goroutine
+	// is blocked (synctest.Wait), Search must still be waiting for that read.
+	synctest.Test(t, func(t *testing.T) {
+		g := newGatedReaderAt(main.Bytes())
+		var returned atomic.Bool
+		var early chan bool
+		got, err := search(t, g, 4, 10, func() {
+			<-g.held
+			early = make(chan bool, 1)
+			go func() {
+				synctest.Wait()
+				early <- returned.Load()
+				close(g.release)
+			}()
+		})
+		returned.Store(true)
+		if early != nil && <-early {
+			t.Error("early stop: Search returned with a read in flight")
 		}
-		time.AfterFunc(20*time.Millisecond, func() { close(g.release) })
+		if err != errStop || !slices.Equal(got, want[:10]) {
+			t.Errorf("early stop: got %v after %d matches", err, len(got))
+		}
 	})
-	if err != errStop || !slices.Equal(got, want[:10]) {
-		t.Fatalf("early stop: got %v after %d matches", err, len(got))
-	}
-	if n := g.active.Load(); n != 0 {
-		t.Fatalf("early stop: Search returned with %d ReadAt calls running", n)
-	}
 }
 
 // gatedReaderAt fails a ReadAt unless a second one starts while it waits, so
@@ -354,7 +362,7 @@ func TestSidecarSearcher_ReadPieces(t *testing.T) {
 // is closed.
 type gatedReaderAt struct {
 	b                     []byte
-	calls, active         atomic.Int32
+	calls                 atomic.Int32
 	second, held, release chan struct{}
 	heldOnce              sync.Once
 }
@@ -364,8 +372,6 @@ func newGatedReaderAt(b []byte) *gatedReaderAt {
 }
 
 func (g *gatedReaderAt) ReadAt(p []byte, off int64) (int, error) {
-	g.active.Add(1)
-	defer g.active.Add(-1)
 	if g.calls.Add(1) == 2 {
 		close(g.second)
 	}
@@ -376,7 +382,11 @@ func (g *gatedReaderAt) ReadAt(p []byte, off int64) (int, error) {
 	}
 	if off >= int64(len(g.b)/2) {
 		g.heldOnce.Do(func() { close(g.held) })
-		<-g.release
+		select {
+		case <-g.release:
+		case <-time.After(10 * time.Second):
+			return 0, errors.New("held read was not released")
+		}
 	}
 	return bytes.NewReader(g.b).ReadAt(p, off)
 }
