@@ -22,6 +22,7 @@ import (
 	"io"
 	"math"
 	"math/bits"
+	"slices"
 )
 
 // blockTableEntry is one search table associated with a block.
@@ -828,7 +829,7 @@ func (s *SidecarSearcher) processBlock(chunkType byte, chunkLen int, payload []b
 	if chunkLen < checksumSize {
 		return ErrCorrupt
 	}
-	decoded, err := decodeDataChunk(chunkType, payload, pd.ref.uncompSize, s.maxBlock, s.simd, s.ignoreCRC)
+	decoded, err := decodeDataChunk(nil, chunkType, payload, pd.ref.uncompSize, s.maxBlock, s.simd, s.ignoreCRC)
 	if err != nil {
 		return err
 	}
@@ -1131,12 +1132,12 @@ func readAndDecodeMainBlock(main io.ReaderAt, offset int64, uncomp, maxBlock int
 		}
 		buf = extra
 	}
-	return decodeDataChunk(ct, buf[4:4+cl], uncomp, maxBlock, simd, ignoreCRC)
+	return decodeDataChunk(nil, ct, buf[4:4+cl], uncomp, maxBlock, simd, ignoreCRC)
 }
 
-// decodeDataChunk decodes the payload of a data chunk into a fresh slice.
-// simd allows SIMD chunks.
-func decodeDataChunk(chunkType byte, payload []byte, uncompHint, maxBlock int, simd, ignoreCRC bool) ([]byte, error) {
+// decodeDataChunk decodes the payload of a data chunk into dst, which is
+// grown if needed. simd allows SIMD chunks.
+func decodeDataChunk(dst []byte, chunkType byte, payload []byte, uncompHint, maxBlock int, simd, ignoreCRC bool) ([]byte, error) {
 	if len(payload) < checksumSize {
 		return nil, ErrCorrupt
 	}
@@ -1150,7 +1151,7 @@ func decodeDataChunk(chunkType byte, payload []byte, uncompHint, maxBlock int, s
 		if uncompHint != 0 && len(body) != uncompHint {
 			return nil, fmt.Errorf("%w: uncompressed size mismatch: %d != %d", ErrSidecarInvalid, len(body), uncompHint)
 		}
-		out := make([]byte, len(body))
+		out := slices.Grow(dst[:0], len(body))[:len(body)]
 		copy(out, body)
 		return out, nil
 	case chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC:
@@ -1164,7 +1165,7 @@ func decodeDataChunk(chunkType byte, payload []byte, uncompHint, maxBlock int, s
 		if uncompHint != 0 && n != uncompHint {
 			return nil, fmt.Errorf("%w: decompressed size %d != hint %d", ErrSidecarInvalid, n, uncompHint)
 		}
-		out := make([]byte, n)
+		out := slices.Grow(dst[:0], n)[:n]
 		if ret := minLZDecode(out, body[hdrSize:]); ret != 0 {
 			return nil, ErrCorrupt
 		}
@@ -1187,7 +1188,7 @@ func decodeDataChunk(chunkType byte, payload []byte, uncompHint, maxBlock int, s
 		if uncompHint != 0 && n != uncompHint {
 			return nil, fmt.Errorf("%w: decompressed size %d != hint %d", ErrSidecarInvalid, n, uncompHint)
 		}
-		out := make([]byte, n)
+		out := slices.Grow(dst[:0], n)[:n]
 		if err := decodeSIMDChunk(out, payload, block, ignoreCRC); err != nil {
 			return nil, err
 		}
