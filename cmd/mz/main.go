@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,6 +31,7 @@ import (
 	"unicode"
 
 	"github.com/minio/minlz/cmd/internal/shttp"
+	"github.com/minio/minlz/internal/cpu"
 )
 
 var (
@@ -47,14 +49,21 @@ const (
 
 var debugErrs bool
 
+// outputs are removed by exitErr, so a failed run leaves no partial output.
+var outputs []*os.File
+
 func main() {
 	var cpuprofile, memprofile, traceprofile string
+	avx2, avx512, neon := cpu.AVX2, cpu.AVX512, cpu.NEON
 	if true {
 		flag.StringVar(&cpuprofile, "cpuprof", "", "write cpu profile to file")
 		flag.StringVar(&memprofile, "memprof", "", "write mem profile to file")
 		flag.StringVar(&traceprofile, "traceprof", "", "write trace profile to file")
 		flag.Bool("help", false, "print usage")
 		flag.BoolVar(&debugErrs, "debug", false, "trace errors")
+		flag.BoolVar(&cpu.AVX2, "avx2", cpu.AVX2, "use AVX2")
+		flag.BoolVar(&cpu.AVX512, "avx512", cpu.AVX512, "use AVX-512")
+		flag.BoolVar(&cpu.NEON, "neon", cpu.NEON, "use NEON")
 	}
 	flag.Usage = func() {
 		w := flag.CommandLine.Output()
@@ -75,6 +84,10 @@ func main() {
 		// Don't print flags.
 	}
 	flag.Parse()
+	// The flags may only turn features off, and AVX-512 needs AVX2.
+	cpu.AVX2 = cpu.AVX2 && avx2
+	cpu.AVX512 = cpu.AVX512 && avx512 && cpu.AVX2
+	cpu.NEON = cpu.NEON && neon
 
 	if cpuprofile != "" {
 		f, err := os.Create(cpuprofile)
@@ -148,8 +161,59 @@ func exitErr(err error) {
 			debug.PrintStack()
 		}
 		fmt.Fprintln(os.Stderr, "\nERROR:", err.Error())
+		for _, f := range outputs {
+			f.Close()
+			os.Remove(f.Name())
+		}
 		os.Exit(2)
 	}
+}
+
+// createOutput creates name for writing. Only the permission bits of mode are
+// used, so set-ID and sticky bits of an input aren't copied. With safe it fails
+// if anything exists at name, even a dangling symlink. Only a regular file is
+// removed on failure, never a device or symlink given as output.
+func createOutput(name string, mode os.FileMode, safe bool) *os.File {
+	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	if safe {
+		flags |= os.O_EXCL
+	}
+	f, err := os.OpenFile(name, flags, mode.Perm())
+	exitErr(err)
+	if st, err := os.Lstat(name); err == nil && st.Mode().IsRegular() {
+		outputs = append(outputs, f)
+	}
+	return f
+}
+
+// refuseStdin exits if name is the file stdin reads from, since creating the
+// output would truncate it before it is read. Devices such as /dev/null can be both.
+func refuseStdin(name string) {
+	so, err := os.Stat(name)
+	if err != nil || !so.Mode().IsRegular() {
+		return
+	}
+	if si, err := os.Stdin.Stat(); err == nil && os.SameFile(si, so) {
+		exitErr(fmt.Errorf("output %q would overwrite the input (stdin)", name))
+	}
+}
+
+// closeOutput flushes bw and closes f when set. Callers sync when the input is
+// about to be replaced or removed, since the output is then the only copy.
+// Pipes and devices keep no copy and fail fsync, so only regular files are synced.
+func closeOutput(bw *bufio.Writer, f *os.File, sync bool) {
+	if bw != nil {
+		exitErr(bw.Flush())
+	}
+	if f == nil {
+		return
+	}
+	if sync {
+		if st, err := f.Stat(); err == nil && st.Mode().IsRegular() {
+			exitErr(f.Sync())
+		}
+	}
+	exitErr(f.Close())
 }
 
 func isHTTP(name string) bool {

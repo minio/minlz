@@ -34,6 +34,7 @@ import (
 	"github.com/minio/minlz"
 	"github.com/minio/minlz/cmd/internal/filepathx"
 	"github.com/minio/minlz/cmd/internal/readahead"
+	"github.com/minio/minlz/internal/reference"
 )
 
 const maxBlockSize = 8 << 20
@@ -128,6 +129,9 @@ Options:`)
 		limitBytes, err = toSize(*limitString)
 		exitErr(err)
 	}
+	if *remove && (offset > 0 || tailBytes > 0 || limitBytes > 0) {
+		exitErr(errors.New("-rm cannot be used with --offset, --tail or --limit"))
+	}
 
 	*block = *block || *blockDebug
 	r := minlz.NewReader(nil, minlz.ReaderFallback(true))
@@ -161,20 +165,12 @@ Options:`)
 			exitErr(err)
 			return
 		}
-		dstFilename := *out
-		if *safe {
-			_, err := os.Stat(dstFilename)
-			if !os.IsNotExist(err) {
-				exitErr(errors.New("destination files exists"))
-			}
-		}
-		dstFile, err := os.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
-		exitErr(err)
-		defer dstFile.Close()
+		refuseStdin(*out)
+		dstFile := createOutput(*out, os.ModePerm, *safe)
 		bw := bufio.NewWriterSize(dstFile, 4<<20)
-		defer bw.Flush()
 		_, err = io.Copy(bw, r)
 		exitErr(err)
+		closeOutput(bw, dstFile, false)
 		return
 	}
 	var files []string
@@ -253,6 +249,8 @@ Options:`)
 		}
 		if *verify {
 			dstFilename = "(verify)"
+		} else if !*stdout && samePath(filename, dstFilename) {
+			exitErr(fmt.Errorf("output %q would overwrite the input %q", dstFilename, filename))
 		}
 		cfg := &decompressConfig{
 			quiet:       quiet,
@@ -351,26 +349,19 @@ func (cfg *decompressConfig) decompressFile() {
 	} else {
 		src = rc
 	}
-	if *cfg.safe {
-		_, err := os.Stat(cfg.dstFilename)
-		if !os.IsNotExist(err) {
-			exitErr(errors.New("destination files exists"))
-		}
-	}
 	var out io.Writer
+	var dstFile *os.File
+	var bw *bufio.Writer
 	switch {
 	case *cfg.verify:
 		out = io.Discard
 	case *cfg.stdout:
 		out = os.Stdout
 	default:
-		dstFile, err := os.OpenFile(cfg.dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-		exitErr(err)
-		defer dstFile.Close()
+		dstFile = createOutput(cfg.dstFilename, mode, *cfg.safe)
 		out = dstFile
 		if !cfg.block {
-			bw := bufio.NewWriterSize(dstFile, 4<<20)
-			defer bw.Flush()
+			bw = bufio.NewWriterSize(dstFile, 4<<20)
 			out = bw
 		}
 	}
@@ -448,6 +439,8 @@ func (cfg *decompressConfig) decompressFile() {
 		output, err = io.Copy(out, decoded)
 	}
 	exitErr(err)
+	closeOutput(bw, dstFile, *cfg.remove)
+	outputs = nil
 	if !*cfg.quiet {
 		elapsed := time.Since(start)
 		mbPerSec := (float64(output) / 1e6) / (float64(elapsed) / (float64(time.Second)))
@@ -677,6 +670,38 @@ func decodedLen(src []byte) (blockLen, headerLen int, err error) {
 // The dst and src must not overlap. It is valid to pass a nil dst.
 func DecodeDebug(dst, src []byte) (ok bool) {
 	fmt.Println("")
+	if len(src) > 1 && src[0] == 0 {
+		if v, n := binary.Uvarint(src[1:]); n > 0 && v>>24 != 0 {
+			if v>>24 != 1 {
+				fmt.Printf("Block type %d (reserved)\n", v>>24)
+				return false
+			}
+			fmt.Printf("Block type %d (SIMD): %d -> %d bytes\n", v>>24, len(src), v&(1<<24-1))
+			d := 0
+			out, err := reference.WalkSIMDBlock(src, &reference.SIMDWalker{
+				Entry: func(stream, mode, values, data, table int) {
+					fmt.Printf("[ENTRY ] %s: %s, %d values, %d bytes, table %d bytes\n", simdStreamNames[stream], simdModeNames[mode], values, data, table)
+				},
+				Chunk: func(flags byte, ops int) {
+					fmt.Printf("[CHUNK ] %d operations, flags %#x\n", ops, flags)
+				},
+				Op: func(lits, ml, offset int, repeat bool) {
+					fmt.Printf("%08d\t[OP    ] literals: %d, match: %d, offset: %d", d, lits, ml, offset)
+					if repeat && ml > 0 {
+						fmt.Print(" [REPEAT]")
+					}
+					fmt.Println()
+					d += lits + ml
+				},
+			})
+			if err != nil {
+				fmt.Println("ERROR:", err)
+				return false
+			}
+			fmt.Printf("%08d\t[LITS  ] - length: %d\n", d, len(out)-d)
+			return true
+		}
+	}
 	isMLZ, lits, block, dLen, err := isMinLZ(src)
 	if err != nil {
 		return false

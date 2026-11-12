@@ -384,3 +384,83 @@ func TestReaderSkipCRC(t *testing.T) {
 		}
 	}
 }
+
+// TestDecodeConcurrentErrorPrefix checks that DecodeConcurrent and WriteTo write exactly the blocks before a failed one.
+func TestDecodeConcurrentErrorPrefix(t *testing.T) {
+	const blockSize, blocks, bad = 64 << 10, 16, 2
+	text := seekTestData(blocks*blockSize, 1)
+	random := make([]byte, blocks*blockSize)
+	rand.New(rand.NewSource(1)).Read(random)
+	for _, tc := range []struct {
+		data  []byte
+		level int
+		typ   byte
+	}{
+		{random, LevelBalanced, chunkTypeUncompressedData},
+		{text, LevelBalanced, chunkTypeMinLZCompressedData},
+		{text, LevelBalancedSIMD, chunkTypeMinLZSIMD},
+	} {
+		var buf bytes.Buffer
+		w := NewWriter(&buf, WriterLevel(tc.level), WriterBlockSize(blockSize), WriterConcurrency(1))
+		if _, err := w.Write(tc.data); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		stream := buf.Bytes()
+		var chunks []int
+		for off := 0; off < len(stream); off += chunkHeaderSize + (int(stream[off+1]) | int(stream[off+2])<<8 | int(stream[off+3])<<16) {
+			if stream[off] == tc.typ {
+				chunks = append(chunks, off)
+			}
+		}
+		if len(chunks) != blocks {
+			t.Fatalf("chunk%02x: got %d chunks, want %d", tc.typ, len(chunks), blocks)
+		}
+		crcErr := bytes.Clone(stream)
+		crcErr[chunks[bad]+chunkHeaderSize] ^= 1
+		for name, c := range map[string]struct {
+			stream []byte
+			err    error
+		}{
+			"checksum":  {crcErr, ErrCRC},
+			"truncated": {stream[:chunks[bad]+chunkHeaderSize+10], ErrCorrupt},
+		} {
+			// Concurrency 0 is WriteTo.
+			for _, concurrent := range []int{0, 2, 4} {
+				t.Run(fmt.Sprintf("chunk%02x/%s/cpu%d", tc.typ, name, concurrent), func(t *testing.T) {
+					var out bytes.Buffer
+					r := NewReader(bytes.NewReader(c.stream))
+					var n int64
+					var err error
+					if concurrent == 0 {
+						n, err = io.Copy(&out, r)
+					} else {
+						n, err = r.DecodeConcurrent(&out, concurrent)
+					}
+					if !errors.Is(err, c.err) {
+						t.Fatalf("got error %v, want %v", err, c.err)
+					}
+					if n != int64(out.Len()) || !bytes.Equal(out.Bytes(), tc.data[:bad*blockSize]) {
+						t.Fatalf("wrote %d (%d) bytes, want the %d bytes before the failed block", out.Len(), n, bad*blockSize)
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestReaderOversizedUncompressedChunk checks that Read and Skip report an uncompressed chunk
+// larger than the block size allows as corrupt.
+func TestReaderOversizedUncompressedChunk(t *testing.T) {
+	n := MaxEncodedLen(64<<10) + checksumSize + 1
+	stream := append([]byte(magicChunk), 16-10, chunkTypeUncompressedData, byte(n), byte(n>>8), byte(n>>16))
+	stream = append(stream, make([]byte, n)...)
+	if _, err := io.ReadAll(NewReader(bytes.NewReader(stream))); !errors.Is(err, ErrCorrupt) {
+		t.Errorf("Read: got %v, want %v", err, ErrCorrupt)
+	}
+	if err := NewReader(bytes.NewReader(stream)).Skip(1); !errors.Is(err, ErrCorrupt) {
+		t.Errorf("Skip: got %v, want %v", err, ErrCorrupt)
+	}
+}

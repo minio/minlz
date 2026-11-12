@@ -16,6 +16,7 @@ package minlz_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -25,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/minio/minlz"
+	"github.com/minio/minlz/internal/reference"
 )
 
 func ExampleIndex_Load() {
@@ -270,6 +272,30 @@ func TestSeeking(t *testing.T) {
 	})
 }
 
+// TestIndexMaxEntries checks that an index with 65536 entries, the maximum, loads, and one with more doesn't.
+func TestIndexMaxEntries(t *testing.T) {
+	const est = 1 << 20
+	index := func(n int) []byte {
+		b := binary.AppendVarint(nil, int64(n)*est)
+		b = binary.AppendVarint(b, -1)
+		b = binary.AppendVarint(b, est)
+		b = binary.AppendVarint(b, int64(n))
+		// No uncompressed offsets, and compressed offsets as zero deltas from the estimate.
+		return minlz.RestoreIndexHeaders(append(b, make([]byte, 1+n)...))
+	}
+	for _, n := range []int{1 << 16, 1<<16 + 1} {
+		ok := n <= 1<<16
+		var i minlz.Index
+		if _, err := i.Load(index(n)); (err == nil) != ok || ok && len(i.Offsets) != n {
+			t.Errorf("%d entries: got %d offsets, error %v", n, len(i.Offsets), err)
+		}
+		ref, err := reference.LoadIndex(index(n))
+		if (err == nil) != ok || ok && len(ref.Blocks) != n {
+			t.Errorf("reference, %d entries: error %v", n, err)
+		}
+	}
+}
+
 // TestIndexFindNoZeroEntry checks that offsets before the first entry of an index that
 // doesn't start at 0 map to the implied (0, 0) entry, on both the linear and the binary search path.
 func TestIndexFindNoZeroEntry(t *testing.T) {
@@ -329,6 +355,47 @@ func TestIndexStreamEmptyChunks(t *testing.T) {
 					t.Errorf("type %d, %d empty: entry %d = %+v, want %+v", empty[0], n, k, got.Offsets[k], o)
 				}
 			}
+		}
+	}
+}
+
+// TestIndexEmptyStream checks that an empty stream gets no index, and that a ReadSeeker reports that.
+func TestIndexEmptyStream(t *testing.T) {
+	for _, pad := range []int{1, 64} {
+		var buf, ref bytes.Buffer
+		w := minlz.NewWriter(&buf, minlz.WriterAddIndex(true), minlz.WriterPadding(pad))
+		if idx, err := w.CloseIndex(); idx != nil || err != nil {
+			t.Fatalf("padding %d: index of %d bytes, %v", pad, len(idx), err)
+		}
+		minlz.NewWriter(&ref).Close()
+		if pad == 1 && !bytes.Equal(buf.Bytes(), ref.Bytes()) {
+			t.Fatalf("stream %x, want %x", buf.Bytes(), ref.Bytes())
+		}
+		r := minlz.NewReader(bytes.NewReader(buf.Bytes()))
+		if b, err := io.ReadAll(r); len(b) != 0 || err != nil {
+			t.Fatalf("padding %d: decoded %d bytes, %v", pad, len(b), err)
+		}
+		r.Reset(bytes.NewReader(buf.Bytes()))
+		if _, err := r.ReadSeeker(nil); err != (minlz.ErrCantSeek{Reason: "input stream does not contain an index"}) {
+			t.Fatalf("padding %d: %v", pad, err)
+		}
+	}
+}
+
+// TestIndexLoadStreamShort checks LoadStream on streams too short for the index their trailer gives.
+func TestIndexLoadStreamShort(t *testing.T) {
+	trailer := append(binary.LittleEndian.AppendUint32(nil, 100), minlz.IndexTrailer...)
+	for _, tc := range []struct {
+		in   []byte
+		want error
+	}{
+		{nil, minlz.ErrUnsupported},
+		{[]byte{1, 2, 3, 4, 5}, minlz.ErrUnsupported},
+		{trailer, io.ErrUnexpectedEOF},
+	} {
+		var i minlz.Index
+		if err := i.LoadStream(bytes.NewReader(tc.in)); err != tc.want {
+			t.Errorf("%x: %v, want %v", tc.in, err, tc.want)
 		}
 	}
 }
@@ -647,4 +714,35 @@ func ExampleIndexStream() {
 	// Index saved
 	// last 10 bytes read
 	// 10 bytes at offset 10 read
+}
+
+// TestRemoveIndexHeadersShortChunk feeds RemoveIndexHeaders chunk lengths that
+// are too short to hold the header, size field and trailer it trims off. The
+// chunk length is attacker controlled, so a nil return is required rather than
+// a slice bounds panic.
+func TestRemoveIndexHeadersShortChunk(t *testing.T) {
+	// Valid index to splice a bad chunk length into.
+	var compressed bytes.Buffer
+	enc := minlz.NewWriter(&compressed, minlz.WriterBlockSize(4<<10))
+	for i := range 1000 {
+		fmt.Fprintf(enc, "Item %019d\n", i)
+	}
+	index, err := enc.CloseIndex()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if minlz.RemoveIndexHeaders(index) == nil {
+		t.Fatal("removing headers from a valid index failed")
+	}
+
+	minChunkLen := len(minlz.IndexHeader) + len(minlz.IndexTrailer) + 4
+	for _, chunkLen := range []int{0, 1, len(minlz.IndexHeader) - 1, len(minlz.IndexHeader), minChunkLen - 1} {
+		t.Run(fmt.Sprintf("chunkLen=%d", chunkLen), func(t *testing.T) {
+			b := append([]byte(nil), index...)
+			b[1], b[2], b[3] = uint8(chunkLen), uint8(chunkLen>>8), uint8(chunkLen>>16)
+			if got := minlz.RemoveIndexHeaders(b); got != nil {
+				t.Errorf("want nil, got %d bytes", len(got))
+			}
+		})
+	}
 }

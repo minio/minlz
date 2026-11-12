@@ -15,7 +15,6 @@
 package minlz
 
 import (
-	"bytes"
 	"hash/crc32"
 )
 
@@ -112,6 +111,12 @@ const (
 	maxS2BlockSize = 4 << 20
 
 	obufHeaderLen = checksumSize + chunkHeaderSize
+
+	// simdHashSize is the size of the XXH3 hash that starts a SIMD chunk.
+	simdHashSize = 8
+
+	// streamFlagSIMD is the stream identifier flag of streams with SIMD chunks.
+	streamFlagSIMD = 1 << 6
 )
 
 // Internal chunk ids
@@ -120,6 +125,7 @@ const (
 	chunkTypeUncompressedData           = 0x01
 	chunkTypeMinLZCompressedData        = 0x02
 	chunkTypeMinLZCompressedDataCompCRC = 0x03
+	chunkTypeMinLZSIMD                  = 0x10
 	chunkTypeEOF                        = 0x20
 	maxNonSkippableChunk                = 0x3f
 	chunkTypeIndex                      = 0x40 // chunk id of MinLZ index
@@ -135,12 +141,10 @@ var crcTable = crc32.MakeTable(crc32.Castagnoli)
 // crc implements the checksum specified in section 3 of
 // https://github.com/google/snappy/blob/master/framing_format.txt
 func crc(b []byte) uint32 {
-	c := crc32.Update(0, crcTable, b)
+	return crcMask(crc32.Update(0, crcTable, b))
+}
+
+// crcMask masks a CRC-32C as crc does.
+func crcMask(c uint32) uint32 {
 	return c>>15 | c<<17 + 0xa282ead8
 }
-
-type byter interface {
-	Bytes() []byte
-}
-
-var _ byter = &bytes.Buffer{}

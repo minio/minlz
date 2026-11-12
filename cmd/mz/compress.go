@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -44,6 +45,8 @@ func mainCompress(args []string) {
 		faster             = fs.Bool("1", false, "Compress faster, but with a minor compression loss")
 		_                  = fs.Bool("2", true, "Default compression speed")
 		slower             = fs.Bool("3", false, "Compress more, but a lot slower")
+		classic            = fs.Bool("classic", false, "Write classic MinLZ blocks, which all MinLZ decoders can read. Without it, SIMD blocks are written, which need a decoder for MinLZ format specification v1.1")
+		simdDelta          = fs.Bool("simd.delta", false, "Store SIMD literals as deltas, mainly for binary data. Not with -classic, -0 or -3, which decides itself")
 		recomp             = fs.Bool("recomp", false, "Recompress MinLZ, Snappy or S2 input")
 		blockSize          = fs.String("bs", "8M", "Max block size. Examples: 64K, 256K, 1M, 8M. Must be power of two and <= 8MB")
 		index              = fs.Bool("index", true, "Add seek index")
@@ -127,6 +130,24 @@ Options:`)
 	if *nocomp {
 		level = minlz.LevelUncompressed
 	}
+	if *simdDelta && (*classic || level == minlz.LevelUncompressed || level == minlz.LevelSmallest) {
+		exitErr(errors.New("-simd.delta cannot be used with -classic, -0 or -3"))
+	}
+	if !*classic {
+		switch level {
+		case minlz.LevelSuperFast:
+			level = minlz.LevelSuperFastSIMD
+		case minlz.LevelFastest:
+			level = minlz.LevelFastestSIMD
+		case minlz.LevelBalanced:
+			level = minlz.LevelBalancedSIMD
+		case minlz.LevelSmallest:
+			level = minlz.LevelSmallestSIMD
+		}
+		if *simdDelta {
+			level |= minlz.LevelSIMDDelta
+		}
+	}
 	opts := []minlz.WriterOption{minlz.WriterBlockSize(blockSizeInt), minlz.WriterConcurrency(*cpu), minlz.WriterPadding(padInt), minlz.WriterLevel(level), minlz.WriterAddIndex(*index)}
 	if *searchTable {
 		if len(*searchPfxString) > 0 && len(*searchPfx) > 0 {
@@ -206,42 +227,32 @@ Options:`)
 		// Catch interrupt, so we don't exit at once.
 		// os.Stdin will return EOF, so we should be able to get everything.
 		signal.Notify(make(chan os.Signal, 1), os.Interrupt)
+		var dstFile, sideFile *os.File
+		var bw, sbw *bufio.Writer
 		if len(*out) == 0 {
 			if *searchSidecar {
 				exitErr(errors.New("-search.sidecar requires -o when reading stdin"))
 			}
 			wr.Reset(os.Stdout)
 		} else {
-			if *safe {
-				_, err := os.Stat(*out)
-				if !os.IsNotExist(err) {
-					exitErr(errors.New("destination file exists"))
-				}
+			refuseStdin(*out)
+			if *searchSidecar {
+				refuseStdin(*out + minlzSidecarExt)
 			}
-			dstFile, err := os.OpenFile(*out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
-			exitErr(err)
-			defer func() { exitErr(dstFile.Close()) }()
-			bw := bufio.NewWriterSize(dstFile, blockSizeInt*2)
-			defer func() { exitErr(bw.Flush()) }()
+			dstFile = createOutput(*out, os.ModePerm, *safe)
+			bw = bufio.NewWriterSize(dstFile, blockSizeInt*2)
 			wr.Reset(bw)
 			if *searchSidecar {
-				sideName := *out + minlzSidecarExt
-				if *safe {
-					if _, err := os.Stat(sideName); !os.IsNotExist(err) {
-						exitErr(fmt.Errorf("sidecar destination %s exists", sideName))
-					}
-				}
-				sideFile, err := os.OpenFile(sideName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
-				exitErr(err)
-				defer func() { exitErr(sideFile.Close()) }()
-				sbw := bufio.NewWriterSize(sideFile, 64<<10)
-				defer func() { exitErr(sbw.Flush()) }()
+				sideFile = createOutput(*out+minlzSidecarExt, os.ModePerm, *safe)
+				sbw = bufio.NewWriterSize(sideFile, 64<<10)
 				exitErr(wr.SetSidecar(sbw))
 			}
 		}
 		_, err = wr.ReadFrom(os.Stdin)
-		printErr(err)
-		printErr(wr.Close())
+		exitErr(err)
+		exitErr(wr.Close())
+		closeOutput(bw, dstFile, false)
+		closeOutput(sbw, sideFile, false)
 		return
 	}
 	var files []string
@@ -335,15 +346,18 @@ func processStream(filename string, o streamCompressOpts) {
 		fmt.Print("Compressing ", filename, " -> ", dstFilename)
 	}
 
-	if dstFilename == filename && !o.stdout {
+	sideName := dstFilename + minlzSidecarExt
+	if !o.stdout && o.searchSidecar && samePath(filename, sideName) {
+		exitErr(errors.New("sidecar output would overwrite the input"))
+	}
+	inPlace := !o.stdout && samePath(filename, dstFilename)
+	if inPlace {
 		if o.remove {
 			exitErr(errors.New("cannot remove when input = output"))
 		}
-		renameDst := dstFilename
-		dstFilename = fmt.Sprintf(".tmp-%s%s", time.Now().Format("2006-01-02T15-04-05Z07"), o.ext)
-		defer func() {
-			exitErr(os.Rename(dstFilename, renameDst))
-		}()
+		if o.safe {
+			exitErr(errors.New("destination file exists"))
+		}
 	}
 
 	// Input file.
@@ -370,21 +384,18 @@ func processStream(filename string, o streamCompressOpts) {
 	}
 
 	var out io.Writer
+	var dstFile, sideFile *os.File
+	var bw, sbw *bufio.Writer
 	switch {
 	case o.stdout:
 		out = os.Stdout
+	case inPlace:
+		dstFile = createTemp(dstFilename, o.ext, mode)
 	default:
-		if o.safe {
-			_, err := os.Stat(dstFilename)
-			if !os.IsNotExist(err) {
-				exitErr(errors.New("destination file exists"))
-			}
-		}
-		dstFile, err := os.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-		exitErr(err)
-		defer dstFile.Close()
-		bw := bufio.NewWriterSize(dstFile, o.blockSize*2)
-		defer bw.Flush()
+		dstFile = createOutput(dstFilename, mode, o.safe)
+	}
+	if dstFile != nil {
+		bw = bufio.NewWriterSize(dstFile, o.blockSize*2)
 		out = bw
 	}
 	out, errFn := verifyTo(out, o.verify, o.quiet, o.cpu)
@@ -392,20 +403,10 @@ func processStream(filename string, o streamCompressOpts) {
 	start := time.Now()
 	o.wr.Reset(&wc)
 	defer o.wr.Close()
-	var sideName string
 	var sideCount *wCounter
 	if o.searchSidecar {
-		sideName = dstFilename + minlzSidecarExt
-		if o.safe {
-			if _, err := os.Stat(sideName); !os.IsNotExist(err) {
-				exitErr(fmt.Errorf("sidecar destination %s exists", sideName))
-			}
-		}
-		sideFile, err := os.OpenFile(sideName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-		exitErr(err)
-		defer sideFile.Close()
-		sbw := bufio.NewWriterSize(sideFile, 64<<10)
-		defer sbw.Flush()
+		sideFile = createOutput(sideName, mode, o.safe)
+		sbw = bufio.NewWriterSize(sideFile, 64<<10)
 		sideCount = &wCounter{out: sbw}
 		exitErr(o.wr.SetSidecar(sideCount))
 	} else {
@@ -417,6 +418,8 @@ func processStream(filename string, o streamCompressOpts) {
 	err = o.wr.Close()
 
 	exitErr(err)
+	closeOutput(bw, dstFile, inPlace || o.remove)
+	closeOutput(sbw, sideFile, false)
 	if !o.quiet {
 		input := rc.n
 		elapsed := time.Since(start)
@@ -430,6 +433,12 @@ func processStream(filename string, o streamCompressOpts) {
 		}
 	}
 	exitErr(errFn())
+	if inPlace {
+		// Windows can't rename over a file that is still open.
+		closeOnce.Do(func() { file.Close() })
+		exitErr(os.Rename(dstFile.Name(), dstFilename))
+	}
+	outputs = nil
 	if o.remove {
 		closeOnce.Do(func() {
 			file.Close()
@@ -442,6 +451,20 @@ func processStream(filename string, o streamCompressOpts) {
 	}
 }
 
+// createTemp creates a temp file beside name, to be renamed over it once complete.
+func createTemp(name, ext string, mode os.FileMode) *os.File {
+	if !mode.IsRegular() {
+		// The rename would replace a device or pipe with a regular file.
+		exitErr(errors.New("cannot write in place to a non-regular file"))
+	}
+	f, err := os.CreateTemp(filepath.Dir(name), ".tmp-*"+ext)
+	exitErr(err)
+	outputs = append(outputs, f)
+	// CreateTemp makes it 0600; the renamed file should keep the input's mode.
+	exitErr(f.Chmod(mode.Perm()))
+	return f
+}
+
 func processBlock(recomp *bool, filename string, ext string, outFile *string, quiet *bool, err error, stdout *bool, safe *bool, level int, verify *bool, remove *bool) {
 	if *recomp {
 		exitErr(errors.New("cannot recompress blocks (yet)"))
@@ -451,6 +474,13 @@ func processBlock(recomp *bool, filename string, ext string, outFile *string, qu
 		dstFilename := cleanFileName(fmt.Sprintf("%s%s", filename, ext))
 		if *outFile != "" {
 			dstFilename = *outFile
+		}
+		inPlace := !*stdout && samePath(filename, dstFilename)
+		if inPlace && *remove {
+			exitErr(errors.New("cannot remove when input = output"))
+		}
+		if inPlace && *safe {
+			exitErr(errors.New("destination file exists"))
 		}
 		if !*quiet {
 			fmt.Print("Compressing ", filename, " -> ", dstFilename)
@@ -466,19 +496,15 @@ func processBlock(recomp *bool, filename string, ext string, outFile *string, qu
 		exitErr(err)
 
 		var out io.Writer
+		var dstFile *os.File
 		switch {
 		case *stdout:
 			out = os.Stdout
+		case inPlace:
+			dstFile = createTemp(dstFilename, ext, mode)
+			out = dstFile
 		default:
-			if *safe {
-				_, err := os.Stat(dstFilename)
-				if !os.IsNotExist(err) {
-					exitErr(errors.New("destination file exists"))
-				}
-			}
-			dstFile, err := os.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-			exitErr(err)
-			defer dstFile.Close()
+			dstFile = createOutput(dstFilename, mode, *safe)
 			out = dstFile
 		}
 		start := time.Now()
@@ -486,6 +512,7 @@ func processBlock(recomp *bool, filename string, ext string, outFile *string, qu
 		exitErr(err)
 		_, err = out.Write(compressed)
 		exitErr(err)
+		closeOutput(nil, dstFile, inPlace || *remove)
 		if !*quiet {
 			elapsed := time.Since(start)
 			mbpersec := (float64(len(inBytes)) / 1e6) / (float64(elapsed) / (float64(time.Second)))
@@ -503,6 +530,11 @@ func processBlock(recomp *bool, filename string, ext string, outFile *string, qu
 				fmt.Print("... Verified ok.")
 			}
 		}
+		if inPlace {
+			closeOnce.Do(func() { file.Close() })
+			exitErr(os.Rename(dstFile.Name(), dstFilename))
+		}
+		outputs = nil
 		if *remove {
 			closeOnce.Do(func() {
 				file.Close()
@@ -826,11 +858,5 @@ func verifyTo(w io.Writer, verify, quiet bool, cpu int) (io.Writer, func() error
 			}
 		}
 		return err
-	}
-}
-
-func printErr(err error) {
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "\nERROR:", err.Error())
 	}
 }

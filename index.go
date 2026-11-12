@@ -84,15 +84,21 @@ func (i *Index) add(compressedOffset, uncompressedOffset int64) error {
 	lastIdx := len(i.Offsets) - 1
 	if lastIdx >= 0 {
 		latest := i.Offsets[lastIdx]
-		if uncompressedOffset-latest.UncompressedOffset < i.estBlockUncomp {
-			// Don't add until we have i.estBlockUncomp
-			return nil
-		}
 		if latest.UncompressedOffset > uncompressedOffset {
 			return fmt.Errorf("internal error: Earlier uncompressed received (%d > %d)", latest.UncompressedOffset, uncompressedOffset)
 		}
 		if latest.CompressedOffset > compressedOffset {
-			return fmt.Errorf("internal error: Earlier compressed received (%d > %d)", latest.UncompressedOffset, uncompressedOffset)
+			return fmt.Errorf("internal error: Earlier compressed received (%d > %d)", latest.CompressedOffset, compressedOffset)
+		}
+		if uncompressedOffset == latest.UncompressedOffset {
+			// The stream header, user chunks and search tables come before the block
+			// at the same offset; point at the block, wherever the writer adds them.
+			i.Offsets[lastIdx].CompressedOffset = compressedOffset
+			return nil
+		}
+		if uncompressedOffset-latest.UncompressedOffset < i.estBlockUncomp {
+			// Don't add until we have i.estBlockUncomp
+			return nil
 		}
 	}
 	i.Offsets = append(i.Offsets, OffsetPair{CompressedOffset: compressedOffset, UncompressedOffset: uncompressedOffset})
@@ -415,8 +421,14 @@ func (i *Index) Load(b []byte) ([]byte, error) {
 // io.ErrUnexpectedEOF is returned if there are too few bytes.
 // IO errors are returned as-is.
 func (i *Index) LoadStream(rs io.ReadSeeker) error {
-	// Go to end.
-	_, err := rs.Seek(-10, io.SeekEnd)
+	size, err := rs.Seek(0, io.SeekEnd)
+	if err != nil {
+		return err
+	}
+	if size < 10 {
+		return ErrUnsupported
+	}
+	_, err = rs.Seek(-10, io.SeekEnd)
 	if err != nil {
 		return err
 	}
@@ -432,6 +444,9 @@ func (i *Index) LoadStream(rs io.ReadSeeker) error {
 	sz := binary.LittleEndian.Uint32(tmp[:4])
 	if sz > MaxUserChunkSize+skippableFrameHeader {
 		return ErrCorrupt
+	}
+	if int64(sz) > size {
+		return io.ErrUnexpectedEOF
 	}
 	_, err = rs.Seek(-int64(sz), io.SeekEnd)
 	if err != nil {
@@ -456,7 +471,7 @@ func (i *Index) LoadStream(rs io.ReadSeeker) error {
 func IndexStream(r io.Reader) ([]byte, error) {
 	var i Index
 	var buf [MaxUserChunkSize]byte
-	var readHeader bool
+	var readHeader, simd bool
 	for {
 		_, err := io.ReadFull(r, buf[:4])
 		if err != nil {
@@ -485,13 +500,26 @@ func IndexStream(r io.Reader) ([]byte, error) {
 		}
 
 		switch chunkType {
-		case chunkTypeLegacyCompressedData, chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC:
+		case chunkTypeLegacyCompressedData, chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC, chunkTypeMinLZSIMD:
 			// Section 4.2. Compressed data (chunk type 0x00).
 			if chunkLen < checksumSize {
 				return nil, ErrCorrupt
 			}
-			// Skip checksum.
-			dLen, err := DecodedLen(buf[checksumSize:chunkLen])
+			var dLen int
+			if chunkType == chunkTypeMinLZSIMD {
+				if !simd {
+					return nil, ErrCorrupt
+				}
+				dLen, _, err = simdChunkHeader(buf[:chunkLen], maxBlockSize)
+			} else if chunkType == chunkTypeLegacyCompressedData {
+				// Skip checksum.
+				dLen, err = DecodedLen(buf[checksumSize:chunkLen])
+			} else {
+				dLen, _, err = minLZChunkLen(buf[checksumSize:chunkLen])
+				if err == nil && dLen > maxBlockSize {
+					err = ErrTooLarge
+				}
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -543,6 +571,7 @@ func IndexStream(r io.Reader) ([]byte, error) {
 					}
 				}
 			}
+			simd = string(buf[:len(magicBody)]) == magicBody && buf[magicBodyLen-1]&streamFlagSIMD != 0
 			continue
 		case chunkTypeEOF:
 			continue
@@ -586,7 +615,9 @@ func (i *Index) JSON() []byte {
 // Returns nil if headers contains errors.
 // The returned slice references the provided slice.
 func RemoveIndexHeaders(b []byte) []byte {
-	const save = 4 + len(IndexHeader) + len(IndexTrailer) + 4
+	// Chunk content that is trimmed off below.
+	const minChunkLen = len(IndexHeader) + len(IndexTrailer) + 4
+	const save = skippableFrameHeader + minChunkLen
 	if len(b) <= save {
 		return nil
 	}
@@ -596,8 +627,9 @@ func RemoveIndexHeaders(b []byte) []byte {
 	chunkLen := int(b[1]) | int(b[2])<<8 | int(b[3])<<16
 	b = b[4:]
 
-	// Validate we have enough...
-	if len(b) < chunkLen {
+	// Validate we have enough, and that the chunk itself is long enough
+	// to hold what is trimmed off below.
+	if len(b) < chunkLen || chunkLen < minChunkLen {
 		return nil
 	}
 	b = b[:chunkLen]

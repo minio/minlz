@@ -67,7 +67,7 @@ jobs:
 
     - name: Generate
       working-directory: ./_generate
-      run: go generate -v -x
+      run: go generate -v -x ./...
 
     - name: Git Status
       run: |
@@ -89,6 +89,9 @@ jobs:
 
     - name: fmt
       run: diff <(gofmt -d .) <(printf "")
+
+    - name: asmfmt
+      run: diff <(go run github.com/klauspost/asmfmt/cmd/asmfmt@v1.3.2 -d $(git ls-files '*.s')) <(printf "")
 
     - name: fix
       run: diff <(go fix -diff ./...) <(printf "")
@@ -123,8 +126,22 @@ jobs:
     strategy:
       matrix:
         tags: [ '', 'nounsafe', '"noasm,nounsafe"' ]
-        tests: ['FuzzEncodingBlocks', 'FuzzDecodeBlock', 'FuzzStreamEncode', 'FuzzStreamDecode', 'FuzzCompressedSearchRoundtrip', 'FuzzDecodeCompressedSearchChunk']
+        tests: ['FuzzEncodingBlocks', 'FuzzDecodeBlock', 'FuzzDecodeSIMD', 'FuzzStreamEncode', 'FuzzStreamDecode', 'FuzzCompressedSearchRoundtrip', 'FuzzDecodeCompressedSearchChunk']
         os: [ubuntu-latest, ubuntu-24.04-arm]
+        # The pivco fuzzers compare the kernel tiers; the NEON kernels get no other direct fuzzing.
+        # noasm leaves only the generic tier.
+        include:
+          # Anchored: FuzzDecodeBlock also matches FuzzDecodeBlockFixed, and is a root fuzzer name.
+          - { os: ubuntu-24.04-arm, tags: '', pkg: ./internal/pivco, tests: '^FuzzDecodeBlock$' }
+          - { os: ubuntu-24.04-arm, tags: nounsafe, pkg: ./internal/pivco, tests: '^FuzzDecodeBlock$' }
+          - { os: ubuntu-24.04-arm, tags: '', pkg: ./internal/pivco, tests: FuzzDecodeBlockFixed }
+          - { os: ubuntu-24.04-arm, tags: nounsafe, pkg: ./internal/pivco, tests: FuzzDecodeBlockFixed }
+          - { os: ubuntu-24.04-arm, tags: '', pkg: ./internal/pivco, tests: FuzzRoundTripBlock }
+          - { os: ubuntu-24.04-arm, tags: nounsafe, pkg: ./internal/pivco, tests: FuzzRoundTripBlock }
+          - { os: ubuntu-24.04-arm, tags: '', pkg: ./internal/pivco, tests: FuzzTable }
+          - { os: ubuntu-24.04-arm, tags: nounsafe, pkg: ./internal/pivco, tests: FuzzTable }
+          - { os: ubuntu-24.04-arm, tags: '', pkg: ./internal/pivco/kernel, tests: FuzzExec }
+          - { os: ubuntu-24.04-arm, tags: nounsafe, pkg: ./internal/pivco/kernel, tests: FuzzExec }
     runs-on: ${{ matrix.os }}
     steps:
       - name: Set up Go
@@ -143,5 +160,6 @@ jobs:
           path: testdata/bench
           key: benchdata-v1
 
-      - name: mz/${{ matrix.tests }}/${{ matrix.tags }}
-        run: go test -tags=${{ matrix.tags }} -run=none -fuzz=${{ matrix.tests }} -fuzztime=3m -test.fuzzminimizetime=100ms -download
+      # -download is a flag of the root package's tests.
+      - name: ${{ matrix.pkg || 'mz' }}/${{ matrix.tests }}/${{ matrix.tags }}
+        run: go test -tags=${{ matrix.tags }} -run=none -fuzz=${{ matrix.tests }} -fuzztime=3m -test.fuzzminimizetime=100ms ${{ matrix.pkg || '-download' }}

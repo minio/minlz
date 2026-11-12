@@ -180,20 +180,16 @@ Options:`)
 	exitErr(err)
 	defer in.Close()
 
-	if *safe {
-		if _, err := os.Stat(dst); !os.IsNotExist(err) {
-			exitErr(fmt.Errorf("destination %s exists (use without -safe to overwrite)", dst))
-		}
-	}
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	exitErr(err)
-	defer out.Close()
+	out := createOutput(dst, 0o644, *safe)
 
 	if !*quiet {
 		fmt.Printf("Building sidecar: %s -> %s\n", src, dst)
 	}
 
-	exitRemove(minlz.BuildSidecar(out, in, opts...), out)
+	if err := minlz.BuildSidecar(out, in, opts...); err != nil {
+		exitErr(err)
+	}
+	closeOutput(nil, out, false)
 	if !*quiet {
 		st, _ := os.Stat(dst)
 		if st != nil {
@@ -259,26 +255,10 @@ Options:`)
 	exitErr(err)
 	defer in.Close()
 
-	if *safe {
-		if _, err := os.Stat(dst); !os.IsNotExist(err) {
-			exitErr(fmt.Errorf("destination %s exists", dst))
-		}
-		if *newStream != "" {
-			if _, err := os.Stat(*newStream); !os.IsNotExist(err) {
-				exitErr(fmt.Errorf("--newstream destination %s exists", *newStream))
-			}
-		}
-	}
-
-	sideOut, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	exitErr(err)
-	defer sideOut.Close()
-
+	sideOut := createOutput(dst, 0o644, *safe)
 	var newOut *os.File
 	if *newStream != "" {
-		newOut, err = os.OpenFile(*newStream, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-		exitRemove(err, sideOut)
-		defer newOut.Close()
+		newOut = createOutput(*newStream, 0o644, *safe)
 	}
 
 	if !*quiet {
@@ -293,28 +273,24 @@ Options:`)
 	if newOut != nil {
 		newDst = newOut
 	}
-	exitRemove(minlz.ExtractSidecar(sideOut, newDst, in), sideOut, newOut)
+	if err := minlz.ExtractSidecar(sideOut, newDst, in); err != nil {
+		exitErr(err)
+	}
+	closeOutput(nil, sideOut, false)
+	closeOutput(nil, newOut, false)
 }
 
-// exitRemove deletes partially written outputs before exiting on err,
-// since search auto-loads <input>.mzs and would trust a truncated one.
-func exitRemove(err error, files ...*os.File) {
-	if err == nil {
-		return
-	}
-	for _, f := range files {
-		if f != nil {
-			f.Close()
-			os.Remove(f.Name())
-		}
-	}
-	exitErr(err)
-}
-
-// samePath reports whether a and b resolve to the same filesystem path. Used
-// to refuse outputs that would truncate the input or collide with each other.
+// samePath reports whether a and b name the same file. Used to refuse outputs
+// that would truncate the input or collide with each other.
 func samePath(a, b string) bool {
+	// Comparing paths catches two outputs that don't exist yet.
 	pa, ea := filepath.Abs(a)
 	pb, eb := filepath.Abs(b)
-	return ea == nil && eb == nil && pa == pb
+	if ea == nil && eb == nil && pa == pb {
+		return true
+	}
+	// Paths miss other spellings, case-insensitive names, symlinks and hard links.
+	fa, ea := os.Stat(a)
+	fb, eb := os.Stat(b)
+	return ea == nil && eb == nil && os.SameFile(fa, fb)
 }

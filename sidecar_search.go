@@ -103,8 +103,9 @@ type SidecarSearcher struct {
 	bail         bool
 	ignoreCRC    bool
 	collectStats bool
-	maxBlock     int // per-stream effective cap = min(maxBlockCfg, stream's declared max)
-	maxBlockCfg  int // configured ceiling, set once at construction
+	maxBlock     int  // per-stream effective cap = min(maxBlockCfg, stream's declared max)
+	maxBlockCfg  int  // configured ceiling, set once at construction
+	simd         bool // the sidecar identifier allows SIMD chunks in the main stream
 
 	// Cumulative state during a single Search call.
 	blockStart   int64 // uncompressed offset where the next block begins
@@ -136,6 +137,7 @@ type lazyMainBlock struct {
 	uncompSize int
 	ignoreCRC  bool
 	maxBlock   int
+	simd       bool
 }
 
 // NewSidecarSearcher creates a searcher reading the sidecar sequentially
@@ -235,6 +237,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 	if err != nil {
 		return err
 	}
+	s.simd = body[magicBodyLen-1]&streamFlagSIMD != 0
 	s.sideMaxBlk = mb
 	// Effective cap = min(configured ceiling, this stream's declared max).
 	s.maxBlock = min(s.maxBlockCfg, mb)
@@ -436,6 +439,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 						uncompSize: ref.uncompSize,
 						ignoreCRC:  s.ignoreCRC,
 						maxBlock:   s.maxBlock,
+						simd:       s.simd,
 					}
 					s.prevBlock = nil
 					s.tailBuf = s.tailBuf[:0]
@@ -482,6 +486,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 								uncompSize: ref.uncompSize,
 								ignoreCRC:  s.ignoreCRC,
 								maxBlock:   s.maxBlock,
+								simd:       s.simd,
 							}
 							// Do NOT advance blockStart here — the deferred
 							// resolution path advances it: processBlock advances
@@ -588,6 +593,7 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 			if err != nil {
 				return err
 			}
+			s.simd = body[magicBodyLen-1]&streamFlagSIMD != 0
 			s.sideMaxBlk = mb
 			s.maxBlock = min(s.maxBlockCfg, mb)
 			// New stream — offsets/context don't cross stream boundaries.
@@ -636,7 +642,7 @@ func (s *SidecarSearcher) rescueTail(pattern []byte, fn func(SearchResult) error
 		return nil
 	}
 	s.tailRescue = false
-	blk, err := readAndDecodeMainBlock(s.main, s.tailRescueRef.offset, s.tailRescueRef.uncompSize, s.maxBlock, s.ignoreCRC)
+	blk, err := readAndDecodeMainBlock(s.main, s.tailRescueRef.offset, s.tailRescueRef.uncompSize, s.maxBlock, s.simd, s.ignoreCRC)
 	if err != nil {
 		return err
 	}
@@ -822,7 +828,7 @@ func (s *SidecarSearcher) processBlock(chunkType byte, chunkLen int, payload []b
 	if chunkLen < checksumSize {
 		return ErrCorrupt
 	}
-	decoded, err := decodeDataChunk(chunkType, payload, pd.ref.uncompSize, s.maxBlock, s.ignoreCRC)
+	decoded, err := decodeDataChunk(chunkType, payload, pd.ref.uncompSize, s.maxBlock, s.simd, s.ignoreCRC)
 	if err != nil {
 		return err
 	}
@@ -1100,7 +1106,7 @@ func (s *SidecarSearcher) discard(n int) error {
 
 // readAndDecodeMainBlock fetches and decodes a block from the main stream
 // via a single ReadAt. Returns the decoded bytes (newly allocated).
-func readAndDecodeMainBlock(main io.ReaderAt, offset int64, uncomp, maxBlock int, ignoreCRC bool) ([]byte, error) {
+func readAndDecodeMainBlock(main io.ReaderAt, offset int64, uncomp, maxBlock int, simd, ignoreCRC bool) ([]byte, error) {
 	maxLen := MaxEncodedLen(uncomp) + obufHeaderLen + binary.MaxVarintLen64
 	buf := make([]byte, maxLen)
 	n, err := main.ReadAt(buf, offset)
@@ -1125,11 +1131,12 @@ func readAndDecodeMainBlock(main io.ReaderAt, offset int64, uncomp, maxBlock int
 		}
 		buf = extra
 	}
-	return decodeDataChunk(ct, buf[4:4+cl], uncomp, maxBlock, ignoreCRC)
+	return decodeDataChunk(ct, buf[4:4+cl], uncomp, maxBlock, simd, ignoreCRC)
 }
 
 // decodeDataChunk decodes the payload of a data chunk into a fresh slice.
-func decodeDataChunk(chunkType byte, payload []byte, uncompHint, maxBlock int, ignoreCRC bool) ([]byte, error) {
+// simd allows SIMD chunks.
+func decodeDataChunk(chunkType byte, payload []byte, uncompHint, maxBlock int, simd, ignoreCRC bool) ([]byte, error) {
 	if len(payload) < checksumSize {
 		return nil, ErrCorrupt
 	}
@@ -1147,7 +1154,7 @@ func decodeDataChunk(chunkType byte, payload []byte, uncompHint, maxBlock int, i
 		copy(out, body)
 		return out, nil
 	case chunkTypeMinLZCompressedData, chunkTypeMinLZCompressedDataCompCRC:
-		n, hdrSize, err := decodedLen(body)
+		n, hdrSize, err := minLZChunkLen(body)
 		if err != nil {
 			return nil, err
 		}
@@ -1169,6 +1176,22 @@ func decodeDataChunk(chunkType byte, payload []byte, uncompHint, maxBlock int, i
 			return nil, ErrCRC
 		}
 		return out, nil
+	case chunkTypeMinLZSIMD:
+		if !simd {
+			return nil, ErrCorrupt
+		}
+		n, block, err := simdChunkHeader(payload, maxBlock)
+		if err != nil {
+			return nil, err
+		}
+		if uncompHint != 0 && n != uncompHint {
+			return nil, fmt.Errorf("%w: decompressed size %d != hint %d", ErrSidecarInvalid, n, uncompHint)
+		}
+		out := make([]byte, n)
+		if err := decodeSIMDChunk(out, payload, block, ignoreCRC); err != nil {
+			return nil, err
+		}
+		return out, nil
 	}
 	return nil, ErrUnsupported
 }
@@ -1182,6 +1205,7 @@ func wrapLazyMainBlock(lb *lazyMainBlock) *lazyBlock {
 		mainOffset: lb.offset,
 		decompLen:  lb.uncompSize,
 		maxBlock:   lb.maxBlock,
+		simd:       lb.simd,
 		ignoreCRC:  lb.ignoreCRC,
 	}
 }

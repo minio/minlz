@@ -65,7 +65,7 @@ func LoadIndex(b []byte) (*Index, error) {
 // LoadIndexAfterHeader will load and parse an index, after the stream header has been parsed.
 func LoadIndexAfterHeader(b []byte) (*Index, error) {
 	var i Index
-	if !bytes.Equal(b[:len(IndexHeader)], []byte(IndexHeader)) {
+	if !bytes.HasPrefix(b, []byte(IndexHeader)) {
 		return nil, errors.New("invalid index header")
 	}
 	b = b[len(IndexHeader):]

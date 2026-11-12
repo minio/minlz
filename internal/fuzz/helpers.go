@@ -163,7 +163,7 @@ func parseCorpusValue(line []byte) ([]byte, error) {
 
 // ReturnFromZip will read the supplied zip and add all as corpus for f.
 // Byte slices only.
-func ReturnFromZip(tb testing.TB, filename string, t InputType, fn func([]byte)) {
+func ReturnFromZip(tb testing.TB, filename string, t InputType, short bool, fn func([]byte)) {
 	file, err := os.Open(filename)
 	if err != nil {
 		tb.Fatal(err)
@@ -176,7 +176,10 @@ func ReturnFromZip(tb testing.TB, filename string, t InputType, fn func([]byte))
 	if err != nil {
 		tb.Fatal(err)
 	}
-	for _, file := range zr.File {
+	for i, file := range zr.File {
+		if short && i%10 != 0 {
+			continue
+		}
 		rc, err := file.Open()
 		if err != nil {
 			tb.Fatal(err)
