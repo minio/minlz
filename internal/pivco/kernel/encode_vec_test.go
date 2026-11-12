@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -252,7 +253,9 @@ func vecRaceChild(tier Tier, c string) {
 		"scratch": scratch, "s2r": s2r[:], "in": in, "arena": arena, "r2s": r2s[:]}
 	kern, buf, _ := strings.Cut(c, "/")
 	var wg sync.WaitGroup
+	var done uint32
 	wg.Go(func() {
+		raceWait(&done)
 		switch {
 		case buf == "h":
 			h[0]++
@@ -282,5 +285,21 @@ func vecRaceChild(tier Tier, c string) {
 	case "exec":
 		tier.Exec(&p)
 	}
+	raceDone(&done)
 	wg.Wait()
+}
+
+// raceDone and raceWait hold the racing access back until the kernel has returned.
+// The detector stores an access without an atomic read-modify-write of the shadow
+// word, so it can drop one of two accesses to the same word made at the same moment,
+// and the race goes unreported. Being uninstrumented, the flag adds no happens-before.
+//
+//go:norace
+func raceDone(p *uint32) { *p = 1 }
+
+//go:norace
+func raceWait(p *uint32) {
+	for *p == 0 {
+		runtime.Gosched()
+	}
 }
