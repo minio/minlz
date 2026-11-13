@@ -1118,7 +1118,8 @@ func TestSIMDEncode(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
 	n := 3 << 20
 	if testing.Short() {
-		n = 256 << 10
+		// Inputs need more than one chunk to use the current table.
+		n = 1 << 20
 	}
 	period := func(p int) []byte {
 		return bytes.Repeat(genEncRandom(rng, p), n/p+1)[:n]
