@@ -117,19 +117,26 @@ func (t *Table) build() error {
 	// Symbols are counted and placed in 8 interleaved segments of the symbol range (C
 	// uses 4 quarters): neighbouring symbols often share a length, and every counter or
 	// cursor update waits for the previous one of its segment and length.
-	const q = 32
+	// The segments only span the symbols up to the last 8 with a length: small alphabets
+	// leave the rest 0, and symbols of length 0 are never placed.
 	l := &t.lens
+	q := 32
+	for q > 1 && kernel.Load64(l[:], 8*q-8) == 0 {
+		q--
+	}
 	var h [8][16]uint8
 	for i := range q {
 		h[0][l[i]&15]++
-		h[1][l[q+i]&15]++
-		h[2][l[2*q+i]&15]++
-		h[3][l[3*q+i]&15]++
-		h[4][l[4*q+i]&15]++
-		h[5][l[5*q+i]&15]++
-		h[6][l[6*q+i]&15]++
-		h[7][l[7*q+i]&15]++
+		h[1][l[(q+i)&255]&15]++
+		h[2][l[(2*q+i)&255]&15]++
+		h[3][l[(3*q+i)&255]&15]++
+		h[4][l[(4*q+i)&255]&15]++
+		h[5][l[(5*q+i)&255]&15]++
+		h[6][l[(6*q+i)&255]&15]++
+		h[7][l[(7*q+i)&255]&15]++
 	}
+	// The symbols past the segments have length 0.
+	h[0][0] += uint8(256 - 8*q)
 	var count [MaxCodeLen + 1]uint16
 	var base [16]uint8 // first item of each length
 	n, kraft := 0, 0
@@ -166,12 +173,12 @@ func (t *Table) build() error {
 	}
 	var items [256]uint8
 	for i := range q {
-		a, b, c, d := l[i]&15, l[q+i]&15, l[2*q+i]&15, l[3*q+i]&15
+		a, b, c, d := l[i]&15, l[(q+i)&255]&15, l[(2*q+i)&255]&15, l[(3*q+i)&255]&15
 		// One load per cursor: the compiler would reload it after the items store.
 		pa, pb, pc, pd := cur[0][a], cur[1][b], cur[2][c], cur[3][d]
 		items[pa], items[pb], items[pc], items[pd] = uint8(i), uint8(q+i), uint8(2*q+i), uint8(3*q+i)
 		cur[0][a], cur[1][b], cur[2][c], cur[3][d] = pa+1, pb+1, pc+1, pd+1
-		a, b, c, d = l[4*q+i]&15, l[5*q+i]&15, l[6*q+i]&15, l[7*q+i]&15
+		a, b, c, d = l[(4*q+i)&255]&15, l[(5*q+i)&255]&15, l[(6*q+i)&255]&15, l[(7*q+i)&255]&15
 		pa, pb, pc, pd = cur[4][a], cur[5][b], cur[6][c], cur[7][d]
 		items[pa], items[pb], items[pc], items[pd] = uint8(4*q+i), uint8(5*q+i), uint8(6*q+i), uint8(7*q+i)
 		cur[4][a], cur[5][b], cur[6][c], cur[7][d] = pa+1, pb+1, pc+1, pd+1
