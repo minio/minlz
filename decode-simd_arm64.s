@@ -432,22 +432,22 @@ loop:
 
 // STATS_BLOCK_START sets R3 to the bytes of the next block, and takes them from R1.
 #define STATS_BLOCK_START \
-	STATS_ZERO               \
-	MOVD STATS_BLOCK, R3     \
-	CMP  R3, R1              \
-	CSEL LO, R1, R3, R3      \
+	STATS_ZERO           \
+	MOVD STATS_BLOCK, R3 \
+	CMP  R3, R1          \
+	CSEL LO, R1, R3, R3  \
 	SUB  R3, R1
 
 // STATS_SUMH adds the halfword lanes of v to r.
 #define STATS_SUMH(v, r) \
-	VUADDLV v.H8, V20     \
-	VMOV    V20.S[0], R9  \
+	VUADDLV v.H8, V20    \
+	VMOV    V20.S[0], R9 \
 	ADD     R9, r
 
 // STATS_SUMB adds the byte lanes of v to r.
 #define STATS_SUMB(v, r) \
-	VUADDLV v.B16, V20    \
-	VMOV    V20.H[0], R9  \
+	VUADDLV v.B16, V20   \
+	VMOV    V20.H[0], R9 \
 	ADD     R9, r
 
 // STATS_OK sets R2 to 1 if no byte of V7 is above lim, else 0.
