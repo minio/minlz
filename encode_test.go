@@ -2271,3 +2271,53 @@ func TestSIMDEncodeEscapesStored(t *testing.T) {
 		}
 	}
 }
+
+// TestSIMDEncodeLiteralsStored checks that literal blocks are only coded when that saves more than 1/simdLitSave.
+// The first quarter of each input is random bytes below the alphabet size, which only literals can code,
+// and the rest repeats 64 bytes, so the block is small enough either way.
+func TestSIMDEncodeLiteralsStored(t *testing.T) {
+	const n = 1 << 20
+	for _, tc := range []struct {
+		alphabet int
+		coded    bool
+	}{
+		{256, false},
+		{240, false}, // log2(240) = 7.91 bits, which saves 1.2%
+		{224, false}, // 2.4%
+		{200, false}, // 4.5%
+		{128, true},  // 12.5%
+		{64, true},   // 25%
+	} {
+		rng := rand.New(rand.NewSource(1))
+		src := make([]byte, n/4, n)
+		for i := range src {
+			src[i] = byte(rng.Intn(tc.alphabet))
+		}
+		src = append(src, bytes.Repeat(genEncRandom(rng, 64), n/64)...)[:n]
+		for _, level := range []int{LevelSuperFastSIMD, LevelFastestSIMD, LevelBalancedSIMD, LevelSmallestSIMD} {
+			enc, err := Encode(nil, src, level)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, err := reference.DecodeSIMDBlockStrict(enc); err != nil || !bytes.Equal(got, src) {
+				t.Fatalf("alphabet %d, level %d: reference: %v", tc.alphabet, level, err)
+			}
+			if got, err := Decode(nil, enc); err != nil || !bytes.Equal(got, src) {
+				t.Fatalf("alphabet %d, level %d: decode: %v", tc.alphabet, level, err)
+			}
+			var modes [simdLits + 1][8]int
+			var flags [2]int
+			simdTestStats(t, enc, &modes, &flags)
+			blocks := 0
+			for _, m := range modes[simdLits] {
+				blocks += m
+			}
+			stored := modes[simdLits][simdStored]
+			// The last literal block also has literals of the part that repeats, as many as the parser skips,
+			// so it can differ from the others.
+			if blocks < 4 || tc.coded && stored > 1 || !tc.coded && stored < blocks-1 {
+				t.Errorf("alphabet %d, level %d: %d of %d literal blocks stored, coded %v", tc.alphabet, level, stored, blocks, tc.coded)
+			}
+		}
+	}
+}

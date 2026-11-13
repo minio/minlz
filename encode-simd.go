@@ -43,6 +43,10 @@ const (
 	simdRecordMax = 1 + 5*3 + 68 + 17 + 88 + 128
 	// simdTableBits is added to the cost of a new table, since every table costs decode time.
 	simdTableBits = 64 * 8
+	// simdLitSave is the part of a literal block that coding it must save: 1/simdLitSave of its size.
+	// Literals that hardly compress take the longest to decode, for the least gain,
+	// and stored literals are read in place.
+	simdLitSave = 16
 	// simdLitSeg is the step of the literal block splits of LevelSmallestSIMD.
 	simdLitSeg = 8192
 )
@@ -765,7 +769,8 @@ func (e *simdEncoder) split(lits []byte, start int) {
 }
 
 // simdLitBits estimates the size in bits of a literal block of n values with histogram h:
-// stored, or its entropy plus the overhead of a block with a new table of about 16 bytes.
+// stored, or its entropy plus the overhead of a block with a new table of about 16 bytes when
+// that saves more than 1/simdLitSave, as put codes it.
 // The entropy is cheaper than building the tables, which would dominate the encoding of literal-heavy data.
 func simdLitBits(h *[256]uint64, n int) int {
 	if n < simdMinCoded {
@@ -778,7 +783,10 @@ func simdLitBits(h *[256]uint64, n int) int {
 			e -= int(f) * simdLog2(f)
 		}
 	}
-	return min(8*n, max(e>>8, 0)+simdBlockBits+simdTableBits+16*8)
+	if c := max(e>>8, 0) + simdBlockBits + simdTableBits + 16*8; c < 8*(n-n/simdLitSave) {
+		return c
+	}
+	return 8 * n
 }
 
 // simdEntropyBits returns a lower bound of the entropy in bits of the counts h of n values.
@@ -848,6 +856,7 @@ func (e *simdEncoder) histogram(v []byte, syms int) {
 
 // put appends the values v of stream k to e.out, and their entry to recs. k is simdDelta for delta literals.
 // It takes the smallest of storing v, the current table and new tables for v.
+// Literals are stored unless coding them saves more than 1/simdLitSave of their size.
 // With e.fastCode, it takes the current table when that is smaller than storing,
 // and otherwise only tries one new table.
 // If v doesn't fit, the block fails.
@@ -857,7 +866,12 @@ func (e *simdEncoder) put(recs []byte, k int, v []byte) []byte {
 	// The values of the stream are below syms.
 	syms := 2 * simdCodeBytes[k]
 	var best *simdTable
-	bestBits := 8 * len(v)
+	// Coding v must take fewer bytes than limit.
+	limit := len(v)
+	if k == simdLits {
+		limit -= len(v) / simdLitSave
+	}
+	bestBits := 8 * limit
 	blockBits := simdBlockBits
 	if e.fastCode != 0 {
 		blockBits = simdFastBlockBits
@@ -905,7 +919,7 @@ func (e *simdEncoder) put(recs []byte, k int, v []byte) []byte {
 		if k == simdTok || k == simdLits {
 			hdr = 2
 		}
-		if size := hdr + best.t.BlockSize(e.hist[:syms]); size <= room && size+n < len(v) {
+		if size := hdr + best.t.BlockSize(e.hist[:syms]); size <= room && size+n < limit {
 			out := e.out[len(e.out):][:size]
 			if hdr > 0 {
 				binary.LittleEndian.PutUint16(out, uint16(len(v)))
