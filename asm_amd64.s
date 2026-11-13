@@ -28531,13 +28531,13 @@ TEXT ·encodeFastBlockSIMDAsm(SB), $88-48
 	MOVQ    (CX), DX
 	MOVQ    DX, 24(SP)
 	MOVQ    8(CX), DX
-	LEAQ    16489(CX)(DX*1), DX
+	LEAQ    32873(CX)(DX*1), DX
 	MOVQ    DX, 32(SP)
 	MOVQ    16(CX), DX
-	LEAQ    32873(CX)(DX*1), DX
+	LEAQ    65641(CX)(DX*1), DX
 	MOVQ    DX, 40(SP)
 	MOVQ    32(CX), DX
-	LEAQ    82025(CX)(DX*1), DX
+	LEAQ    163945(CX)(DX*1), DX
 	MOVQ    DX, 48(SP)
 	MOVQ    56(CX), DX
 	MOVQ    DX, 80(SP)
@@ -28561,7 +28561,7 @@ TEXT ·encodeFastBlockSIMDAsm(SB), $88-48
 	MOVQ    tab+32(FP), SI
 	MOVQ    $0xcf1bbcdcb7a56463, DI
 	MOVQ    st+0(FP), CX
-	CMPQ    147568(CX), $0x01
+	CMPQ    295024(CX), $0x01
 	JEQ     post_encodeFastBlockSIMDAsm
 	MOVQ    $0x00000001, CX
 	CMPQ    BX, CX
@@ -28723,7 +28723,7 @@ match_tok_13_encodeFastBlockSIMDAsm:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_1_11_encodeFastBlockSIMDAsm
 
 post_encodeFastBlockSIMDAsm:
@@ -28816,7 +28816,7 @@ match_tok_22_encodeFastBlockSIMDAsm:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_1_11_encodeFastBlockSIMDAsm
 	JMP  post_encodeFastBlockSIMDAsm
 
@@ -28916,7 +28916,7 @@ match_tok_36_encodeFastBlockSIMDAsm:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_0_34_encodeFastBlockSIMDAsm
 	CMPQ BX, DX
 	JGE  exit0_0_1_encodeFastBlockSIMDAsm
@@ -28925,17 +28925,17 @@ match_tok_36_encodeFastBlockSIMDAsm:
 
 exit0_0_1_encodeFastBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000000, ret+40(FP)
 	JMP  return_encodeFastBlockSIMDAsm
 
 exit2_1_5_encodeFastBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ R8, 147592(AX)
-	MOVQ $0x00000001, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ R8, 295048(AX)
+	MOVQ $0x00000001, 295024(AX)
 	MOVQ $0x00000002, ret+40(FP)
 	JMP  return_encodeFastBlockSIMDAsm
 
@@ -28947,7 +28947,7 @@ long_8_encodeFastBlockSIMDAsm:
 	JMP  one_op_6_encodeFastBlockSIMDAsm
 
 split_7_encodeFastBlockSIMDAsm:
-	MOVQ $0x00004000, R11
+	MOVQ $0x00008000, R11
 	SUBQ 24(SP), R11
 	LEAQ (R11)(R11*8), R11
 	SHLQ $0x05, R11
@@ -28959,7 +28959,7 @@ lits_long_9_encodeFastBlockSIMDAsm:
 	LEAQ -33(R9), R13
 	MOVQ st+0(FP), R14
 	MOVQ 24(R14), R15
-	MOVB R13, 49257(R14)(R15*1)
+	MOVB R13, 98409(R14)(R15*1)
 	INCQ R15
 	MOVQ R15, 24(R14)
 	LEAQ -32(R9), R13
@@ -28987,7 +28987,7 @@ lits_last_39_encodeFastBlockSIMDAsm:
 
 exit1_1_11_encodeFastBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000001, 147568(AX)
+	MOVQ $0x00000001, 295024(AX)
 	MOVQ $0x00000001, ret+40(FP)
 	JMP  return_encodeFastBlockSIMDAsm
 
@@ -28999,7 +28999,7 @@ match_esc_40_encodeFastBlockSIMDAsm:
 	LEAQ -33(R10), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -29009,7 +29009,7 @@ match_big_42_encodeFastBlockSIMDAsm:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R11
-	MOVB R8, 49257(R9)(R11*1)
+	MOVB R8, 98409(R9)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R9)
 	ORQ  $0x00000084, CX
@@ -29029,11 +29029,11 @@ match_big_42_encodeFastBlockSIMDAsm:
 
 exit2_1_17_encodeFastBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ R8, 147592(AX)
-	MOVQ $0x00000001, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ R8, 295048(AX)
+	MOVQ $0x00000001, 295024(AX)
 	MOVQ $0x00000002, ret+40(FP)
 	JMP  return_encodeFastBlockSIMDAsm
 
@@ -29045,7 +29045,7 @@ long_20_encodeFastBlockSIMDAsm:
 	JMP  one_op_18_encodeFastBlockSIMDAsm
 
 split_19_encodeFastBlockSIMDAsm:
-	MOVQ $0x00004000, R10
+	MOVQ $0x00008000, R10
 	SUBQ 24(SP), R10
 	LEAQ (R10)(R10*8), R10
 	SHLQ $0x05, R10
@@ -29061,7 +29061,7 @@ match_esc_45_encodeFastBlockSIMDAsm:
 	LEAQ -33(R9), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -29071,7 +29071,7 @@ match_big_47_encodeFastBlockSIMDAsm:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R10
 	MOVQ 24(R10), R11
-	MOVB R8, 49257(R10)(R11*1)
+	MOVB R8, 98409(R10)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R10)
 	ORQ  $0x00000084, CX
@@ -29091,10 +29091,10 @@ match_big_47_encodeFastBlockSIMDAsm:
 
 exit3_0_28_encodeFastBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000003, ret+40(FP)
 	JMP  return_encodeFastBlockSIMDAsm
 
@@ -29106,7 +29106,7 @@ long_31_encodeFastBlockSIMDAsm:
 	JMP  one_op_29_encodeFastBlockSIMDAsm
 
 split_30_encodeFastBlockSIMDAsm:
-	MOVQ $0x00004000, R8
+	MOVQ $0x00008000, R8
 	SUBQ 24(SP), R8
 	LEAQ (R8)(R8*8), R8
 	SHLQ $0x05, R8
@@ -29118,7 +29118,7 @@ lits_long_32_encodeFastBlockSIMDAsm:
 	LEAQ -33(R9), R12
 	MOVQ st+0(FP), R13
 	MOVQ 24(R13), R14
-	MOVB R12, 49257(R13)(R14*1)
+	MOVB R12, 98409(R13)(R14*1)
 	INCQ R14
 	MOVQ R14, 24(R13)
 	LEAQ -32(R9), R12
@@ -29146,7 +29146,7 @@ lits_last_51_encodeFastBlockSIMDAsm:
 
 exit1_0_34_encodeFastBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000001, ret+40(FP)
 	JMP  return_encodeFastBlockSIMDAsm
 
@@ -29158,7 +29158,7 @@ match_esc_52_encodeFastBlockSIMDAsm:
 	LEAQ -33(R10), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -29168,7 +29168,7 @@ match_big_54_encodeFastBlockSIMDAsm:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R11
-	MOVB R8, 49257(R9)(R11*1)
+	MOVB R8, 98409(R9)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R9)
 	ORQ  $0x00000084, CX
@@ -29192,15 +29192,15 @@ return_encodeFastBlockSIMDAsm:
 	MOVQ CX, (AX)
 	MOVQ 32(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00004069, CX
+	SUBQ $0x00008069, CX
 	MOVQ CX, 8(AX)
 	MOVQ 40(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00008069, CX
+	SUBQ $0x00010069, CX
 	MOVQ CX, 16(AX)
 	MOVQ 48(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00014069, CX
+	SUBQ $0x00028069, CX
 	MOVQ CX, 32(AX)
 	MOVQ 80(SP), CX
 	MOVQ CX, 56(AX)
@@ -29227,13 +29227,13 @@ TEXT ·encodeBlockSIMDAsm(SB), $88-48
 	MOVQ    (CX), DX
 	MOVQ    DX, 24(SP)
 	MOVQ    8(CX), DX
-	LEAQ    16489(CX)(DX*1), DX
+	LEAQ    32873(CX)(DX*1), DX
 	MOVQ    DX, 32(SP)
 	MOVQ    16(CX), DX
-	LEAQ    32873(CX)(DX*1), DX
+	LEAQ    65641(CX)(DX*1), DX
 	MOVQ    DX, 40(SP)
 	MOVQ    32(CX), DX
-	LEAQ    82025(CX)(DX*1), DX
+	LEAQ    163945(CX)(DX*1), DX
 	MOVQ    DX, 48(SP)
 	MOVQ    56(CX), DX
 	MOVQ    DX, 80(SP)
@@ -29257,7 +29257,7 @@ TEXT ·encodeBlockSIMDAsm(SB), $88-48
 	MOVQ    tab+32(FP), SI
 	MOVQ    $0x0000cf1bbcdcbf9b, DI
 	MOVQ    st+0(FP), CX
-	CMPQ    147568(CX), $0x01
+	CMPQ    295024(CX), $0x01
 	JEQ     post_encodeBlockSIMDAsm
 	MOVQ    $0x00000001, CX
 	CMPQ    BX, CX
@@ -29446,7 +29446,7 @@ match_tok_14_encodeBlockSIMDAsm:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_1_12_encodeBlockSIMDAsm
 
 post_encodeBlockSIMDAsm:
@@ -29547,7 +29547,7 @@ match_tok_22_encodeBlockSIMDAsm:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_1_12_encodeBlockSIMDAsm
 	JMP  post_encodeBlockSIMDAsm
 
@@ -29653,7 +29653,7 @@ match_tok_35_encodeBlockSIMDAsm:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_0_33_encodeBlockSIMDAsm
 	CMPQ BX, DX
 	JGE  exit0_0_1_encodeBlockSIMDAsm
@@ -29662,22 +29662,22 @@ match_tok_35_encodeBlockSIMDAsm:
 
 exit0_0_1_encodeBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000000, ret+40(FP)
 	JMP  return_encodeBlockSIMDAsm
 
 exit2_1_7_encodeBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ R8, 147592(AX)
-	MOVQ $0x00000001, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ R8, 295048(AX)
+	MOVQ $0x00000001, 295024(AX)
 	MOVQ $0x00000002, ret+40(FP)
 	JMP  return_encodeBlockSIMDAsm
 
 split_9_encodeBlockSIMDAsm:
-	MOVQ $0x00004000, R11
+	MOVQ $0x00008000, R11
 	SUBQ 24(SP), R11
 	CMPQ R8, $0x20
 	JB   split_short_36_encodeBlockSIMDAsm
@@ -29693,7 +29693,7 @@ lits_long_10_encodeBlockSIMDAsm:
 	LEAQ -33(R9), R13
 	MOVQ st+0(FP), R14
 	MOVQ 24(R14), R15
-	MOVB R13, 49257(R14)(R15*1)
+	MOVB R13, 98409(R14)(R15*1)
 	INCQ R15
 	MOVQ R15, 24(R14)
 	LEAQ -32(R9), R13
@@ -29721,7 +29721,7 @@ lits_last_38_encodeBlockSIMDAsm:
 
 exit1_1_12_encodeBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000001, 147568(AX)
+	MOVQ $0x00000001, 295024(AX)
 	MOVQ $0x00000001, ret+40(FP)
 	JMP  return_encodeBlockSIMDAsm
 
@@ -29735,7 +29735,7 @@ match_esc_39_encodeBlockSIMDAsm:
 	LEAQ -33(R10), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -29745,7 +29745,7 @@ match_big_41_encodeBlockSIMDAsm:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R11
-	MOVB R8, 49257(R9)(R11*1)
+	MOVB R8, 98409(R9)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R9)
 	ORQ  $0x00000084, CX
@@ -29783,16 +29783,16 @@ match_rest_42_encodeBlockSIMDAsm:
 
 exit2_1_18_encodeBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ R8, 147592(AX)
-	MOVQ $0x00000001, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ R8, 295048(AX)
+	MOVQ $0x00000001, 295024(AX)
 	MOVQ $0x00000002, ret+40(FP)
 	JMP  return_encodeBlockSIMDAsm
 
 split_20_encodeBlockSIMDAsm:
-	MOVQ $0x00004000, R10
+	MOVQ $0x00008000, R10
 	SUBQ 24(SP), R10
 	CMPQ R8, $0x20
 	JB   split_short_44_encodeBlockSIMDAsm
@@ -29814,7 +29814,7 @@ match_esc_45_encodeBlockSIMDAsm:
 	LEAQ -33(R9), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -29824,7 +29824,7 @@ match_big_47_encodeBlockSIMDAsm:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R10
 	MOVQ 24(R10), R11
-	MOVB R8, 49257(R10)(R11*1)
+	MOVB R8, 98409(R10)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R10)
 	ORQ  $0x00000084, CX
@@ -29862,15 +29862,15 @@ match_rest_48_encodeBlockSIMDAsm:
 
 exit3_0_28_encodeBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000003, ret+40(FP)
 	JMP  return_encodeBlockSIMDAsm
 
 split_30_encodeBlockSIMDAsm:
-	MOVQ $0x00004000, R11
+	MOVQ $0x00008000, R11
 	SUBQ 24(SP), R11
 	CMPQ R8, $0x20
 	JB   split_short_50_encodeBlockSIMDAsm
@@ -29886,7 +29886,7 @@ lits_long_31_encodeBlockSIMDAsm:
 	LEAQ -33(R9), R13
 	MOVQ st+0(FP), R14
 	MOVQ 24(R14), R15
-	MOVB R13, 49257(R14)(R15*1)
+	MOVB R13, 98409(R14)(R15*1)
 	INCQ R15
 	MOVQ R15, 24(R14)
 	LEAQ -32(R9), R13
@@ -29914,7 +29914,7 @@ lits_last_52_encodeBlockSIMDAsm:
 
 exit1_0_33_encodeBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000001, ret+40(FP)
 	JMP  return_encodeBlockSIMDAsm
 
@@ -29928,7 +29928,7 @@ match_esc_53_encodeBlockSIMDAsm:
 	LEAQ -33(R10), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -29938,7 +29938,7 @@ match_big_55_encodeBlockSIMDAsm:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R11
-	MOVB R8, 49257(R9)(R11*1)
+	MOVB R8, 98409(R9)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R9)
 	ORQ  $0x00000084, CX
@@ -29980,15 +29980,15 @@ return_encodeBlockSIMDAsm:
 	MOVQ CX, (AX)
 	MOVQ 32(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00004069, CX
+	SUBQ $0x00008069, CX
 	MOVQ CX, 8(AX)
 	MOVQ 40(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00008069, CX
+	SUBQ $0x00010069, CX
 	MOVQ CX, 16(AX)
 	MOVQ 48(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00014069, CX
+	SUBQ $0x00028069, CX
 	MOVQ CX, 32(AX)
 	MOVQ 80(SP), CX
 	MOVQ CX, 56(AX)
@@ -30015,13 +30015,13 @@ TEXT ·encodeBetterBlockSIMDAsm(SB), $88-64
 	MOVQ    (CX), DX
 	MOVQ    DX, 24(SP)
 	MOVQ    8(CX), DX
-	LEAQ    16489(CX)(DX*1), DX
+	LEAQ    32873(CX)(DX*1), DX
 	MOVQ    DX, 32(SP)
 	MOVQ    16(CX), DX
-	LEAQ    32873(CX)(DX*1), DX
+	LEAQ    65641(CX)(DX*1), DX
 	MOVQ    DX, 40(SP)
 	MOVQ    32(CX), DX
-	LEAQ    82025(CX)(DX*1), DX
+	LEAQ    163945(CX)(DX*1), DX
 	MOVQ    DX, 48(SP)
 	MOVQ    56(CX), DX
 	MOVQ    DX, 80(SP)
@@ -30292,7 +30292,7 @@ match_tok_21_encodeBetterBlockSIMDAsm:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_0_19_encodeBetterBlockSIMDAsm
 	CMPQ BX, DX
 	JGE  exit0_0_1_encodeBetterBlockSIMDAsm
@@ -30438,7 +30438,7 @@ match_tok_38_encodeBetterBlockSIMDAsm:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_0_19_encodeBetterBlockSIMDAsm
 	CMPQ BX, DX
 	JGE  exit0_0_1_encodeBetterBlockSIMDAsm
@@ -30449,7 +30449,7 @@ match_tok_38_encodeBetterBlockSIMDAsm:
 
 exit0_0_1_encodeBetterBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000000, ret+56(FP)
 	JMP  return_encodeBetterBlockSIMDAsm
 
@@ -30494,16 +30494,16 @@ cut_10_encodeBetterBlockSIMDAsm:
 
 exit2_0_14_encodeBetterBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ R8, 147592(AX)
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ R8, 295048(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000002, ret+56(FP)
 	JMP  return_encodeBetterBlockSIMDAsm
 
 split_16_encodeBetterBlockSIMDAsm:
-	MOVQ $0x00004000, R11
+	MOVQ $0x00008000, R11
 	SUBQ 24(SP), R11
 	CMPQ R8, $0x20
 	JB   split_short_41_encodeBetterBlockSIMDAsm
@@ -30519,7 +30519,7 @@ lits_long_17_encodeBetterBlockSIMDAsm:
 	LEAQ -33(R9), R13
 	MOVQ st+0(FP), R14
 	MOVQ 24(R14), R15
-	MOVB R13, 49257(R14)(R15*1)
+	MOVB R13, 98409(R14)(R15*1)
 	INCQ R15
 	MOVQ R15, 24(R14)
 	LEAQ -32(R9), R13
@@ -30547,7 +30547,7 @@ lits_last_43_encodeBetterBlockSIMDAsm:
 
 exit1_0_19_encodeBetterBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000001, ret+56(FP)
 	JMP  return_encodeBetterBlockSIMDAsm
 
@@ -30561,7 +30561,7 @@ match_esc_44_encodeBetterBlockSIMDAsm:
 	LEAQ -33(R10), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -30571,7 +30571,7 @@ match_big_46_encodeBetterBlockSIMDAsm:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R11
-	MOVB R8, 49257(R9)(R11*1)
+	MOVB R8, 98409(R9)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R9)
 	ORQ  $0x00000084, CX
@@ -30627,15 +30627,15 @@ cut_28_encodeBetterBlockSIMDAsm:
 
 exit3_0_32_encodeBetterBlockSIMDAsm:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000003, ret+56(FP)
 	JMP  return_encodeBetterBlockSIMDAsm
 
 split_34_encodeBetterBlockSIMDAsm:
-	MOVQ $0x00004000, R11
+	MOVQ $0x00008000, R11
 	SUBQ 24(SP), R11
 	CMPQ R8, $0x20
 	JB   split_short_50_encodeBetterBlockSIMDAsm
@@ -30651,7 +30651,7 @@ lits_long_35_encodeBetterBlockSIMDAsm:
 	LEAQ -33(R9), R13
 	MOVQ st+0(FP), R14
 	MOVQ 24(R14), R15
-	MOVB R13, 49257(R14)(R15*1)
+	MOVB R13, 98409(R14)(R15*1)
 	INCQ R15
 	MOVQ R15, 24(R14)
 	LEAQ -32(R9), R13
@@ -30687,7 +30687,7 @@ match_esc_53_encodeBetterBlockSIMDAsm:
 	LEAQ -33(R10), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -30697,7 +30697,7 @@ match_big_55_encodeBetterBlockSIMDAsm:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R11
-	MOVB R8, 49257(R9)(R11*1)
+	MOVB R8, 98409(R9)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R9)
 	ORQ  $0x00000084, CX
@@ -30739,15 +30739,15 @@ return_encodeBetterBlockSIMDAsm:
 	MOVQ CX, (AX)
 	MOVQ 32(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00004069, CX
+	SUBQ $0x00008069, CX
 	MOVQ CX, 8(AX)
 	MOVQ 40(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00008069, CX
+	SUBQ $0x00010069, CX
 	MOVQ CX, 16(AX)
 	MOVQ 48(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00014069, CX
+	SUBQ $0x00028069, CX
 	MOVQ CX, 32(AX)
 	MOVQ 80(SP), CX
 	MOVQ CX, 56(AX)
@@ -30774,13 +30774,13 @@ TEXT ·encodeFastBlockSIMDAsm64K(SB), $88-48
 	MOVQ    (CX), DX
 	MOVQ    DX, 24(SP)
 	MOVQ    8(CX), DX
-	LEAQ    16489(CX)(DX*1), DX
+	LEAQ    32873(CX)(DX*1), DX
 	MOVQ    DX, 32(SP)
 	MOVQ    16(CX), DX
-	LEAQ    32873(CX)(DX*1), DX
+	LEAQ    65641(CX)(DX*1), DX
 	MOVQ    DX, 40(SP)
 	MOVQ    32(CX), DX
-	LEAQ    82025(CX)(DX*1), DX
+	LEAQ    163945(CX)(DX*1), DX
 	MOVQ    DX, 48(SP)
 	MOVQ    56(CX), DX
 	MOVQ    DX, 80(SP)
@@ -30804,7 +30804,7 @@ TEXT ·encodeFastBlockSIMDAsm64K(SB), $88-48
 	MOVQ    tab+32(FP), SI
 	MOVQ    $0xcf1bbcdcb7a56463, DI
 	MOVQ    st+0(FP), CX
-	CMPQ    147568(CX), $0x01
+	CMPQ    295024(CX), $0x01
 	JEQ     post_encodeFastBlockSIMDAsm64K
 	MOVQ    $0x00000001, CX
 	CMPQ    BX, CX
@@ -30966,7 +30966,7 @@ match_tok_13_encodeFastBlockSIMDAsm64K:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_1_11_encodeFastBlockSIMDAsm64K
 
 post_encodeFastBlockSIMDAsm64K:
@@ -31059,7 +31059,7 @@ match_tok_22_encodeFastBlockSIMDAsm64K:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_1_11_encodeFastBlockSIMDAsm64K
 	JMP  post_encodeFastBlockSIMDAsm64K
 
@@ -31159,7 +31159,7 @@ match_tok_36_encodeFastBlockSIMDAsm64K:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_0_34_encodeFastBlockSIMDAsm64K
 	CMPQ BX, DX
 	JGE  exit0_0_1_encodeFastBlockSIMDAsm64K
@@ -31168,17 +31168,17 @@ match_tok_36_encodeFastBlockSIMDAsm64K:
 
 exit0_0_1_encodeFastBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000000, ret+40(FP)
 	JMP  return_encodeFastBlockSIMDAsm64K
 
 exit2_1_5_encodeFastBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ R8, 147592(AX)
-	MOVQ $0x00000001, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ R8, 295048(AX)
+	MOVQ $0x00000001, 295024(AX)
 	MOVQ $0x00000002, ret+40(FP)
 	JMP  return_encodeFastBlockSIMDAsm64K
 
@@ -31190,7 +31190,7 @@ long_8_encodeFastBlockSIMDAsm64K:
 	JMP  one_op_6_encodeFastBlockSIMDAsm64K
 
 split_7_encodeFastBlockSIMDAsm64K:
-	MOVQ $0x00004000, R11
+	MOVQ $0x00008000, R11
 	SUBQ 24(SP), R11
 	LEAQ (R11)(R11*8), R11
 	SHLQ $0x05, R11
@@ -31202,7 +31202,7 @@ lits_long_9_encodeFastBlockSIMDAsm64K:
 	LEAQ -33(R9), R13
 	MOVQ st+0(FP), R14
 	MOVQ 24(R14), R15
-	MOVB R13, 49257(R14)(R15*1)
+	MOVB R13, 98409(R14)(R15*1)
 	INCQ R15
 	MOVQ R15, 24(R14)
 	LEAQ -32(R9), R13
@@ -31230,7 +31230,7 @@ lits_last_39_encodeFastBlockSIMDAsm64K:
 
 exit1_1_11_encodeFastBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000001, 147568(AX)
+	MOVQ $0x00000001, 295024(AX)
 	MOVQ $0x00000001, ret+40(FP)
 	JMP  return_encodeFastBlockSIMDAsm64K
 
@@ -31242,7 +31242,7 @@ match_esc_40_encodeFastBlockSIMDAsm64K:
 	LEAQ -33(R10), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -31252,7 +31252,7 @@ match_big_42_encodeFastBlockSIMDAsm64K:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R11
-	MOVB R8, 49257(R9)(R11*1)
+	MOVB R8, 98409(R9)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R9)
 	ORQ  $0x00000084, CX
@@ -31272,11 +31272,11 @@ match_big_42_encodeFastBlockSIMDAsm64K:
 
 exit2_1_17_encodeFastBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ R8, 147592(AX)
-	MOVQ $0x00000001, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ R8, 295048(AX)
+	MOVQ $0x00000001, 295024(AX)
 	MOVQ $0x00000002, ret+40(FP)
 	JMP  return_encodeFastBlockSIMDAsm64K
 
@@ -31288,7 +31288,7 @@ long_20_encodeFastBlockSIMDAsm64K:
 	JMP  one_op_18_encodeFastBlockSIMDAsm64K
 
 split_19_encodeFastBlockSIMDAsm64K:
-	MOVQ $0x00004000, R10
+	MOVQ $0x00008000, R10
 	SUBQ 24(SP), R10
 	LEAQ (R10)(R10*8), R10
 	SHLQ $0x05, R10
@@ -31304,7 +31304,7 @@ match_esc_45_encodeFastBlockSIMDAsm64K:
 	LEAQ -33(R9), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -31314,7 +31314,7 @@ match_big_47_encodeFastBlockSIMDAsm64K:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R10
 	MOVQ 24(R10), R11
-	MOVB R8, 49257(R10)(R11*1)
+	MOVB R8, 98409(R10)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R10)
 	ORQ  $0x00000084, CX
@@ -31334,10 +31334,10 @@ match_big_47_encodeFastBlockSIMDAsm64K:
 
 exit3_0_28_encodeFastBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000003, ret+40(FP)
 	JMP  return_encodeFastBlockSIMDAsm64K
 
@@ -31349,7 +31349,7 @@ long_31_encodeFastBlockSIMDAsm64K:
 	JMP  one_op_29_encodeFastBlockSIMDAsm64K
 
 split_30_encodeFastBlockSIMDAsm64K:
-	MOVQ $0x00004000, R8
+	MOVQ $0x00008000, R8
 	SUBQ 24(SP), R8
 	LEAQ (R8)(R8*8), R8
 	SHLQ $0x05, R8
@@ -31361,7 +31361,7 @@ lits_long_32_encodeFastBlockSIMDAsm64K:
 	LEAQ -33(R9), R12
 	MOVQ st+0(FP), R13
 	MOVQ 24(R13), R14
-	MOVB R12, 49257(R13)(R14*1)
+	MOVB R12, 98409(R13)(R14*1)
 	INCQ R14
 	MOVQ R14, 24(R13)
 	LEAQ -32(R9), R12
@@ -31389,7 +31389,7 @@ lits_last_51_encodeFastBlockSIMDAsm64K:
 
 exit1_0_34_encodeFastBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000001, ret+40(FP)
 	JMP  return_encodeFastBlockSIMDAsm64K
 
@@ -31401,7 +31401,7 @@ match_esc_52_encodeFastBlockSIMDAsm64K:
 	LEAQ -33(R10), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -31411,7 +31411,7 @@ match_big_54_encodeFastBlockSIMDAsm64K:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R11
-	MOVB R8, 49257(R9)(R11*1)
+	MOVB R8, 98409(R9)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R9)
 	ORQ  $0x00000084, CX
@@ -31435,15 +31435,15 @@ return_encodeFastBlockSIMDAsm64K:
 	MOVQ CX, (AX)
 	MOVQ 32(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00004069, CX
+	SUBQ $0x00008069, CX
 	MOVQ CX, 8(AX)
 	MOVQ 40(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00008069, CX
+	SUBQ $0x00010069, CX
 	MOVQ CX, 16(AX)
 	MOVQ 48(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00014069, CX
+	SUBQ $0x00028069, CX
 	MOVQ CX, 32(AX)
 	MOVQ 80(SP), CX
 	MOVQ CX, 56(AX)
@@ -31470,13 +31470,13 @@ TEXT ·encodeBlockSIMDAsm64K(SB), $88-48
 	MOVQ    (CX), DX
 	MOVQ    DX, 24(SP)
 	MOVQ    8(CX), DX
-	LEAQ    16489(CX)(DX*1), DX
+	LEAQ    32873(CX)(DX*1), DX
 	MOVQ    DX, 32(SP)
 	MOVQ    16(CX), DX
-	LEAQ    32873(CX)(DX*1), DX
+	LEAQ    65641(CX)(DX*1), DX
 	MOVQ    DX, 40(SP)
 	MOVQ    32(CX), DX
-	LEAQ    82025(CX)(DX*1), DX
+	LEAQ    163945(CX)(DX*1), DX
 	MOVQ    DX, 48(SP)
 	MOVQ    56(CX), DX
 	MOVQ    DX, 80(SP)
@@ -31500,7 +31500,7 @@ TEXT ·encodeBlockSIMDAsm64K(SB), $88-48
 	MOVQ    tab+32(FP), SI
 	MOVQ    $0x0000cf1bbcdcbf9b, DI
 	MOVQ    st+0(FP), CX
-	CMPQ    147568(CX), $0x01
+	CMPQ    295024(CX), $0x01
 	JEQ     post_encodeBlockSIMDAsm64K
 	MOVQ    $0x00000001, CX
 	CMPQ    BX, CX
@@ -31689,7 +31689,7 @@ match_tok_14_encodeBlockSIMDAsm64K:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_1_12_encodeBlockSIMDAsm64K
 
 post_encodeBlockSIMDAsm64K:
@@ -31790,7 +31790,7 @@ match_tok_22_encodeBlockSIMDAsm64K:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_1_12_encodeBlockSIMDAsm64K
 	JMP  post_encodeBlockSIMDAsm64K
 
@@ -31896,7 +31896,7 @@ match_tok_35_encodeBlockSIMDAsm64K:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_0_33_encodeBlockSIMDAsm64K
 	CMPQ BX, DX
 	JGE  exit0_0_1_encodeBlockSIMDAsm64K
@@ -31905,22 +31905,22 @@ match_tok_35_encodeBlockSIMDAsm64K:
 
 exit0_0_1_encodeBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000000, ret+40(FP)
 	JMP  return_encodeBlockSIMDAsm64K
 
 exit2_1_7_encodeBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ R8, 147592(AX)
-	MOVQ $0x00000001, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ R8, 295048(AX)
+	MOVQ $0x00000001, 295024(AX)
 	MOVQ $0x00000002, ret+40(FP)
 	JMP  return_encodeBlockSIMDAsm64K
 
 split_9_encodeBlockSIMDAsm64K:
-	MOVQ $0x00004000, R11
+	MOVQ $0x00008000, R11
 	SUBQ 24(SP), R11
 	CMPQ R8, $0x20
 	JB   split_short_36_encodeBlockSIMDAsm64K
@@ -31936,7 +31936,7 @@ lits_long_10_encodeBlockSIMDAsm64K:
 	LEAQ -33(R9), R13
 	MOVQ st+0(FP), R14
 	MOVQ 24(R14), R15
-	MOVB R13, 49257(R14)(R15*1)
+	MOVB R13, 98409(R14)(R15*1)
 	INCQ R15
 	MOVQ R15, 24(R14)
 	LEAQ -32(R9), R13
@@ -31964,7 +31964,7 @@ lits_last_38_encodeBlockSIMDAsm64K:
 
 exit1_1_12_encodeBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000001, 147568(AX)
+	MOVQ $0x00000001, 295024(AX)
 	MOVQ $0x00000001, ret+40(FP)
 	JMP  return_encodeBlockSIMDAsm64K
 
@@ -31978,7 +31978,7 @@ match_esc_39_encodeBlockSIMDAsm64K:
 	LEAQ -33(R10), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -31988,7 +31988,7 @@ match_big_41_encodeBlockSIMDAsm64K:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R11
-	MOVB R8, 49257(R9)(R11*1)
+	MOVB R8, 98409(R9)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R9)
 	ORQ  $0x00000084, CX
@@ -32026,16 +32026,16 @@ match_rest_42_encodeBlockSIMDAsm64K:
 
 exit2_1_18_encodeBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ R8, 147592(AX)
-	MOVQ $0x00000001, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ R8, 295048(AX)
+	MOVQ $0x00000001, 295024(AX)
 	MOVQ $0x00000002, ret+40(FP)
 	JMP  return_encodeBlockSIMDAsm64K
 
 split_20_encodeBlockSIMDAsm64K:
-	MOVQ $0x00004000, R10
+	MOVQ $0x00008000, R10
 	SUBQ 24(SP), R10
 	CMPQ R8, $0x20
 	JB   split_short_44_encodeBlockSIMDAsm64K
@@ -32057,7 +32057,7 @@ match_esc_45_encodeBlockSIMDAsm64K:
 	LEAQ -33(R9), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -32067,7 +32067,7 @@ match_big_47_encodeBlockSIMDAsm64K:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R10
 	MOVQ 24(R10), R11
-	MOVB R8, 49257(R10)(R11*1)
+	MOVB R8, 98409(R10)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R10)
 	ORQ  $0x00000084, CX
@@ -32105,15 +32105,15 @@ match_rest_48_encodeBlockSIMDAsm64K:
 
 exit3_0_28_encodeBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000003, ret+40(FP)
 	JMP  return_encodeBlockSIMDAsm64K
 
 split_30_encodeBlockSIMDAsm64K:
-	MOVQ $0x00004000, R11
+	MOVQ $0x00008000, R11
 	SUBQ 24(SP), R11
 	CMPQ R8, $0x20
 	JB   split_short_50_encodeBlockSIMDAsm64K
@@ -32129,7 +32129,7 @@ lits_long_31_encodeBlockSIMDAsm64K:
 	LEAQ -33(R9), R13
 	MOVQ st+0(FP), R14
 	MOVQ 24(R14), R15
-	MOVB R13, 49257(R14)(R15*1)
+	MOVB R13, 98409(R14)(R15*1)
 	INCQ R15
 	MOVQ R15, 24(R14)
 	LEAQ -32(R9), R13
@@ -32157,7 +32157,7 @@ lits_last_52_encodeBlockSIMDAsm64K:
 
 exit1_0_33_encodeBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000001, ret+40(FP)
 	JMP  return_encodeBlockSIMDAsm64K
 
@@ -32171,7 +32171,7 @@ match_esc_53_encodeBlockSIMDAsm64K:
 	LEAQ -33(R10), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -32181,7 +32181,7 @@ match_big_55_encodeBlockSIMDAsm64K:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R11
-	MOVB R8, 49257(R9)(R11*1)
+	MOVB R8, 98409(R9)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R9)
 	ORQ  $0x00000084, CX
@@ -32223,15 +32223,15 @@ return_encodeBlockSIMDAsm64K:
 	MOVQ CX, (AX)
 	MOVQ 32(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00004069, CX
+	SUBQ $0x00008069, CX
 	MOVQ CX, 8(AX)
 	MOVQ 40(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00008069, CX
+	SUBQ $0x00010069, CX
 	MOVQ CX, 16(AX)
 	MOVQ 48(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00014069, CX
+	SUBQ $0x00028069, CX
 	MOVQ CX, 32(AX)
 	MOVQ 80(SP), CX
 	MOVQ CX, 56(AX)
@@ -32258,13 +32258,13 @@ TEXT ·encodeBetterBlockSIMDAsm64K(SB), $88-64
 	MOVQ    (CX), DX
 	MOVQ    DX, 24(SP)
 	MOVQ    8(CX), DX
-	LEAQ    16489(CX)(DX*1), DX
+	LEAQ    32873(CX)(DX*1), DX
 	MOVQ    DX, 32(SP)
 	MOVQ    16(CX), DX
-	LEAQ    32873(CX)(DX*1), DX
+	LEAQ    65641(CX)(DX*1), DX
 	MOVQ    DX, 40(SP)
 	MOVQ    32(CX), DX
-	LEAQ    82025(CX)(DX*1), DX
+	LEAQ    163945(CX)(DX*1), DX
 	MOVQ    DX, 48(SP)
 	MOVQ    56(CX), DX
 	MOVQ    DX, 80(SP)
@@ -32535,7 +32535,7 @@ match_tok_21_encodeBetterBlockSIMDAsm64K:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_0_19_encodeBetterBlockSIMDAsm64K
 	CMPQ BX, DX
 	JGE  exit0_0_1_encodeBetterBlockSIMDAsm64K
@@ -32681,7 +32681,7 @@ match_tok_38_encodeBetterBlockSIMDAsm64K:
 	INCQ R9
 	MOVQ R9, 24(SP)
 	MOVQ BX, 8(SP)
-	CMPQ R9, $0x00004000
+	CMPQ R9, $0x00008000
 	JEQ  exit1_0_19_encodeBetterBlockSIMDAsm64K
 	CMPQ BX, DX
 	JGE  exit0_0_1_encodeBetterBlockSIMDAsm64K
@@ -32692,7 +32692,7 @@ match_tok_38_encodeBetterBlockSIMDAsm64K:
 
 exit0_0_1_encodeBetterBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000000, ret+56(FP)
 	JMP  return_encodeBetterBlockSIMDAsm64K
 
@@ -32737,16 +32737,16 @@ cut_10_encodeBetterBlockSIMDAsm64K:
 
 exit2_0_14_encodeBetterBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ R8, 147592(AX)
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ R8, 295048(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000002, ret+56(FP)
 	JMP  return_encodeBetterBlockSIMDAsm64K
 
 split_16_encodeBetterBlockSIMDAsm64K:
-	MOVQ $0x00004000, R11
+	MOVQ $0x00008000, R11
 	SUBQ 24(SP), R11
 	CMPQ R8, $0x20
 	JB   split_short_41_encodeBetterBlockSIMDAsm64K
@@ -32762,7 +32762,7 @@ lits_long_17_encodeBetterBlockSIMDAsm64K:
 	LEAQ -33(R9), R13
 	MOVQ st+0(FP), R14
 	MOVQ 24(R14), R15
-	MOVB R13, 49257(R14)(R15*1)
+	MOVB R13, 98409(R14)(R15*1)
 	INCQ R15
 	MOVQ R15, 24(R14)
 	LEAQ -32(R9), R13
@@ -32790,7 +32790,7 @@ lits_last_43_encodeBetterBlockSIMDAsm64K:
 
 exit1_0_19_encodeBetterBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000001, ret+56(FP)
 	JMP  return_encodeBetterBlockSIMDAsm64K
 
@@ -32804,7 +32804,7 @@ match_esc_44_encodeBetterBlockSIMDAsm64K:
 	LEAQ -33(R10), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -32814,7 +32814,7 @@ match_big_46_encodeBetterBlockSIMDAsm64K:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R11
-	MOVB R8, 49257(R9)(R11*1)
+	MOVB R8, 98409(R9)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R9)
 	ORQ  $0x00000084, CX
@@ -32870,15 +32870,15 @@ cut_28_encodeBetterBlockSIMDAsm64K:
 
 exit3_0_32_encodeBetterBlockSIMDAsm64K:
 	MOVQ st+0(FP), AX
-	MOVQ CX, 147576(AX)
+	MOVQ CX, 295032(AX)
 	SUBQ CX, BX
-	MOVQ BX, 147584(AX)
-	MOVQ $0x00000000, 147568(AX)
+	MOVQ BX, 295040(AX)
+	MOVQ $0x00000000, 295024(AX)
 	MOVQ $0x00000003, ret+56(FP)
 	JMP  return_encodeBetterBlockSIMDAsm64K
 
 split_34_encodeBetterBlockSIMDAsm64K:
-	MOVQ $0x00004000, R11
+	MOVQ $0x00008000, R11
 	SUBQ 24(SP), R11
 	CMPQ R8, $0x20
 	JB   split_short_50_encodeBetterBlockSIMDAsm64K
@@ -32894,7 +32894,7 @@ lits_long_35_encodeBetterBlockSIMDAsm64K:
 	LEAQ -33(R9), R13
 	MOVQ st+0(FP), R14
 	MOVQ 24(R14), R15
-	MOVB R13, 49257(R14)(R15*1)
+	MOVB R13, 98409(R14)(R15*1)
 	INCQ R15
 	MOVQ R15, 24(R14)
 	LEAQ -32(R9), R13
@@ -32930,7 +32930,7 @@ match_esc_53_encodeBetterBlockSIMDAsm64K:
 	LEAQ -33(R10), R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R10
-	MOVB R8, 49257(R9)(R10*1)
+	MOVB R8, 98409(R9)(R10*1)
 	INCQ R10
 	MOVQ R10, 24(R9)
 	ORQ  $0x00000084, CX
@@ -32940,7 +32940,7 @@ match_big_55_encodeBetterBlockSIMDAsm64K:
 	MOVQ $0x000000ff, R8
 	MOVQ st+0(FP), R9
 	MOVQ 24(R9), R11
-	MOVB R8, 49257(R9)(R11*1)
+	MOVB R8, 98409(R9)(R11*1)
 	INCQ R11
 	MOVQ R11, 24(R9)
 	ORQ  $0x00000084, CX
@@ -32982,15 +32982,15 @@ return_encodeBetterBlockSIMDAsm64K:
 	MOVQ CX, (AX)
 	MOVQ 32(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00004069, CX
+	SUBQ $0x00008069, CX
 	MOVQ CX, 8(AX)
 	MOVQ 40(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00008069, CX
+	SUBQ $0x00010069, CX
 	MOVQ CX, 16(AX)
 	MOVQ 48(SP), CX
 	SUBQ AX, CX
-	SUBQ $0x00014069, CX
+	SUBQ $0x00028069, CX
 	MOVQ CX, 32(AX)
 	MOVQ 80(SP), CX
 	MOVQ CX, 56(AX)

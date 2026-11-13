@@ -34,7 +34,7 @@ import (
 const (
 	// simdDebug adds INT 3 checks, which only amd64 can generate.
 	simdDebug    = false
-	simdChunkOps = 1 << 14
+	simdChunkOps = 1 << 15
 	simdMaxLong  = simdMaxLen + 1 + 255
 
 	// The return codes, see parseAsm.
@@ -63,7 +63,7 @@ const (
 	ssOffc    = ssTok + 2*simdChunkOps
 	ssEsc     = ssTok + 3*simdChunkOps
 	ssRaw     = ssTok + 5*simdChunkOps
-	ssAsmSite = ssRaw + 1<<16 + 7 // raw has 1<<16+3 bytes, padded to 8
+	ssAsmSite = ssRaw + 1<<17 + 7 // raw has 1<<17+3 bytes, padded to 8
 	ssAsmBase = ssAsmSite + 8
 	ssAsmLen  = ssAsmSite + 16
 	ssAsmOff  = ssAsmSite + 24

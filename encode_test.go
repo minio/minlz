@@ -34,6 +34,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/s2"
+	"github.com/minio/minlz/internal/pivco"
 	"github.com/minio/minlz/internal/race"
 	"github.com/minio/minlz/internal/reference"
 )
@@ -1117,7 +1118,8 @@ func TestSIMDEncode(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
 	n := 3 << 20
 	if testing.Short() {
-		n = 256 << 10
+		// Inputs need more than one chunk to use the current table.
+		n = 1 << 20
 	}
 	period := func(p int) []byte {
 		return bytes.Repeat(genEncRandom(rng, p), n/p+1)[:n]
@@ -1696,9 +1698,10 @@ func TestSIMDEncodeDelta(t *testing.T) {
 	for _, n := range modes[simdLits] {
 		litBlocks += n
 	}
-	// Each run of 3*simdChunkOps*2 literals needs 2 literal blocks.
-	if want := []int{0, 2}; e.switches[0] != want[0] || flags[0] != want[1] || litBlocks != 6 {
-		t.Errorf("switches %v, %d delta chunks, %d literal blocks; want delta, plain, delta in 6 literal blocks", e.switches, flags[0], litBlocks)
+	// Each run of simdChunkOps*6 literals needs its own literal blocks.
+	perRun := (simdChunkOps*6 + pivco.MaxBlockSize - 1) / pivco.MaxBlockSize
+	if want := []int{0, 2}; e.switches[0] != want[0] || flags[0] != want[1] || litBlocks != 3*perRun {
+		t.Errorf("switches %v, %d delta chunks, %d literal blocks; want delta, plain, delta in %d literal blocks", e.switches, flags[0], litBlocks, 3*perRun)
 	}
 }
 
@@ -2217,6 +2220,54 @@ func TestSuperFastMaxOffset(t *testing.T) {
 				t.Errorf("k %d delta %d: encodeFastBlockGo size %d, want %d (sizes shared with minlz-rs l0_max_offset_probes: regenerate both if the encodeFastBlockGo parse changes on purpose)",
 					k, delta, len(goEnc), want)
 			}
+		}
+	}
+}
+
+// TestSIMDEncodeEscapesStored checks that a chunk with more escapes than a pivco block holds stores them.
+// Each operation has long literals and a long match, so two escapes.
+func TestSIMDEncodeEscapesStored(t *testing.T) {
+	const lits, ml, off = simdMaxLen + 8, simdMaxLen + 8, 2 * simdMaxLen
+	for _, tc := range []struct {
+		ops    int
+		stored int // chunks that store their escapes
+	}{{pivco.MaxBlockSize / 2, 0}, {pivco.MaxBlockSize/2 + 1, 1}} {
+		rng := rand.New(rand.NewSource(1))
+		src := genEncRandom(rng, off)
+		for range tc.ops {
+			src = append(src, genEncRandom(rng, lits)...)
+			for range ml {
+				src = append(src, src[len(src)-off])
+			}
+		}
+		block := make([]byte, MaxEncodedLen(len(src)))
+		e := simdEncoder{out: block[1:1:len(block)]}
+		e.reset(src, 0, 0)
+		// The first operation also has the literals before its copy.
+		e.emitCopyLits(src[:off+lits], off, ml)
+		for p := off + lits + ml; p < len(src); p += lits + ml {
+			e.emitRepeatLits(src[p:p+lits], ml)
+		}
+		// A chunk of simdChunkOps operations has already ended.
+		if e.nTok > 0 {
+			e.endChunk()
+		}
+		n := e.finish()
+		if n == 0 {
+			t.Fatal("block not encoded")
+		}
+		enc := block[:n+1]
+		if got, err := reference.DecodeSIMDBlockStrict(enc); err != nil || !bytes.Equal(got, src) {
+			t.Fatalf("%d operations: reference: %v", tc.ops, err)
+		}
+		if got, err := Decode(nil, enc); err != nil || !bytes.Equal(got, src) {
+			t.Fatalf("%d operations: decode: %v", tc.ops, err)
+		}
+		var modes [simdLits + 1][8]int
+		var flags [2]int
+		simdTestStats(t, enc, &modes, &flags)
+		if modes[simdEsc][simdStored] != tc.stored {
+			t.Errorf("%d operations: escape modes %v, want %d stored", tc.ops, modes[simdEsc], tc.stored)
 		}
 	}
 }
