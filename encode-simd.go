@@ -26,8 +26,10 @@ import (
 
 const (
 	// simdChunkLimit is the chunk limit value of the header flags.
-	simdChunkLimit = 4
+	simdChunkLimit = 5
 	simdChunkOps   = 1024 << simdChunkLimit
+	// simdRawSize is a power of 2 that holds the raw offset bits of a chunk, at most 20 per operation.
+	simdRawSize = 1 << 17
 	// simdMaxLong is the longest literal run or match of an operation, with an escape.
 	simdMaxLong = simdMaxLen + 1 + 255
 	// simdBlockBits estimates the overhead of a pivco block.
@@ -73,7 +75,7 @@ type simdStreams struct {
 	// The fast paths mask their indexes, so the compiler drops the bounds checks.
 	tok, ll, offc [simdChunkOps]byte
 	esc           [2 * simdChunkOps]byte
-	raw           [1<<16 + 3]byte // room for a 4 byte store at any uint16 index
+	raw           [simdRawSize + 3]byte // room for a 4 byte store at any index below simdRawSize
 
 	// An assembly parser resumes at asmSite. It leaves operations to Go as the literals src[pos:asmBase],
 	// then a match of asmLen bytes at offset asmOff, or at the repeat offset.
@@ -317,7 +319,7 @@ func (e *simdEncoder) putBits(v uint64, n int) {
 	// e.raw has room, as the offsets of a chunk have at most 20 raw bits each.
 	acc := e.acc | v<<(e.nacc&63)
 	n += e.nacc
-	binary.LittleEndian.PutUint32(e.raw[uint16(e.nRaw):], uint32(acc))
+	binary.LittleEndian.PutUint32(e.raw[e.nRaw&(simdRawSize-1):], uint32(acc))
 	k := n >> 5
 	e.nRaw += k << 2
 	e.acc, e.nacc = acc>>(k<<5&63), n&31
@@ -865,8 +867,8 @@ func (e *simdEncoder) put(recs []byte, k int, v []byte) []byte {
 			best, bestBits = t, n+extra+blockBits
 		}
 	}
-	// As simdMinCoded, for blockBits.
-	if len(v) > blockBits/7 {
+	// As simdMinCoded, for blockBits. The escapes of a chunk can be more than a pivco block holds.
+	if len(v) > blockBits/7 && len(v) <= pivco.MaxBlockSize {
 		e.histogram(v, syms)
 		if e.have[k] {
 			try(&e.cur[k], 0)

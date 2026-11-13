@@ -51,13 +51,13 @@ func TestSIMDAsmLayout(t *testing.T) {
 		unsafe.Offsetof(s.lits), unsafe.Offsetof(s.overlap),
 	}
 	const n, a = simdChunkOps, 105
-	const c = a + 5*n + 1<<16 + 7
+	const c = a + 5*n + simdRawSize + 7
 	want := []uintptr{a, a + n, a + 2*n, a + 3*n, a + 5*n, 0, 8, 16, 24, 32, 40, 48, 56, 64, 72, c, c + 8, c + 16, c + 24, 80, 104}
 	if !slices.Equal(got, want) {
 		t.Errorf("simdStreams offsets %v, want %v; update _generate/gen-simd-enc.go", got, want)
 	}
 	consts := []int{simdChunkOps, simdMaxLen, simdMaxLong, simdAsmDone, simdAsmFull, simdAsmCopy, simdAsmRepeat}
-	if want := []int{1 << 14, 32, 288, 0, 1, 2, 3}; !slices.Equal(consts, want) {
+	if want := []int{1 << 15, 32, 288, 0, 1, 2, 3}; !slices.Equal(consts, want) {
 		t.Errorf("constants %v, want %v; update _generate/gen-simd-enc.go", consts, want)
 	}
 }
@@ -351,9 +351,9 @@ func simdLongEdgeInput(rng *rand.Rand) []byte {
 // in over they need one more.
 func simdSplitEdgeInputs(t *testing.T, p simdAsmParser, site, off int) (fit, over []byte) {
 	rng := rand.New(rand.NewSource(int64(off + 100*site)))
-	// Short copies for most of a chunk, then the run.
+	// Short copies for most of a chunk, then the run. The parsers emit up to 1.2 operations per copy.
 	pre := genEncRandom(rng, 100)
-	for range simdChunkOps - 3400 {
+	for range simdChunkOps * 79 / 100 {
 		pre = append(pre, genEncRandom(rng, 1+rng.Intn(3))...)
 		for o, n := 50+rng.Intn(50), 10+rng.Intn(10); n > 0; n-- {
 			pre = append(pre, pre[len(pre)-o])
@@ -364,8 +364,9 @@ func simdSplitEdgeInputs(t *testing.T, p simdAsmParser, site, off int) (fit, ove
 	block := func(n int) []byte {
 		return append(simdRun(slices.Clip(pre), off, n), tail...)
 	}
-	// The run is too long for any chunk, so the parser leaves its match to Go, which shows where it starts.
-	n := simdChunkOps*simdMaxLong + 64
+	// The run is too long for any chunk, or as long as a block allows, which is too long for the rest of the
+	// chunk, so the parser leaves its match to Go, which shows where it starts.
+	n := min(simdChunkOps*simdMaxLong+64, MaxBlockSize-len(pre)-len(tail)-1)
 	end := len(pre) + n
 	var nTok, length, offset, found int
 	defer func() { simdAsmHook = nil }()
