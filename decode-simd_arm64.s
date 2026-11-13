@@ -409,15 +409,46 @@ loop:
 	FLAT_REST
 
 	// The stream checks of chunks take 16 bytes at a time; n is a multiple of 16 above 0.
-	// They keep the largest byte, or byte - 1, in V7, and sum bytes with UADDLV into D lanes.
+	// They keep the largest byte, or byte - 1, in V7. In blocks of up to STATS_BLOCK bytes,
+	// they count in byte lanes and sum bytes into halfword lanes with UADDW, which can't
+	// overflow in a block, and add the lanes up with UADDLV at the end of each block.
+
+#define STATS_BLOCK $2016
 
 #define STATS_START \
-	VEOR  V7.B16, V7.B16, V7.B16    \
-	VEOR  V16.B16, V16.B16, V16.B16 \
-	VEOR  V17.B16, V17.B16, V17.B16 \
-	VEOR  V18.B16, V18.B16, V18.B16 \
-	VEOR  V19.B16, V19.B16, V19.B16 \
-	VMOVI $1, V29.B16
+	VEOR  V7.B16, V7.B16, V7.B16 \
+	VMOVI $1, V29.B16            \
+	MOVD  ZR, R5                 \
+	MOVD  ZR, R6                 \
+	MOVD  ZR, R7                 \
+	MOVD  ZR, R8
+
+// STATS_ZERO clears the lanes of a block.
+#define STATS_ZERO \
+	VEOR V16.B16, V16.B16, V16.B16 \
+	VEOR V17.B16, V17.B16, V17.B16 \
+	VEOR V18.B16, V18.B16, V18.B16 \
+	VEOR V19.B16, V19.B16, V19.B16
+
+// STATS_BLOCK_START sets R3 to the bytes of the next block, and takes them from R1.
+#define STATS_BLOCK_START \
+	STATS_ZERO           \
+	MOVD STATS_BLOCK, R3 \
+	CMP  R3, R1          \
+	CSEL LO, R1, R3, R3  \
+	SUB  R3, R1
+
+// STATS_SUMH adds the halfword lanes of v to r.
+#define STATS_SUMH(v, r) \
+	VUADDLV v.H8, V20    \
+	VMOV    V20.S[0], R9 \
+	ADD     R9, r
+
+// STATS_SUMB adds the byte lanes of v to r.
+#define STATS_SUMB(v, r) \
+	VUADDLV v.B16, V20   \
+	VMOV    V20.H[0], R9 \
+	ADD     R9, r
 
 // STATS_OK sets R2 to 1 if no byte of V7 is above lim, else 0.
 #define STATS_OK(lim) \
@@ -436,39 +467,37 @@ TEXT ·simdTokStatsNEON(SB), NOSPLIT, $0-49
 	MOVD  n+8(FP), R1
 	STATS_START
 	VMOVI $2, V30.B16
-	VMOVI $4, V28.B16
+	VMOVI $33, V27.B16
+
+tokblock:
+	STATS_BLOCK_START
 
 tokloop:
-	VLD1.P 16(R0), [V0.B16]
-	VUMAX  V0.B16, V7.B16, V7.B16
-	VUSHR  $2, V0.B16, V1.B16
-	VAND   V30.B16, V0.B16, V2.B16
-	VAND   V29.B16, V0.B16, V3.B16
-
-	// Match length code 33 has bits 7 and 2.
-	VUSHR   $5, V0.B16, V4.B16
-	VAND    V0.B16, V4.B16, V4.B16
-	VAND    V28.B16, V4.B16, V4.B16
-	VUADDLV V1.B16, V1
-	VUADDLV V2.B16, V2
-	VUADDLV V3.B16, V3
-	VUADDLV V4.B16, V4
-	VADD    V1.D2, V16.D2, V16.D2
-	VADD    V2.D2, V17.D2, V17.D2
-	VADD    V3.D2, V18.D2, V18.D2
-	VADD    V4.D2, V19.D2, V19.D2
-	SUBS    $16, R1
+	// Match lengths in V16, twice the literal flags in V17, repeat flags in V18 and,
+	// with match length code 33, escapes in V19.
+	VLD1.P  16(R0), [V0.B16]
+	VUMAX   V0.B16, V7.B16, V7.B16
+	VUSHR   $2, V0.B16, V1.B16
+	VUADDW  V1.B8, V16.H8, V16.H8
+	VUADDW2 V1.B16, V16.H8, V16.H8
+	VCMEQ   V27.B16, V1.B16, V2.B16
+	VSUB    V2.B16, V19.B16, V19.B16
+	VAND    V30.B16, V0.B16, V3.B16
+	VADD    V3.B16, V17.B16, V17.B16
+	VAND    V29.B16, V0.B16, V4.B16
+	VADD    V4.B16, V18.B16, V18.B16
+	SUBS    $16, R3
 	BNE     tokloop
-	VMOV    V16.D[0], R2
-	MOVD    R2, out+16(FP)
-	VMOV    V17.D[0], R2
-	LSR     $1, R2
-	MOVD    R2, lit+24(FP)
-	VMOV    V18.D[0], R2
-	MOVD    R2, rep+32(FP)
-	VMOV    V19.D[0], R2
-	LSR     $2, R2
-	MOVD    R2, esc+40(FP)
+	STATS_SUMH(V16, R5)
+	STATS_SUMB(V17, R6)
+	STATS_SUMB(V18, R7)
+	STATS_SUMB(V19, R8)
+	CBNZ    R1, tokblock
+	MOVD    R5, out+16(FP)
+	LSR     $1, R6
+	MOVD    R6, lit+24(FP)
+	MOVD    R7, rep+32(FP)
+	MOVD    R8, esc+40(FP)
 	STATS_OK($135)
 	MOVB    R2, ok+48(FP)
 	RET
@@ -480,6 +509,9 @@ TEXT ·simdLLStatsNEON(SB), NOSPLIT, $0-33
 	STATS_START
 	VMOVI $33, V30.B16
 
+llblock:
+	STATS_BLOCK_START
+
 llloop:
 	VLD1.P 16(R0), [V0.B16]
 
@@ -487,17 +519,16 @@ llloop:
 	VSUB    V29.B16, V0.B16, V1.B16
 	VUMAX   V1.B16, V7.B16, V7.B16
 	VCMEQ   V30.B16, V0.B16, V2.B16
-	VAND    V29.B16, V2.B16, V2.B16
-	VUADDLV V0.B16, V1
-	VUADDLV V2.B16, V2
-	VADD    V1.D2, V16.D2, V16.D2
-	VADD    V2.D2, V17.D2, V17.D2
-	SUBS    $16, R1
+	VSUB    V2.B16, V17.B16, V17.B16
+	VUADDW  V0.B8, V16.H8, V16.H8
+	VUADDW2 V0.B16, V16.H8, V16.H8
+	SUBS    $16, R3
 	BNE     llloop
-	VMOV    V16.D[0], R2
-	MOVD    R2, sum+16(FP)
-	VMOV    V17.D[0], R2
-	MOVD    R2, esc+24(FP)
+	STATS_SUMH(V16, R5)
+	STATS_SUMB(V17, R6)
+	CBNZ    R1, llblock
+	MOVD    R5, sum+16(FP)
+	MOVD    R6, esc+24(FP)
 	STATS_OK($32)
 	MOVB    R2, ok+32(FP)
 	RET
@@ -510,19 +541,23 @@ TEXT ·simdOffStatsNEON(SB), NOSPLIT, $0-25
 	MOVD R1, R4
 	STATS_START
 
+offblock:
+	STATS_BLOCK_START
+
 offloop:
 	VLD1.P  16(R0), [V0.B16]
 	VSUB    V29.B16, V0.B16, V1.B16
 	VUMAX   V1.B16, V7.B16, V7.B16
 	VUSHR   $3, V0.B16, V2.B16
 	VUMAX   V29.B16, V2.B16, V2.B16
-	VUADDLV V2.B16, V2
-	VADD    V2.D2, V16.D2, V16.D2
-	SUBS    $16, R1
+	VUADDW  V2.B8, V16.H8, V16.H8
+	VUADDW2 V2.B16, V16.H8, V16.H8
+	SUBS    $16, R3
 	BNE     offloop
-	VMOV    V16.D[0], R2
-	SUB     R4, R2
-	MOVD    R2, bits+16(FP)
+	STATS_SUMH(V16, R5)
+	CBNZ    R1, offblock
+	SUB     R4, R5
+	MOVD    R5, bits+16(FP)
 	STATS_OK($174)
 	MOVB    R2, ok+24(FP)
 	RET

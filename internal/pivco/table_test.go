@@ -284,6 +284,48 @@ func TestTableC(t *testing.T) {
 	}
 }
 
+// TestTableCompact checks that moving the used symbols of the TestTableC sets down to
+// consecutive symbols from a few starting points, in order, only renames the symbols of
+// the table. build then spans fewer symbols.
+func TestTableCompact(t *testing.T) {
+	for i, l := range tableTestLens() {
+		var used []int
+		for s, v := range l {
+			if v != 0 {
+				used = append(used, s)
+			}
+		}
+		var tb Table
+		err := tb.SetLengths(&l)
+		for _, at := range []int{0, 3, 7, 8, 100} {
+			if at+len(used) > 256 {
+				continue
+			}
+			var c [256]uint8
+			for j, s := range used {
+				c[at+j] = l[s]
+			}
+			var tc Table
+			if errc := tc.SetLengths(&c); errc != err {
+				t.Fatalf("set %d at %d: SetLengths = %v, want %v", i, at, errc, err)
+			}
+			if err != nil {
+				continue
+			}
+			checkTable(t, &tc)
+			if !slices.Equal(tc.recs(), tb.recs()) || tc.nranks != tb.nranks {
+				t.Fatalf("set %d at %d: sched %v, want %v", i, at, tc.recs(), tb.recs())
+			}
+			for r := range int(tb.nranks) {
+				// A lone symbol has 2 ranks.
+				if want := at + slices.Index(used, int(tb.r2s[r])); int(tc.r2s[r]) != want {
+					t.Fatalf("set %d at %d: rank %d is %d, want %d", i, at, r, tc.r2s[r], want)
+				}
+			}
+		}
+	}
+}
+
 func TestTableReject(t *testing.T) {
 	var good [256]uint8
 	good[1], good[2] = 1, 1
