@@ -43,10 +43,6 @@ const (
 	simdRecordMax = 1 + 5*3 + 68 + 17 + 88 + 128
 	// simdTableBits is added to the cost of a new table, since every table costs decode time.
 	simdTableBits = 64 * 8
-	// simdLitSave is the part of a literal block that coding it must save: 1/simdLitSave of its size.
-	// Literals that hardly compress take the longest to decode, for the least gain,
-	// and stored literals are read in place.
-	simdLitSave = 16
 	// simdLitSeg is the step of the literal block splits of LevelSmallestSIMD.
 	simdLitSeg = 8192
 )
@@ -111,6 +107,10 @@ type simdEncoder struct {
 	// fastCode, when set, makes put build one table at most: code lengths for at least fastCode values,
 	// else class lengths. Building tables dominates the encoding of small blocks.
 	fastCode int
+	// litSave, when set, makes put store a literal block unless coding it saves more than 1/(1<<litSave)
+	// of its size, on top of the cost of its table. Literals that hardly compress take the longest to decode
+	// for the least gain, and stored literals are read in place.
+	litSave uint
 
 	deltaDiv int // delta literals must save 1/deltaDiv of a chunk; 0 disables them, -1 uses only them
 	// noOverlap splits the matches of up to 32 bytes that overlap their output, so every chunk has the
@@ -183,11 +183,11 @@ func (e *simdEncoder) parse(src []byte, level int) {
 	}
 	asm := simdEncAsm && delta == 0 && !simdNoOverlap && !simdLongRuns
 	e.splitLits = level == LevelSmallestSIMD
-	e.fastCode = 0
+	e.fastCode, e.litSave = 0, 0
 	e.noOverlap, e.budget = simdNoOverlap, false
 	switch level &^ LevelSIMDDelta {
 	case LevelSuperFastSIMD:
-		e.fastCode = 1
+		e.fastCode, e.litSave = 1, 4
 		if delta == 0 {
 			// Its assembly parsers leave the matches that overlap to Go, which makes simdLongRuns moot.
 			e.noOverlap, e.budget, asm = true, !simdNoOverlap, simdEncAsm
@@ -204,7 +204,7 @@ func (e *simdEncoder) parse(src []byte, level int) {
 			e.encodeFastBlockGo(src)
 		}
 	case LevelFastestSIMD:
-		e.fastCode = 4096
+		e.fastCode, e.litSave = 4096, 5
 		e.reset(src, delta, len(src)>>5)
 		switch {
 		case asm && len(src) <= 64<<10:
@@ -769,8 +769,7 @@ func (e *simdEncoder) split(lits []byte, start int) {
 }
 
 // simdLitBits estimates the size in bits of a literal block of n values with histogram h:
-// stored, or its entropy plus the overhead of a block with a new table of about 16 bytes when
-// that saves more than 1/simdLitSave, as put codes it.
+// stored, or its entropy plus the overhead of a block with a new table of about 16 bytes.
 // The entropy is cheaper than building the tables, which would dominate the encoding of literal-heavy data.
 func simdLitBits(h *[256]uint64, n int) int {
 	if n < simdMinCoded {
@@ -783,10 +782,7 @@ func simdLitBits(h *[256]uint64, n int) int {
 			e -= int(f) * simdLog2(f)
 		}
 	}
-	if c := max(e>>8, 0) + simdBlockBits + simdTableBits + 16*8; c < 8*(n-n/simdLitSave) {
-		return c
-	}
-	return 8 * n
+	return min(8*n, max(e>>8, 0)+simdBlockBits+simdTableBits+16*8)
 }
 
 // simdEntropyBits returns a lower bound of the entropy in bits of the counts h of n values.
@@ -856,7 +852,7 @@ func (e *simdEncoder) histogram(v []byte, syms int) {
 
 // put appends the values v of stream k to e.out, and their entry to recs. k is simdDelta for delta literals.
 // It takes the smallest of storing v, the current table and new tables for v.
-// Literals are stored unless coding them saves more than 1/simdLitSave of their size.
+// With e.litSave, literals are stored unless coding them saves more than that part of their size.
 // With e.fastCode, it takes the current table when that is smaller than storing,
 // and otherwise only tries one new table.
 // If v doesn't fit, the block fails.
@@ -868,8 +864,8 @@ func (e *simdEncoder) put(recs []byte, k int, v []byte) []byte {
 	var best *simdTable
 	// Coding v must take fewer bytes than limit.
 	limit := len(v)
-	if k == simdLits {
-		limit -= len(v) / simdLitSave
+	if k == simdLits && e.litSave > 0 {
+		limit -= len(v) >> e.litSave
 	}
 	bestBits := 8 * limit
 	blockBits := simdBlockBits
