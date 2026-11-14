@@ -107,6 +107,10 @@ type simdEncoder struct {
 	// fastCode, when set, makes put build one table at most: code lengths for at least fastCode values,
 	// else class lengths. Building tables dominates the encoding of small blocks.
 	fastCode int
+	// litSave, when set, makes put store a literal block unless coding it saves more than 1/(1<<litSave)
+	// of its size, on top of the cost of its table. Literals that hardly compress take the longest to decode
+	// for the least gain, and stored literals are read in place.
+	litSave uint
 
 	deltaDiv int // delta literals must save 1/deltaDiv of a chunk; 0 disables them, -1 uses only them
 	// noOverlap splits the matches of up to 32 bytes that overlap their output, so every chunk has the
@@ -179,11 +183,11 @@ func (e *simdEncoder) parse(src []byte, level int) {
 	}
 	asm := simdEncAsm && delta == 0 && !simdNoOverlap && !simdLongRuns
 	e.splitLits = level == LevelSmallestSIMD
-	e.fastCode = 0
+	e.fastCode, e.litSave = 0, 0
 	e.noOverlap, e.budget = simdNoOverlap, false
 	switch level &^ LevelSIMDDelta {
 	case LevelSuperFastSIMD:
-		e.fastCode = 1
+		e.fastCode, e.litSave = 1, 4
 		if delta == 0 {
 			// Its assembly parsers leave the matches that overlap to Go, which makes simdLongRuns moot.
 			e.noOverlap, e.budget, asm = true, !simdNoOverlap, simdEncAsm
@@ -200,7 +204,7 @@ func (e *simdEncoder) parse(src []byte, level int) {
 			e.encodeFastBlockGo(src)
 		}
 	case LevelFastestSIMD:
-		e.fastCode = 4096
+		e.fastCode, e.litSave = 4096, 5
 		e.reset(src, delta, len(src)>>5)
 		switch {
 		case asm && len(src) <= 64<<10:
@@ -848,6 +852,7 @@ func (e *simdEncoder) histogram(v []byte, syms int) {
 
 // put appends the values v of stream k to e.out, and their entry to recs. k is simdDelta for delta literals.
 // It takes the smallest of storing v, the current table and new tables for v.
+// With e.litSave, literals are stored unless coding them saves more than that part of their size.
 // With e.fastCode, it takes the current table when that is smaller than storing,
 // and otherwise only tries one new table.
 // If v doesn't fit, the block fails.
@@ -857,7 +862,12 @@ func (e *simdEncoder) put(recs []byte, k int, v []byte) []byte {
 	// The values of the stream are below syms.
 	syms := 2 * simdCodeBytes[k]
 	var best *simdTable
-	bestBits := 8 * len(v)
+	// Coding v must take fewer bytes than limit.
+	limit := len(v)
+	if k == simdLits && e.litSave > 0 {
+		limit -= len(v) >> e.litSave
+	}
+	bestBits := 8 * limit
 	blockBits := simdBlockBits
 	if e.fastCode != 0 {
 		blockBits = simdFastBlockBits
@@ -905,7 +915,7 @@ func (e *simdEncoder) put(recs []byte, k int, v []byte) []byte {
 		if k == simdTok || k == simdLits {
 			hdr = 2
 		}
-		if size := hdr + best.t.BlockSize(e.hist[:syms]); size <= room && size+n < len(v) {
+		if size := hdr + best.t.BlockSize(e.hist[:syms]); size <= room && size+n < limit {
 			out := e.out[len(e.out):][:size]
 			if hdr > 0 {
 				binary.LittleEndian.PutUint16(out, uint16(len(v)))

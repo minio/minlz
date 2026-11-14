@@ -2271,3 +2271,55 @@ func TestSIMDEncodeEscapesStored(t *testing.T) {
 		}
 	}
 }
+
+// TestSIMDEncodeLiteralsStored checks that LevelSuperFastSIMD only codes literal blocks that save more than 1/16
+// and LevelFastestSIMD more than 1/32, and that the other levels code any saving.
+// The first quarter of each input is random bytes below the alphabet size, which only literals can code,
+// and the rest repeats 64 bytes, so the block is small enough either way.
+func TestSIMDEncodeLiteralsStored(t *testing.T) {
+	const n = 1 << 20
+	levels := [...]int{LevelSuperFastSIMD, LevelFastestSIMD, LevelBalancedSIMD, LevelSmallestSIMD}
+	for _, tc := range []struct {
+		alphabet int
+		stored   [len(levels)]bool
+	}{
+		{256, [...]bool{true, true, true, true}},
+		{240, [...]bool{true, true, false, false}},   // 16 codes of 7 bits and 224 of 8 save 0.8%
+		{224, [...]bool{true, true, false, false}},   // 1.8%
+		{192, [...]bool{true, false, false, false}},  // 4.2%
+		{128, [...]bool{false, false, false, false}}, // 12.5%
+		{64, [...]bool{false, false, false, false}},  // 25%
+	} {
+		rng := rand.New(rand.NewSource(1))
+		src := make([]byte, n/4, n)
+		for i := range src {
+			src[i] = byte(rng.Intn(tc.alphabet))
+		}
+		src = append(src, bytes.Repeat(genEncRandom(rng, 64), n/64)...)[:n]
+		for i, level := range levels {
+			enc, err := Encode(nil, src, level)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, err := reference.DecodeSIMDBlockStrict(enc); err != nil || !bytes.Equal(got, src) {
+				t.Fatalf("alphabet %d, level %d: reference: %v", tc.alphabet, level, err)
+			}
+			if got, err := Decode(nil, enc); err != nil || !bytes.Equal(got, src) {
+				t.Fatalf("alphabet %d, level %d: decode: %v", tc.alphabet, level, err)
+			}
+			var modes [simdLits + 1][8]int
+			var flags [2]int
+			simdTestStats(t, enc, &modes, &flags)
+			blocks := 0
+			for _, m := range modes[simdLits] {
+				blocks += m
+			}
+			stored := modes[simdLits][simdStored]
+			// The last literal block also has literals of the part that repeats, as many as the parser skips,
+			// so it can differ from the others.
+			if blocks < 4 || !tc.stored[i] && stored > 1 || tc.stored[i] && stored < blocks-1 {
+				t.Errorf("alphabet %d, level %d: %d of %d literal blocks stored, want stored %v", tc.alphabet, level, stored, blocks, tc.stored[i])
+			}
+		}
+	}
+}
