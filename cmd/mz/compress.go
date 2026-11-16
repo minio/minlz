@@ -460,6 +460,14 @@ func createTemp(name, ext string, mode os.FileMode) *os.File {
 		// The rename would replace a device or pipe with a regular file.
 		exitErr(errors.New("cannot write in place to a non-regular file"))
 	}
+	if runtime.GOOS == "windows" && mode&0o200 == 0 {
+		// replaceFile clears read-only on the file itself, so other names would lose it.
+		n, err := hardLinks(name)
+		exitErr(err)
+		if n > 1 {
+			exitErr(errors.New("cannot write in place to a read-only file with other hard links"))
+		}
+	}
 	f, err := os.CreateTemp(filepath.Dir(name), ".tmp-*"+ext)
 	exitErr(err)
 	outputs = append(outputs, f)
