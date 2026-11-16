@@ -124,6 +124,91 @@ func TestSameFileOutput(t *testing.T) {
 	}
 }
 
+// TestReadOnlyInPlace checks that in-place output replaces a read-only input,
+// which Windows refuses to rename over while Unix allows it.
+func TestReadOnlyInPlace(t *testing.T) {
+	data := bytes.Repeat([]byte("read-only in place test\n"), 1<<12)
+	var buf bytes.Buffer
+	w := minlz.NewWriter(&buf)
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	decStream := func(b []byte) ([]byte, error) {
+		return io.ReadAll(minlz.NewReader(bytes.NewReader(b)))
+	}
+	cases := []struct {
+		name string
+		file string
+		in   []byte
+		link string // hard link to file, if set; must keep the old content read-only
+		args []string
+		dec  func([]byte) ([]byte, error)
+	}{
+		{"recomp", "x.mz", buf.Bytes(), "", []string{"c", "-q", "-recomp", "x.mz"}, decStream},
+		{"recomp-link", "x.mz", buf.Bytes(), "y.mz", []string{"c", "-q", "-recomp", "x.mz"}, decStream},
+		{"block", "x", data, "", []string{"c", "-q", "-block", "-o", "x", "x"}, func(b []byte) ([]byte, error) {
+			return minlz.Decode(nil, b)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			names := []string{tc.file}
+			if tc.link != "" {
+				names = append(names, tc.link)
+			}
+			path := filepath.Join(dir, tc.file)
+			if err := os.WriteFile(path, tc.in, 0o444); err != nil {
+				t.Fatal(err)
+			}
+			// Windows can't delete a read-only file, so TempDir cleanup would fail.
+			t.Cleanup(func() {
+				for _, n := range names {
+					os.Chmod(filepath.Join(dir, n), 0o644)
+				}
+			})
+			if tc.link != "" {
+				if err := os.Link(path, filepath.Join(dir, tc.link)); err != nil {
+					t.Skip("hard links not supported:", err)
+				}
+			}
+			output, err := runMZ(t, dir, "", tc.args...)
+			// Windows can only replace a read-only file by clearing an attribute its links share.
+			refuse := tc.link != "" && runtime.GOOS == "windows"
+			if (err != nil) != refuse || refuse && !bytes.Contains(output, []byte("hard links")) {
+				t.Fatalf("mz %v: got err %v, want refusal %v\n%s", tc.args, err, refuse, output)
+			}
+			for _, n := range names {
+				st, err := os.Stat(filepath.Join(dir, n))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if st.Mode().Perm()&0o200 != 0 {
+					t.Errorf("%s mode %v, want read-only", n, st.Mode())
+				}
+			}
+			if tc.link != "" {
+				if got, err := os.ReadFile(filepath.Join(dir, tc.link)); err != nil || !bytes.Equal(got, tc.in) {
+					t.Errorf("link changed (read err %v)", err)
+				}
+			}
+			b, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, err := tc.dec(b); err != nil || !bytes.Equal(got, data) {
+				t.Errorf("output does not decode to the input: %v", err)
+			}
+			if entries, err := os.ReadDir(dir); err != nil || len(entries) != len(names) {
+				t.Errorf("directory has %d entries (err %v), want %v", len(entries), err, names)
+			}
+		})
+	}
+}
+
 // TestOutputSafety checks -safe, -rm and the removal of partial outputs.
 func TestOutputSafety(t *testing.T) {
 	data := bytes.Repeat([]byte("output safety test\n"), 1<<16)
