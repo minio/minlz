@@ -576,7 +576,7 @@ func (r *Reader) Read(p []byte) (int, error) {
 		case ChunkTypeStreamIdentifier:
 			// Section 4.1. Stream identifier (chunk type 0xff).
 			if chunkLen != magicBodyLen {
-				r.err = ErrCorrupt
+				r.err = errIdentifierLen(chunkLen)
 				return 0, r.err
 			}
 			if !r.readFull(r.tmp[:magicBodyLen], false) {
@@ -1092,7 +1092,7 @@ func (r *Reader) DecodeConcurrent(w io.Writer, concurrent int) (written int64, e
 		case ChunkTypeStreamIdentifier:
 			// Section 4.1. Stream identifier (chunk type 0xff).
 			if chunkLen != magicBodyLen {
-				r.err = ErrCorrupt
+				r.err = errIdentifierLen(chunkLen)
 				return 0, r.err
 			}
 			if !r.readFull(r.tmp[:magicBodyLen], false) {
@@ -1149,9 +1149,8 @@ func (r *Reader) minLzHeader(hdr []byte) (ok bool) {
 		r.err = ErrCorrupt
 		return false
 	}
-	// Upper bit must be 0
-	if hdr[magicBodyLen-1]&(1<<7) != 0 {
-		r.err = ErrCorrupt
+	if hdr[magicBodyLen-1]&streamFlagReserved != 0 {
+		r.err = ErrUnsupported
 		return false
 	}
 	r.simd = hdr[magicBodyLen-1]&streamFlagSIMD != 0
@@ -1490,7 +1489,7 @@ func (r *Reader) Skip(n int64) error {
 		case ChunkTypeStreamIdentifier:
 			// Section 4.1. Stream identifier (chunk type 0xff).
 			if chunkLen != magicBodyLen {
-				r.err = ErrCorrupt
+				r.err = errIdentifierLen(chunkLen)
 				return r.err
 			}
 			if !r.readFull(r.tmp[:magicBodyLen], false) {

@@ -145,8 +145,8 @@ func SidecarConcurrency(n int) SidecarOption {
 // constraints as the runtime decoder: upper bit must be zero, log2 must
 // be within range.
 func streamBlockSizeFromHeaderByte(b byte) (int, error) {
-	if b&(1<<7) != 0 {
-		return 0, ErrCorrupt
+	if b&streamFlagReserved != 0 {
+		return 0, ErrUnsupported
 	}
 	n := int(b&15) + 10
 	if n > maxBlockLog {
@@ -289,7 +289,7 @@ func (cr *chunkReader) readStreamHeader() (int, error) {
 	}
 	chunkLen := int(hdr[1]) | int(hdr[2])<<8 | int(hdr[3])<<16
 	if chunkLen != magicBodyLen {
-		return 0, ErrCorrupt
+		return 0, errIdentifierLen(chunkLen)
 	}
 	var body [magicBodyLen]byte
 	if _, err := io.ReadFull(cr.src, body[:]); err != nil {
@@ -539,7 +539,7 @@ func BuildSidecar(dst io.Writer, src io.Reader, opts ...SidecarOption) (err erro
 				return ErrCorrupt
 			}
 			if chunkLen != magicBodyLen {
-				return ErrCorrupt
+				return errIdentifierLen(chunkLen)
 			}
 			payload, err := cr.readChunkPayload(chunkLen)
 			if err != nil {
@@ -770,7 +770,7 @@ func ExtractSidecar(sidecarDst, newStreamDst io.Writer, src io.Reader, opts ...S
 				return ErrCorrupt
 			}
 			if chunkLen != magicBodyLen {
-				return ErrCorrupt
+				return errIdentifierLen(chunkLen)
 			}
 			payload, err := cr.readChunkPayload(chunkLen)
 			if err != nil {

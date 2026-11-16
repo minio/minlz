@@ -117,7 +117,18 @@ const (
 
 	// streamFlagSIMD is the stream identifier flag of streams with SIMD chunks.
 	streamFlagSIMD = 1 << 6
+	// streamFlagReserved is reserved for a later version: this one can't read streams that set it.
+	streamFlagReserved = 1 << 7
 )
+
+// errIdentifierLen returns the error for a stream identifier chunk of n bytes, which isn't magicBodyLen.
+// A longer one may come from a later version, so it is unsupported rather than corrupt.
+func errIdentifierLen(n int) error {
+	if n > magicBodyLen {
+		return ErrUnsupported
+	}
+	return ErrCorrupt
+}
 
 // Internal chunk ids
 const (
