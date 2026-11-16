@@ -1844,11 +1844,15 @@ func TestSidecarSIMD(t *testing.T) {
 		if err := NewSidecarSearcher(bytes.NewReader(main), bytes.NewReader(bad)).Search(pat, func(SearchResult) error { return nil }); !errors.Is(err, ErrSidecarInvalid) {
 			t.Fatal("sidecar with wrong block size: got", err)
 		}
-		// A longer identifier with bit 7 set for the last stream, reserved for a later version, is unsupported.
+		// Bit 7 set for the last stream, reserved for a later version, is unsupported,
+		// both at the current identifier length and in a longer identifier.
 		i = bytes.LastIndex(side, []byte(magicChunk))
-		ext := slices.Concat(side[:i], []byte("\xff\x07\x00\x00"+magicBody), []byte{side[i+len(magicChunk)] | 1<<7, 1}, side[i+len(magicChunk)+1:])
-		if err := NewSidecarSearcher(bytes.NewReader(main), bytes.NewReader(ext)).Search(pat, func(SearchResult) error { return nil }); !errors.Is(err, ErrUnsupported) {
-			t.Fatal("sidecar with a longer identifier: got", err)
+		flag := string([]byte{side[i+len(magicChunk)] | 1<<7})
+		for _, id := range []string{magicChunk + flag, "\xff\x07\x00\x00" + magicBody + flag + "\x01"} {
+			ext := slices.Concat(side[:i], []byte(id), side[i+len(magicChunk)+1:])
+			if err := NewSidecarSearcher(bytes.NewReader(main), bytes.NewReader(ext)).Search(pat, func(SearchResult) error { return nil }); !errors.Is(err, ErrUnsupported) {
+				t.Fatalf("sidecar with identifier %q: got %v", id, err)
+			}
 		}
 		// Without the flag in the last stream, its SIMD chunks in main must be rejected.
 		side = bytes.Clone(side)
