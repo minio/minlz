@@ -212,7 +212,7 @@ func TestSidecarSearcher_ConcurrencyParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	errStop := errors.New("stop")
-	search := func(pat []byte, policy, conc, stopAfter int) ([]string, error) {
+	search := func(pat []byte, policy, conc, stopAfter int) ([][4]int64, error) {
 		ft := newForwardTester(t, data, pat, policy)
 		ss := NewSidecarSearcher(bytes.NewReader(main.Bytes()), bytes.NewReader(side.Bytes()), BlockSearchConcurrency(conc))
 		err := ss.Search(pat, func(r SearchResult) error {

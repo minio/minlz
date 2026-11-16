@@ -2474,7 +2474,6 @@ func resultChecker(t *testing.T, data, pattern []byte) func(r SearchResult, with
 	}
 	var last key
 	return func(r SearchResult, withNext bool) {
-		t.Helper()
 		if r.Offset != int(r.StreamOffset-r.BlockStart) || r.StreamOffset < 0 || r.StreamOffset > int64(len(data)) || !bytes.HasPrefix(data[r.StreamOffset:], pattern) {
 			t.Fatalf("no match at %d (offset %d, block start %d)", r.StreamOffset, r.Offset, r.BlockStart)
 		}
@@ -2509,43 +2508,46 @@ func resultChecker(t *testing.T, data, pattern []byte) func(r SearchResult, with
 // 0 never, 1 for every 3rd match, 2 for every match, 3 twice for every match.
 // It checks every call with resultChecker, and done checks that each request
 // made with a next block was re-called.
+// The callback and resultChecker avoid maps, fmt and t.Helper: with ~1M
+// matches those took most of a fuzz input's time, past the fuzz worker's 10 s
+// per-input limit.
 type forwardTester struct {
 	t      *testing.T
 	check  func(SearchResult, bool)
 	policy int
-	found  []int64  // matches in order of their first call
-	calls  []string // every call
-	limit  map[int64]int
-	asked  map[int64]int
-	owed   map[int64]int
+	found  []int64    // matches in order of their first call
+	calls  [][4]int64 // every call
+	state  []fwdState // indexed by StreamOffset
 }
+
+type fwdState struct{ limit, asked, owed uint8 }
 
 func newForwardTester(t *testing.T, data, pattern []byte, policy int) *forwardTester {
 	return &forwardTester{t: t, check: resultChecker(t, data, pattern), policy: policy,
-		limit: map[int64]int{}, asked: map[int64]int{}, owed: map[int64]int{}}
+		state: make([]fwdState, len(data)+1)}
 }
 
 func (f *forwardTester) callback(r SearchResult) error {
-	f.t.Helper()
 	f.check(r, true)
-	f.calls = append(f.calls, fmt.Sprint(r.StreamOffset, r.BlockStart, r.PrevBlockLen, len(r.Blocks[1])))
+	f.calls = append(f.calls, [4]int64{r.StreamOffset, r.BlockStart, int64(r.PrevBlockLen), int64(len(r.Blocks[1]))})
 	so := r.StreamOffset
+	st := &f.state[so]
 	switch {
-	case f.owed[so] > 0:
-		f.owed[so]--
-	case f.asked[so] > 0:
+	case st.owed > 0:
+		st.owed--
+	case st.asked > 0:
 		f.t.Fatalf("match at %d called again without a forward request", so)
 	default:
 		f.found = append(f.found, so)
-		f.limit[so] = [4]int{0, 0, 1, 2}[f.policy]
+		st.limit = [4]uint8{0, 0, 1, 2}[f.policy]
 		if f.policy == 1 && len(f.found)%3 == 0 {
-			f.limit[so] = 1
+			st.limit = 1
 		}
 	}
-	if f.asked[so] < f.limit[so] {
-		f.asked[so]++
+	if st.asked < st.limit {
+		st.asked++
 		if r.Blocks[1] != nil {
-			f.owed[so]++
+			st.owed++
 		}
 		return ErrSearchForward
 	}
@@ -2554,8 +2556,8 @@ func (f *forwardTester) callback(r SearchResult) error {
 
 func (f *forwardTester) done() {
 	f.t.Helper()
-	for so, n := range f.owed {
-		if n > 0 {
+	for so, st := range f.state {
+		if st.owed > 0 {
 			f.t.Fatalf("match at %d asked for forward context but was not re-called", so)
 		}
 	}
@@ -2580,7 +2582,9 @@ func FuzzSearchRoundtrip(f *testing.F) {
 	copy(straddle[2*minBlockSize+100:], "NEEDLE") // so the next block is not skipped
 	f.Add(straddle, []byte("NEEDLE"), 4, false)
 	f.Fuzz(func(t *testing.T, data, pattern []byte, matchLen int, usePrefix bool) {
-		if len(data) < 32 || len(pattern) < 1 || len(pattern) > 100 {
+		// 64 blocks reach every multi-block path; larger dense inputs only add
+		// time toward the fuzz worker's 10 s per-input limit.
+		if len(data) < 32 || len(data) > 64*minBlockSize || len(pattern) < 1 || len(pattern) > 100 {
 			return
 		}
 		if matchLen < 1 || matchLen > 8 {
@@ -2798,7 +2802,7 @@ func FuzzSearchRoundtrip(f *testing.F) {
 			t.Fatalf("sidecar main stream not decodable/equal: err=%v", derr)
 		}
 		if len(expected) > 0 {
-			var want []string
+			var want [][4]int64
 			for _, conc := range []int{1, 3} {
 				ss := NewSidecarSearcher(bytes.NewReader(main.Bytes()), bytes.NewReader(side.Bytes()), BlockSearchCollectStats(), BlockSearchConcurrency(conc))
 				ft := newForwardTester(t, data, pattern, fwd)
