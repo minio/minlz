@@ -124,6 +124,65 @@ func TestSameFileOutput(t *testing.T) {
 	}
 }
 
+// TestReadOnlyInPlace checks that in-place output replaces a read-only input,
+// which Windows refuses to rename over while Unix allows it.
+func TestReadOnlyInPlace(t *testing.T) {
+	data := bytes.Repeat([]byte("read-only in place test\n"), 1<<12)
+	var buf bytes.Buffer
+	w := minlz.NewWriter(&buf)
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name string
+		file string
+		in   []byte
+		args []string
+		dec  func([]byte) ([]byte, error)
+	}{
+		{"recomp", "x.mz", buf.Bytes(), []string{"c", "-q", "-recomp", "x.mz"}, func(b []byte) ([]byte, error) {
+			return io.ReadAll(minlz.NewReader(bytes.NewReader(b)))
+		}},
+		{"block", "x", data, []string{"c", "-q", "-block", "-o", "x", "x"}, func(b []byte) ([]byte, error) {
+			return minlz.Decode(nil, b)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, tc.file)
+			if err := os.WriteFile(path, tc.in, 0o444); err != nil {
+				t.Fatal(err)
+			}
+			// Windows can't delete a read-only file, so TempDir cleanup would fail.
+			t.Cleanup(func() { os.Chmod(path, 0o644) })
+			if output, err := runMZ(t, dir, "", tc.args...); err != nil {
+				t.Fatalf("mz %v: %v\n%s", tc.args, err, output)
+			}
+			st, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if st.Mode().Perm()&0o200 != 0 {
+				t.Errorf("output mode %v, want read-only", st.Mode())
+			}
+			b, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, err := tc.dec(b); err != nil || !bytes.Equal(got, data) {
+				t.Errorf("output does not decode to the input: %v", err)
+			}
+			if entries, err := os.ReadDir(dir); err != nil || len(entries) != 1 {
+				t.Errorf("directory has %d entries (err %v), want only the output", len(entries), err)
+			}
+		})
+	}
+}
+
 // TestOutputSafety checks -safe, -rm and the removal of partial outputs.
 func TestOutputSafety(t *testing.T) {
 	data := bytes.Repeat([]byte("output safety test\n"), 1<<16)

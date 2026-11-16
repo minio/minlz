@@ -439,7 +439,7 @@ func processStream(filename string, o streamCompressOpts) {
 	if inPlace {
 		// Windows can't rename over a file that is still open.
 		closeOnce.Do(func() { file.Close() })
-		exitErr(os.Rename(dstFile.Name(), dstFilename))
+		exitErr(replaceFile(dstFile.Name(), dstFilename, mode))
 	}
 	outputs = nil
 	if o.remove {
@@ -466,6 +466,22 @@ func createTemp(name, ext string, mode os.FileMode) *os.File {
 	// CreateTemp makes it 0600; the renamed file should keep the input's mode.
 	exitErr(f.Chmod(mode.Perm()))
 	return f
+}
+
+// replaceFile renames tmp over dst, which has mode. Windows refuses to replace
+// a read-only file where Unix doesn't, so the attribute is lifted for the rename.
+func replaceFile(tmp, dst string, mode os.FileMode) error {
+	ro := runtime.GOOS == "windows" && mode&0o200 == 0
+	if ro {
+		if err := os.Chmod(dst, mode.Perm()|0o200); err != nil {
+			return err
+		}
+	}
+	err := os.Rename(tmp, dst)
+	if err != nil && ro {
+		os.Chmod(dst, mode.Perm())
+	}
+	return err
 }
 
 func processBlock(recomp *bool, filename string, ext string, outFile *string, quiet *bool, err error, stdout *bool, safe *bool, level int, verify *bool, remove *bool) {
@@ -535,7 +551,7 @@ func processBlock(recomp *bool, filename string, ext string, outFile *string, qu
 		}
 		if inPlace {
 			closeOnce.Do(func() { file.Close() })
-			exitErr(os.Rename(dstFile.Name(), dstFilename))
+			exitErr(replaceFile(dstFile.Name(), dstFilename, mode))
 		}
 		outputs = nil
 		if *remove {
