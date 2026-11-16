@@ -557,7 +557,7 @@ func (s *BlockSearcher) Search(pattern []byte, fn func(r SearchResult) error) er
 		switch chunkType {
 		case ChunkTypeStreamIdentifier:
 			if chunkLen != magicBodyLen {
-				return ErrCorrupt
+				return errIdentifierLen(chunkLen)
 			}
 			if !s.readFull(s.tmp[:magicBodyLen]) {
 				return s.err

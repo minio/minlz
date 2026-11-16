@@ -581,14 +581,14 @@ func streamChunks(br *bufio.Reader, rep *fileReport, submit func(*blockJob) erro
 			if clen < 6 {
 				return fmt.Errorf("invalid stream identifier length %d", clen)
 			}
+			if clen > 6 || body[5]&0x80 != 0 {
+				return errors.New("stream identifier of a later format version is not supported")
+			}
 			magic := string(body[:5])
 			if magic != "MinLz" {
 				return fmt.Errorf("unsupported stream magic %q (only MinLz supported by stats)", magic)
 			}
 			szByte := body[5]
-			if szByte&0x80 != 0 {
-				return errors.New("invalid stream identifier flags")
-			}
 			streamSIMD = szByte&0x40 != 0
 			n := int(szByte&15) + 10
 			if n > maxBlockLog {

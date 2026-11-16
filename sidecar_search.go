@@ -244,6 +244,9 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 		return ErrSidecarInvalid
 	}
 	chunkLen := int(s.tmp[1]) | int(s.tmp[2])<<8 | int(s.tmp[3])<<16
+	if chunkLen > magicBodyLen {
+		return ErrUnsupported
+	}
 	if chunkLen != magicBodyLen {
 		return ErrSidecarInvalid
 	}
@@ -604,6 +607,9 @@ func (s *SidecarSearcher) Search(pattern []byte, fn func(SearchResult) error) er
 				return err
 			}
 			s.countLastSkipped()
+			if cl > magicBodyLen {
+				return ErrUnsupported
+			}
 			if cl != magicBodyLen {
 				return ErrSidecarInvalid
 			}

@@ -561,7 +561,7 @@ func IndexStream(r io.Reader) ([]byte, error) {
 		case ChunkTypeStreamIdentifier:
 			// Section 4.1. Stream identifier (chunk type 0xff).
 			if chunkLen != magicBodyLen {
-				return nil, ErrCorrupt
+				return nil, errIdentifierLen(chunkLen)
 			}
 
 			if string(buf[:len(magicBody)]) != magicBody {

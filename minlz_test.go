@@ -1255,6 +1255,11 @@ func TestReaderSIMDChunks(t *testing.T) {
 	bit7 := func(id string) string {
 		return id[:len(id)-1] + string([]byte{id[len(id)-1] | 1<<7})
 	}
+	// longID is id with bit 7 set and one more byte.
+	longID := func(id string) string {
+		return "\xff\x07\x00\x00" + magicBody + string([]byte{id[len(id)-1] | 1<<7, 1})
+	}
+	minLZChunk := chunk(chunkTypeMinLZCompressedData, sum, minLZ)
 	_, h := binary.Uvarint(minLZ[1:])
 	tooLarge := append(binary.AppendUvarint([]byte{0}, maxBlockSize+1), minLZ[1+h:]...)
 
@@ -1277,8 +1282,14 @@ func TestReaderSIMDChunks(t *testing.T) {
 		{"too-large-minlz", string(makeHeader(maxBlockSize, false)) + chunk(chunkTypeMinLZCompressedData, sum, tooLarge) + eof, false, ErrTooLarge},
 		// One byte longer than the largest chunk of the block size; chunk drops the first byte.
 		{"long-chunk", string(makeHeader(4<<10, true)) + chunk(chunkTypeMinLZSIMD, nil, make([]byte, 1+MaxEncodedLen(4<<10)+checksumSize+1)) + eof, false, ErrCorrupt},
-		{"bit-7", bit7(noFlag) + chunk(chunkTypeMinLZCompressedData, sum, minLZ) + eof, false, ErrCorrupt},
-		{"bit-7-simd", bit7(hdr) + simdChunk + eof, false, ErrCorrupt},
+		// Bit 7 and longer identifiers are reserved for a later version, so they are unsupported, not corrupt.
+		{"bit-7", bit7(noFlag) + minLZChunk + eof, false, ErrUnsupported},
+		{"bit-7-simd", bit7(hdr) + simdChunk + eof, false, ErrUnsupported},
+		{"long-identifier", longID(noFlag) + minLZChunk + eof, false, ErrUnsupported},
+		{"long-identifier-simd", longID(hdr) + simdChunk + eof, false, ErrUnsupported},
+		{"long-identifier-concatenated", hdr + simdChunk + eof + longID(noFlag) + minLZChunk + eof, false, ErrUnsupported},
+		{"short-identifier", "\xff\x05\x00\x00" + magicBody + minLZChunk + eof, false, ErrCorrupt},
+		{"short-identifier-concatenated", hdr + simdChunk + eof + "\xff\x05\x00\x00" + magicBody + minLZChunk + eof, false, ErrCorrupt},
 	}
 	type readerOnly struct{ io.Reader }
 	readers := []struct {
