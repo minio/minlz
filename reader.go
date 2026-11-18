@@ -257,12 +257,16 @@ func (r *Reader) skippable(tmp []byte, n int, allowEOF bool, id uint8) (ok bool)
 	}
 	if id >= MinUserSkippableChunk && id <= MaxUserNonSkippableChunk {
 		if fn := r.skippableCB[id-MinUserSkippableChunk]; fn != nil {
-			rd := io.LimitReader(r.r, int64(n))
+			rd := &io.LimitedReader{R: r.r, N: int64(n)}
 			r.err = fn(rd)
 			if r.err != nil {
 				return false
 			}
 			_, r.err = io.CopyBuffer(io.Discard, rd, tmp)
+			if r.err == nil && rd.N > 0 {
+				// The stream ended inside the chunk.
+				r.err = ErrCorrupt
+			}
 			return r.err == nil
 		} else if id >= MinUserNonSkippableChunk && id <= MaxUserNonSkippableChunk {
 			r.err = errors.New("un-skippable user chunk found")
