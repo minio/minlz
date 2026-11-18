@@ -2231,8 +2231,15 @@ func TestUserChunkCBTruncated(t *testing.T) {
 	}
 	// Inside a stream the missing EOF chunk catches truncation, so place the
 	// 100-byte user chunk after it, cut short after 50 bytes.
-	stream := append(buf.Bytes(), MinUserSkippableChunk, 100, 0, 0)
-	stream = append(stream, bytes.Repeat([]byte("m"), 50)...)
+	chunk := append([]byte{MinUserSkippableChunk, 100, 0, 0}, bytes.Repeat([]byte("m"), 100)...)
+	stream := bytes.Join([][]byte{buf.Bytes(), chunk[:4+50]}, nil)
+	// The callback reads part of the chunk, so the reader must drain the rest.
+	called := false
+	readSome := func(sr io.Reader) error {
+		called = true
+		_, err := io.CopyN(io.Discard, sr, 10)
+		return err
+	}
 
 	for _, tc := range []struct {
 		name string
@@ -2245,13 +2252,9 @@ func TestUserChunkCBTruncated(t *testing.T) {
 		// Without a callback the truncated chunk is rejected; it must be with one too.
 		for _, cb := range []bool{false, true} {
 			r := NewReader(bytes.NewReader(stream))
-			called := false
+			called = false
 			if cb {
-				r.UserChunkCB(MinUserSkippableChunk, func(sr io.Reader) error {
-					called = true
-					_, err := io.ReadAll(sr)
-					return err
-				})
+				r.UserChunkCB(MinUserSkippableChunk, readSome)
 			}
 			if err := tc.op(r); err != ErrCorrupt {
 				t.Errorf("%s (callback %v): got %v, want ErrCorrupt", tc.name, cb, err)
@@ -2260,6 +2263,15 @@ func TestUserChunkCBTruncated(t *testing.T) {
 				t.Errorf("%s (callback %v): callback called %v", tc.name, cb, called)
 			}
 		}
+	}
+
+	// With the chunk complete, reading continues into the next stream.
+	r := NewReader(bytes.NewReader(bytes.Join([][]byte{buf.Bytes(), chunk, buf.Bytes()}, nil)))
+	called = false
+	r.UserChunkCB(MinUserSkippableChunk, readSome)
+	got, err := io.ReadAll(r)
+	if err != nil || string(got) != "some datasome data" || !called {
+		t.Errorf("complete chunk: got %q, %v, callback called %v", got, err, called)
 	}
 }
 
