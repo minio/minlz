@@ -17,6 +17,7 @@ package minlz
 import (
 	"fmt"
 	"math/bits"
+	"slices"
 	"sync"
 )
 
@@ -747,8 +748,7 @@ func (u *ultraParser) parse(src []byte) []ultraSeq {
 			s = *nx
 			sp -= int(nx.litlen + nx.mlen)
 		}
-		for i := len(u.tmp) - 1; i >= 0; i-- {
-			q := u.tmp[i]
+		for _, q := range slices.Backward(u.tmp) {
 			if u.simd {
 				u.st.update(src[anchor:anchor+int(q.ll)], q, rep)
 			}
