@@ -2230,10 +2230,10 @@ func TestUserChunkCBTruncated(t *testing.T) {
 		t.Fatalf("w.Close: %v", err)
 	}
 	// Inside a stream the missing EOF chunk catches truncation, so place the
-	// 100-byte user chunk after it, cut short after 50 bytes.
+	// 100-byte user chunk after it, cut short.
 	chunk := append([]byte{MinUserSkippableChunk, 100, 0, 0}, bytes.Repeat([]byte("m"), 100)...)
-	stream := bytes.Join([][]byte{buf.Bytes(), chunk[:4+50]}, nil)
-	// The callback reads part of the chunk, so the reader must drain the rest.
+	// The callback reads part of the chunk. Cut after 50 bytes, the reader must
+	// drain the rest. Cut after 5, the callback itself gets io.EOF.
 	called := false
 	readSome := func(sr io.Reader) error {
 		called = true
@@ -2241,26 +2241,29 @@ func TestUserChunkCBTruncated(t *testing.T) {
 		return err
 	}
 
-	for _, tc := range []struct {
-		name string
-		op   func(*Reader) error
-	}{
-		{"Read", func(r *Reader) error { _, err := io.ReadAll(r); return err }},
-		{"Skip", func(r *Reader) error { return r.Skip(int64(len("some data")) + 1) }},
-		{"DecodeConcurrent", func(r *Reader) error { _, err := r.DecodeConcurrent(io.Discard, 2); return err }},
-	} {
-		// Without a callback the truncated chunk is rejected; it must be with one too.
-		for _, cb := range []bool{false, true} {
-			r := NewReader(bytes.NewReader(stream))
-			called = false
-			if cb {
-				r.UserChunkCB(MinUserSkippableChunk, readSome)
-			}
-			if err := tc.op(r); err != ErrCorrupt {
-				t.Errorf("%s (callback %v): got %v, want ErrCorrupt", tc.name, cb, err)
-			}
-			if called != cb {
-				t.Errorf("%s (callback %v): callback called %v", tc.name, cb, called)
+	for _, cut := range []int{50, 5} {
+		stream := bytes.Join([][]byte{buf.Bytes(), chunk[:4+cut]}, nil)
+		for _, tc := range []struct {
+			name string
+			op   func(*Reader) error
+		}{
+			{"Read", func(r *Reader) error { _, err := io.ReadAll(r); return err }},
+			{"Skip", func(r *Reader) error { return r.Skip(int64(len("some data")) + 1) }},
+			{"DecodeConcurrent", func(r *Reader) error { _, err := r.DecodeConcurrent(io.Discard, 2); return err }},
+		} {
+			// Without a callback the truncated chunk is rejected; it must be with one too.
+			for _, cb := range []bool{false, true} {
+				r := NewReader(bytes.NewReader(stream))
+				called = false
+				if cb {
+					r.UserChunkCB(MinUserSkippableChunk, readSome)
+				}
+				if err := tc.op(r); err != ErrCorrupt {
+					t.Errorf("%s (cut %d, callback %v): got %v, want ErrCorrupt", tc.name, cut, cb, err)
+				}
+				if called != cb {
+					t.Errorf("%s (cut %d, callback %v): callback called %v", tc.name, cut, cb, called)
+				}
 			}
 		}
 	}
