@@ -72,12 +72,13 @@ const (
 	LevelSmallestSIMD = 7
 
 	// LevelUltra searches much harder for matches than LevelSmallest, and picks the combination
-	// of matches and literals that codes smallest. Output is 1-11% smaller than LevelSmallest,
-	// more with larger blocks, and compression up to 20 times slower.
+	// of matches and literals that codes smallest. Output is on average 1-11% smaller than LevelSmallest,
+	// more with larger blocks. Compressing blocks of 2MB and more is about 20 times slower,
+	// and up to 75 times on very compressible data, such as logs.
 	// Compressing a block of 8MB takes about 90MB of memory.
 	LevelUltra = 8
 
-	// LevelUltraSIMD is LevelUltra for SIMD blocks. Output is 4-13% smaller than LevelSmallestSIMD,
+	// LevelUltraSIMD is LevelUltra for SIMD blocks. Output is on average 4-13% smaller than LevelSmallestSIMD,
 	// and practically never larger. Compressing a block of 8MB takes about 150MB of memory.
 	LevelUltraSIMD = 9
 

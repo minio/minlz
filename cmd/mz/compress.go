@@ -45,7 +45,7 @@ func mainCompress(args []string) {
 		faster             = fs.Bool("1", false, "Compress faster, but with a minor compression loss")
 		_                  = fs.Bool("2", true, "Default compression speed")
 		slower             = fs.Bool("3", false, "Compress more, but a lot slower")
-		ultra              = fs.Bool("ultra", false, "Compress the most, about 20 times slower than -3. Needs about 180MB of memory per -cpu thread with 8MB blocks, 125MB with -classic")
+		ultra              = fs.Bool("ultra", false, "Compress the most, about 20 times slower than -3, up to 75 times on very compressible data. Needs about 180MB of memory per -cpu thread with 8MB blocks, 125MB with -classic")
 		classic            = fs.Bool("classic", false, "Write classic MinLZ blocks, which all MinLZ decoders can read. Without it, SIMD blocks are written, which need a decoder for MinLZ format specification v1.1")
 		simdDelta          = fs.Bool("simd.delta", false, "Store SIMD literals as deltas, mainly for binary data. Not with -classic, -0, -3 or -ultra, which decide themselves")
 		recomp             = fs.Bool("recomp", false, "Recompress MinLZ, Snappy or S2 input")

@@ -219,9 +219,10 @@ All levels except Smallest compress with assembly.
 They search much harder for matches than Smallest, and pick the combination of matches and literals that codes smallest.
 They are meant for data that is compressed once and decompressed many times.
 
-* Output is 1-13% smaller than Smallest of the same block type, and the gain grows with the block size:
+* Output is on average 1-13% smaller than Smallest of the same block type, and the gain grows with the block size:
   matches can reach back to the start of their block, or about 2MB in MinLZ blocks, so use blocks of 2MB or more where possible.
-* Compression is up to 25 times slower than Smallest, most on large blocks.
+* Compressing blocks of 2MB and more is about 20 times slower than Smallest, and up to 75 times on very compressible data,
+  such as logs. Smaller blocks lose less.
 * Decompression is about as fast as for Smallest blocks of 256KB and more.
   `LevelUltraSIMD` codes more of a block with Huffman tables, so its blocks of 64KB and less decompress slower.
 * Compressing a block of 8MB takes about 90MB of memory with `LevelUltra` and 150MB with `LevelUltraSIMD`,
@@ -955,7 +956,7 @@ Options:
   -simd.delta
         Store SIMD literals as deltas, mainly for binary data. Not with -classic, -0, -3 or -ultra, which decide themselves
   -ultra
-        Compress the most, about 20 times slower than -3. Needs about 180MB of memory per -cpu thread with 8MB blocks, 125MB with -classic
+        Compress the most, about 20 times slower than -3, up to 75 times on very compressible data. Needs about 180MB of memory per -cpu thread with 8MB blocks, 125MB with -classic
   -verify
         Verify files, but do not write output
   -xfast
