@@ -99,10 +99,16 @@ func getUltra() *ultraParser {
 	return new(ultraParser)
 }
 
+// putUltra returns u to the pool, without keeping the input alive.
+func putUltra(u *ultraParser) {
+	u.src = nil
+	ultraPool.Put(u)
+}
+
 // encodeBlockUltra encodes src like encodeBlockBest, and shares its assumptions.
 func encodeBlockUltra(dst, src []byte) int {
 	u := getUltra()
-	defer ultraPool.Put(u)
+	defer putUltra(u)
 	// Offsets are below len(src), which sizes the tree.
 	u.simd, u.minRep, u.maxOff = false, 3, min(len(src)-1, maxCopy3Offset)
 	return ultraEmitClassic(dst, src, u.parse(src))
@@ -111,7 +117,7 @@ func encodeBlockUltra(dst, src []byte) int {
 // encodeBlockUltra parses src for LevelUltraSIMD.
 func (e *simdEncoder) encodeBlockUltra(src []byte) {
 	u := getUltra()
-	defer ultraPool.Put(u)
+	defer putUltra(u)
 	ultraEmitSIMD(e, src, u.parseSIMD(src))
 }
 
@@ -132,7 +138,8 @@ func (u *ultraParser) parseSIMD(src []byte) []ultraSeq {
 
 var ultraBufs sync.Pool
 
-// ultraFallback encodes src with LevelSmallestSIMD, and moves it to dst when it is smaller than the n bytes there.
+// ultraFallback encodes src with the parse of LevelSmallestSIMD and the freeTables of LevelUltraSIMD,
+// and moves it to dst when it is smaller than the n bytes there.
 // On data of few symbols without long matches, such as hex or DNA, the adaptive prices can settle on many short
 // matches: at the prices they make, each is cheaper than its literals, but fewer matches would cost less in total.
 func (e *simdEncoder) ultraFallback(dst, src []byte, n int) int {
@@ -748,6 +755,7 @@ func (u *ultraParser) parse(src []byte) []ultraSeq {
 			s = *nx
 			sp -= int(nx.litlen + nx.mlen)
 		}
+		prev := anchor
 		for _, q := range slices.Backward(u.tmp) {
 			if u.simd {
 				u.st.update(src[anchor:anchor+int(q.ll)], q, rep)
@@ -757,7 +765,9 @@ func (u *ultraParser) parse(src []byte) []ultraSeq {
 			anchor += int(q.ll + q.ml)
 		}
 		if u.simd {
-			if (ip-1)/ultraRescale != (anchor-1)/ultraRescale {
+			// Rescale when the committed input passes a multiple of ultraRescale. Positions without
+			// matches move ip ahead without committing their literals, so compare with the last anchor.
+			if (prev-1)/ultraRescale != (anchor-1)/ultraRescale {
 				u.st.rescale()
 			}
 			u.st.setPrices()

@@ -220,13 +220,13 @@ They search much harder for matches than Smallest, and pick the combination of m
 They are meant for data that is compressed once and decompressed many times.
 
 * Output is 1-13% smaller than Smallest of the same block type, and the gain grows with the block size:
-  matches can reach back to the start of their block, so use blocks of 2MB or more where possible.
+  matches can reach back to the start of their block, or about 2MB in MinLZ blocks, so use blocks of 2MB or more where possible.
 * Compression is up to 25 times slower than Smallest, most on large blocks.
 * Decompression is about as fast as for Smallest blocks of 256KB and more.
   `LevelUltraSIMD` codes more of a block with Huffman tables, so its blocks of 64KB and less decompress slower.
 * Compressing a block of 8MB takes about 90MB of memory with `LevelUltra` and 150MB with `LevelUltraSIMD`,
-  besides the buffers of a stream. A `Writer` compresses as many blocks at once as its concurrency.
-* `LevelUltraSIMD` blocks are never larger than `LevelSmallestSIMD` blocks of the same data.
+  besides the buffers of a stream. A `Writer` compresses up to one block more than its concurrency at once.
+* `LevelUltraSIMD` blocks are practically never larger than `LevelSmallestSIMD` blocks of the same data.
 
 Each row compares an ultra level with Smallest of the same block type, for example `LevelUltraSIMD` with `LevelSmallestSIMD`.
 Single core, geometric mean of 10 files (logs, JSON, CSV, text, a tar file, protobuf and URLs),

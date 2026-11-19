@@ -78,7 +78,7 @@ const (
 	LevelUltra = 8
 
 	// LevelUltraSIMD is LevelUltra for SIMD blocks. Output is 4-13% smaller than LevelSmallestSIMD,
-	// and never larger. Compressing a block of 8MB takes about 150MB of memory.
+	// and practically never larger. Compressing a block of 8MB takes about 150MB of memory.
 	LevelUltraSIMD = 9
 
 	// LevelSIMDDelta will encode delta literals in SIMD mode.
