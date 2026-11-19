@@ -107,6 +107,9 @@ type simdEncoder struct {
 	// fastCode, when set, makes put build one table at most: code lengths for at least fastCode values,
 	// else class lengths. Building tables dominates the encoding of small blocks.
 	fastCode int
+	// freeTables costs new tables only their size, without simdTableBits: LevelUltraSIMD doesn't trade size for decode time.
+	// encodeBlockSIMD sets it, so it holds for the fallback parse of LevelUltraSIMD too.
+	freeTables bool
 	// litSave, when set, makes put store a literal block unless coding it saves more than 1/(1<<litSave)
 	// of its size, on top of the cost of its table. Literals that hardly compress take the longest to decode
 	// for the least gain, and stored literals are read in place.
@@ -142,8 +145,12 @@ func encodeBlockSIMD(dst, src []byte, level int) int {
 		e = new(simdEncoder)
 	}
 	e.out = dst[:0:len(dst)]
+	e.freeTables = level == LevelUltraSIMD
 	e.parse(src, level)
 	n := e.finish()
+	if level == LevelUltraSIMD {
+		n = e.ultraFallback(dst, src, n)
+	}
 	// Don't keep the buffers alive in the pool.
 	e.src, e.tail, e.out = nil, nil, nil
 	simdEncoders.Put(e)
@@ -182,7 +189,7 @@ func (e *simdEncoder) parse(src []byte, level int) {
 		delta = -1
 	}
 	asm := simdEncAsm && delta == 0 && !simdNoOverlap && !simdLongRuns
-	e.splitLits = level == LevelSmallestSIMD
+	e.splitLits = level == LevelSmallestSIMD || level == LevelUltraSIMD
 	e.fastCode, e.litSave = 0, 0
 	e.noOverlap, e.budget = simdNoOverlap, false
 	switch level &^ LevelSIMDDelta {
@@ -228,6 +235,9 @@ func (e *simdEncoder) parse(src []byte, level int) {
 		default:
 			e.encodeBlockBetterGo(src)
 		}
+	case LevelUltraSIMD:
+		e.reset(src, 256, 0)
+		e.encodeBlockUltra(src)
 	default:
 		e.reset(src, 256, 0)
 		e.encodeBlockBest(src)
@@ -756,7 +766,7 @@ func (e *simdEncoder) split(lits []byte, start int) {
 				h[v] += uint64(f)
 			}
 			// An entry is about 3 bytes.
-			if c := cost[j] + 3*8 + simdLitBits(&h, min(i*simdLitSeg, len(lits))-j*simdLitSeg); c < cost[i] {
+			if c := cost[j] + 3*8 + simdLitBits(&h, min(i*simdLitSeg, len(lits))-j*simdLitSeg, e.tableBits()); c < cost[i] {
 				cost[i], from[i] = c, j
 			}
 		}
@@ -769,9 +779,9 @@ func (e *simdEncoder) split(lits []byte, start int) {
 }
 
 // simdLitBits estimates the size in bits of a literal block of n values with histogram h:
-// stored, or its entropy plus the overhead of a block with a new table of about 16 bytes.
+// stored, or its entropy plus the overhead of a block with a new table of about 16 bytes, which costs tableBits more.
 // The entropy is cheaper than building the tables, which would dominate the encoding of literal-heavy data.
-func simdLitBits(h *[256]uint64, n int) int {
+func simdLitBits(h *[256]uint64, n, tableBits int) int {
 	if n < simdMinCoded {
 		return 8 * n
 	}
@@ -782,7 +792,15 @@ func simdLitBits(h *[256]uint64, n int) int {
 			e -= int(f) * simdLog2(f)
 		}
 	}
-	return min(8*n, max(e>>8, 0)+simdBlockBits+simdTableBits+16*8)
+	return min(8*n, max(e>>8, 0)+simdBlockBits+tableBits+16*8)
+}
+
+// tableBits returns what a new table costs on top of its size.
+func (e *simdEncoder) tableBits() int {
+	if e.freeTables {
+		return 0
+	}
+	return simdTableBits
 }
 
 // simdEntropyBits returns a lower bound of the entropy in bits of the counts h of n values.
@@ -886,17 +904,17 @@ func (e *simdEncoder) put(recs []byte, k int, v []byte) []byte {
 		if e.fastCode == 0 || best == nil {
 			// No prefix code codes v in fewer bits than its entropy, so new tables that can't win with that aren't built.
 			// The entropy is at most simdMaxEntropy per value, so it is only computed when it can stop a table.
-			low := simdTableBits + blockBits
+			low := e.tableBits() + blockBits
 			if low < bestBits && bestBits <= low+(len(v)*simdMaxEntropy[k]+255)>>8+8*simdCodeBytes[k] {
 				low += simdEntropyBits(e.hist[:syms], len(v))
 			}
 			if len(v) >= e.fastCode && low+8*simdCodeBytes[k] < bestBits {
 				e.tmp[0].setCode(k, &e.hist)
-				try(&e.tmp[0], simdTableBits+8*e.tmp[0].n)
+				try(&e.tmp[0], e.tableBits()+8*e.tmp[0].n)
 			}
 			if (e.fastCode == 0 || len(v) < e.fastCode) && low+8*simdClassBytes[layout] < bestBits {
 				e.tmp[1].setClass(layout, &e.hist, syms)
-				try(&e.tmp[1], simdTableBits+8*e.tmp[1].n)
+				try(&e.tmp[1], e.tableBits()+8*e.tmp[1].n)
 			}
 		}
 	}

@@ -625,6 +625,8 @@ func (w *Writer) encodeBlock(dst, uncompressed []byte) int {
 			n = encodeBlockBetter(obuf, uncompressed)
 		case LevelSmallest:
 			n = encodeBlockBest(obuf, uncompressed)
+		case LevelUltra:
+			n = encodeBlockUltra(obuf, uncompressed)
 		default:
 			// No SIMD block is this small, and dst may have no room for the hash.
 			if len(uncompressed) <= simdMinSaving {
@@ -1285,8 +1287,8 @@ func WriterAddIndex(b bool) WriterOption {
 func WriterLevel(n int) WriterOption {
 	return func(w *Writer) error {
 		switch n {
-		case LevelSuperFast, LevelUncompressed, LevelFastest, LevelBalanced, LevelSmallest,
-			LevelSuperFastSIMD, LevelFastestSIMD, LevelBalancedSIMD, LevelSmallestSIMD,
+		case LevelSuperFast, LevelUncompressed, LevelFastest, LevelBalanced, LevelSmallest, LevelUltra,
+			LevelSuperFastSIMD, LevelFastestSIMD, LevelBalancedSIMD, LevelSmallestSIMD, LevelUltraSIMD,
 			LevelSuperFastSIMD | LevelSIMDDelta, LevelFastestSIMD | LevelSIMDDelta, LevelBalancedSIMD | LevelSIMDDelta:
 			w.level = n
 			return nil
@@ -1641,5 +1643,5 @@ func makeHeader(blockSize int, simd bool) []byte {
 // header returns the stream identifier of w.
 // A sidecar gets the SIMD flag of its stream, so decoders without SIMD support reject it up front.
 func (w *Writer) header() []byte {
-	return makeHeader(w.blockSize, w.level >= LevelSuperFastSIMD)
+	return makeHeader(w.blockSize, isSIMDLevel(w.level))
 }

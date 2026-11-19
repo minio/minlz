@@ -77,14 +77,15 @@ Blocks are mainly useful for small data sizes.
 Streams are a collection of independent blocks, which each have checksums and EOF checks, 
 which ensures against corruption and truncation.
 
-4 compression levels are provided:
+5 compression levels are provided:
 
 * Level -1, "SuperFast": Provides the fastest compression, but at a very reduced compression ratio.
 * Level 1, "Fastest": Provides the fastest compression with reasonable compression. 
 * Level 2, "Balanced": Provides a good balance between compression and speed. ~50% the speed of the fastest level.
-* Level 3, "Smallest": Provides the smallest output possible. Not tuned for speed.
+* Level 3, "Smallest": Provides small output, at a fraction of the speed of the levels above.
+* Level 8, "Ultra": Provides the smallest output, but is very slow and needs a lot of memory. See "Ultra Levels" below.
 
-Levels 4 to 7 write SIMD blocks instead. See "SIMD Blocks" below.
+Levels 4 to 7 and 9 write SIMD blocks instead. See "SIMD Blocks" below.
 
 A secondary option to control speed/compression is adjusting the block size.
 See "Writer Block Size" section below.
@@ -137,12 +138,13 @@ Compression is about as fast as the MinLZ levels on blocks of 1MB and more, but 
 SIMD levels pay off for blocks of 64KB and more, for example streams with the default 2MB block size.
 For small blocks the MinLZ levels compress faster, and usually decompress faster too.
 
-4 levels write SIMD blocks:
+5 levels write SIMD blocks:
 
 * Level 4, `LevelSuperFastSIMD`: The fastest SIMD compression, at a reduced compression ratio.
 * Level 5, `LevelFastestSIMD`: Fast compression with a good compression ratio.
 * Level 6, `LevelBalancedSIMD`: A balance between compression and speed. ~50% the speed of level 5.
-* Level 7, `LevelSmallestSIMD`: The smallest output. Not tuned for speed.
+* Level 7, `LevelSmallestSIMD`: Small output, at a fraction of the speed of the levels above.
+* Level 9, `LevelUltraSIMD`: The smallest output, but very slow. See "Ultra Levels" below.
 
 ```Go
    compressed, err := minlz.Encode(nil, src, minlz.LevelFastestSIMD)
@@ -157,7 +159,7 @@ For small blocks the MinLZ levels compress faster, and usually decompress faster
 `LevelSIMDDelta` can be added to levels 4 to 6, for example `minlz.LevelBalancedSIMD | minlz.LevelSIMDDelta`.
 The first 32 literals of each operation are then stored as the difference to the bytes at the last match offset (see [SPEC_SIMD.md](SPEC_SIMD.md) 4.5).
 This mainly helps binary data, like tables of numbers, but makes text larger and costs decompression speed.
-Level 7 decides this itself.
+Levels 7 and 9 decide this themselves.
 
 SIMD blocks can be used with `Encode`, `TryEncode`, `AppendEncoded`, the decoding functions and streams,
 see "Writer Compression Level" below.
@@ -167,7 +169,7 @@ Decompression uses AVX-512 on amd64 CPUs with AVX-512 (F, BW, VL, VBMI, VBMI2), 
 and AVX2 on CPUs with AVX2 and BMI2; arm64 uses NEON. Other platforms use Go.
 Huffman coding picks AVX-512, AVX2 or NEON the same way, but also needs POPCNT for AVX2, and AVX-512 VPOPCNTDQ for AVX-512.
 SuperFast, Fastest and Balanced SIMD compress with assembly on amd64 and arm64, with the same output as the Go code.
-Smallest and delta literals use Go.
+Smallest, Ultra and delta literals use Go.
 
 Each row compares a SIMD level with the MinLZ level of the same name, for example `LevelFastestSIMD` with `LevelFastest`.
 Speeds are shown as MinLZ → SIMD, with the SIMD speed relative to MinLZ.
@@ -210,6 +212,43 @@ All levels except Smallest compress with assembly.
 | Smallest  | 256KB |      -19.9% |     103 → 107 (1.0x) |  4,899 → 9,483 (1.9x) |
 | Smallest  | 1MB   |      -19.8% |     130 → 140 (1.1x) | 5,201 → 10,498 (2.0x) |
 | Smallest  | 8MB   |      -20.1% |     148 → 170 (1.1x) | 5,887 → 11,223 (1.9x) |
+
+## Ultra Levels
+
+`LevelUltra` (8) writes MinLZ blocks and `LevelUltraSIMD` (9) writes SIMD blocks.
+They search much harder for matches than Smallest, and pick the combination of matches and literals that codes smallest.
+They are meant for data that is compressed once and decompressed many times.
+
+* Output is 1-13% smaller than Smallest of the same block type, and the gain grows with the block size:
+  matches can reach back to the start of their block, so use blocks of 2MB or more where possible.
+* Compression is up to 25 times slower than Smallest, most on large blocks.
+* Decompression is about as fast as for Smallest blocks of 256KB and more.
+  `LevelUltraSIMD` codes more of a block with Huffman tables, so its blocks of 64KB and less decompress slower.
+* Compressing a block of 8MB takes about 90MB of memory with `LevelUltra` and 150MB with `LevelUltraSIMD`,
+  besides the buffers of a stream. A `Writer` compresses as many blocks at once as its concurrency.
+* `LevelUltraSIMD` blocks are never larger than `LevelSmallestSIMD` blocks of the same data.
+
+Each row compares an ultra level with Smallest of the same block type, for example `LevelUltraSIMD` with `LevelSmallestSIMD`.
+Single core, geometric mean of 10 files (logs, JSON, CSV, text, a tar file, protobuf and URLs),
+the first 8MB of each (2MB for blocks of 64KB and less, 4MB for 256KB blocks), on an AMD Ryzen 9 9950X,
+decompressing SIMD blocks with AVX-512.
+
+| Blocks | Block | Output size |  Compression MB/s |      Decompression MB/s |
+|--------|-------|------------:|------------------:|------------------------:|
+| MinLZ  | 4KB   |       -1.4% | 21 → 17.3 (0.83x) |   4,586 → 4,355 (0.95x) |
+| MinLZ  | 16KB  |       -2.7% | 46 → 13.0 (0.28x) |   4,984 → 4,931 (0.99x) |
+| MinLZ  | 64KB  |       -4.4% | 74 → 10.8 (0.14x) |   5,468 → 5,594 (1.02x) |
+| MinLZ  | 256KB |       -6.4% |  99 → 8.8 (0.09x) |   4,967 → 4,984 (1.00x) |
+| MinLZ  | 2MB   |       -9.6% | 139 → 7.2 (0.05x) |   5,550 → 5,998 (1.08x) |
+| MinLZ  | 8MB   |      -10.9% | 150 → 6.8 (0.05x) |   5,910 → 6,624 (1.12x) |
+| SIMD   | 4KB   |       -3.7% |  20 → 5.2 (0.27x) |   3,305 → 2,108 (0.64x) |
+| SIMD   | 16KB  |       -4.2% |  45 → 5.3 (0.12x) |   4,863 → 3,893 (0.80x) |
+| SIMD   | 64KB  |       -4.3% |  74 → 9.1 (0.12x) |   8,232 → 7,438 (0.90x) |
+| SIMD   | 256KB |       -6.8% | 104 → 8.4 (0.08x) |  10,209 → 9,724 (0.95x) |
+| SIMD   | 2MB   |      -11.2% | 152 → 7.5 (0.05x) | 11,694 → 11,938 (1.02x) |
+| SIMD   | 8MB   |      -13.4% | 170 → 6.5 (0.04x) | 11,529 → 12,123 (1.05x) |
+
+`mz c -ultra` compresses with `LevelUltraSIMD`, and `mz c -ultra -classic` with `LevelUltra`.
 
 ## Streams
 
@@ -278,7 +317,7 @@ The default level is `LevelBalanced`.
 Typical speeds are `LevelFastest` is 2x the speed of `LevelBalanced` 
 and `LevelSmallest` is at least an order of magnitude slower.
 
-The SIMD levels `LevelSuperFastSIMD`, `LevelFastestSIMD`, `LevelBalancedSIMD` and `LevelSmallestSIMD`,
+The SIMD levels `LevelSuperFastSIMD`, `LevelFastestSIMD`, `LevelBalancedSIMD`, `LevelSmallestSIMD` and `LevelUltraSIMD`,
 the first three optionally with `LevelSIMDDelta`, write SIMD blocks. See "SIMD Blocks" above.
 Blocks that don't compress are stored uncompressed, as with the other levels.
 
@@ -902,7 +941,9 @@ Options:
   -safe
         Do not overwrite output files
   -simd.delta
-        Store SIMD literals as deltas, mainly for binary data. Not with -classic, -0 or -3, which decides itself
+        Store SIMD literals as deltas, mainly for binary data. Not with -classic, -0, -3 or -ultra, which decide themselves
+  -ultra
+        Compress the most, about 20 times slower than -3. Needs about 180MB of memory per -cpu thread with 8MB blocks, 125MB with -classic
   -verify
         Verify files, but do not write output
   -xfast
