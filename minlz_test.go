@@ -2220,6 +2220,64 @@ func TestLeadingNonSkippableBlockNonReg(t *testing.T) {
 	}
 }
 
+func TestUserChunkCBTruncated(t *testing.T) {
+	var buf bytes.Buffer
+	w := NewWriter(&buf)
+	if _, err := w.Write([]byte("some data")); err != nil {
+		t.Fatalf("w.Write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("w.Close: %v", err)
+	}
+	// Inside a stream the missing EOF chunk catches truncation, so place the
+	// 100-byte user chunk after it, cut short.
+	chunk := append([]byte{MinUserSkippableChunk, 100, 0, 0}, bytes.Repeat([]byte("m"), 100)...)
+	// The callback reads part of the chunk. Cut after 50 bytes, the reader must
+	// drain the rest. Cut after 5, the callback itself gets io.EOF.
+	called := false
+	readSome := func(sr io.Reader) error {
+		called = true
+		_, err := io.CopyN(io.Discard, sr, 10)
+		return err
+	}
+
+	for _, cut := range []int{50, 5} {
+		stream := bytes.Join([][]byte{buf.Bytes(), chunk[:4+cut]}, nil)
+		for _, tc := range []struct {
+			name string
+			op   func(*Reader) error
+		}{
+			{"Read", func(r *Reader) error { _, err := io.ReadAll(r); return err }},
+			{"Skip", func(r *Reader) error { return r.Skip(int64(len("some data")) + 1) }},
+			{"DecodeConcurrent", func(r *Reader) error { _, err := r.DecodeConcurrent(io.Discard, 2); return err }},
+		} {
+			// Without a callback the truncated chunk is rejected; it must be with one too.
+			for _, cb := range []bool{false, true} {
+				r := NewReader(bytes.NewReader(stream))
+				called = false
+				if cb {
+					r.UserChunkCB(MinUserSkippableChunk, readSome)
+				}
+				if err := tc.op(r); err != ErrCorrupt {
+					t.Errorf("%s (cut %d, callback %v): got %v, want ErrCorrupt", tc.name, cut, cb, err)
+				}
+				if called != cb {
+					t.Errorf("%s (cut %d, callback %v): callback called %v", tc.name, cut, cb, called)
+				}
+			}
+		}
+	}
+
+	// With the chunk complete, reading continues into the next stream.
+	r := NewReader(bytes.NewReader(bytes.Join([][]byte{buf.Bytes(), chunk, buf.Bytes()}, nil)))
+	called = false
+	r.UserChunkCB(MinUserSkippableChunk, readSome)
+	got, err := io.ReadAll(r)
+	if err != nil || string(got) != "some datasome data" || !called {
+		t.Errorf("complete chunk: got %q, %v, callback called %v", got, err, called)
+	}
+}
+
 // decodeGo is the same as Decode, but only using Go for MinLZ.
 // Should Only be used for MinLZ blocks.
 func decodeGo(dst, src []byte) ([]byte, error) {
