@@ -44,8 +44,8 @@ func TestReadStream(t *testing.T) {
 	data := streamTestData()
 	var all []byte
 	for _, level := range []int{
-		minlz.LevelUncompressed, minlz.LevelSuperFast, minlz.LevelFastest, minlz.LevelBalanced, minlz.LevelSmallest,
-		minlz.LevelSuperFastSIMD, minlz.LevelFastestSIMD, minlz.LevelBalancedSIMD, minlz.LevelSmallestSIMD,
+		minlz.LevelUncompressed, minlz.LevelSuperFast, minlz.LevelFastest, minlz.LevelBalanced, minlz.LevelSmallest, minlz.LevelUltra,
+		minlz.LevelSuperFastSIMD, minlz.LevelFastestSIMD, minlz.LevelBalancedSIMD, minlz.LevelSmallestSIMD, minlz.LevelUltraSIMD,
 		minlz.LevelSuperFastSIMD | minlz.LevelSIMDDelta, minlz.LevelFastestSIMD | minlz.LevelSIMDDelta,
 		minlz.LevelBalancedSIMD | minlz.LevelSIMDDelta,
 	} {

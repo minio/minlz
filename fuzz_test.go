@@ -27,6 +27,7 @@ import (
 	"github.com/klauspost/compress/s2"
 	"github.com/minio/minlz/internal/fuzz"
 	"github.com/minio/minlz/internal/guard"
+	"github.com/minio/minlz/internal/race"
 	"github.com/minio/minlz/internal/reference"
 	"github.com/zeebo/xxh3"
 )
@@ -75,8 +76,20 @@ func FuzzEncodingBlocks(f *testing.F) {
 		}
 		compDst := compG.Slice(MaxEncodedLen(len(data)), true)
 		decDst := decG.Slice(len(data), true)
-		const levelReference = LevelSmallestSIMD + 1
-		for _, l := range append(append([]int{LevelSuperFast, LevelUncompressed, LevelFastest, LevelBalanced, LevelSmallest}, simdLevels...), levelReference) {
+		const levelReference = -100
+		// The ultra levels are slow, and fuzz workers have 10 seconds an input.
+		// With -race, pools drop their tables, so every block also allocates them.
+		ultraMax := 256 << 10
+		if testing.Short() {
+			ultraMax = 64 << 10
+		}
+		if race.Enabled {
+			ultraMax = 0
+		}
+		for _, l := range append(append([]int{LevelSuperFast, LevelUncompressed, LevelFastest, LevelBalanced, LevelSmallest, LevelUltra}, simdLevels...), levelReference) {
+			if (l == LevelUltra || l == LevelUltraSIMD) && len(data) > ultraMax {
+				continue
+			}
 			for i := range decDst {
 				decDst[i] = 0xfe
 			}
@@ -255,7 +268,10 @@ func FuzzDecodeBlock(f *testing.F) {
 // the format requires, plus extra.
 func FuzzDecodeSIMD(f *testing.F) {
 	add := func(b []byte) {
-		for _, l := range []int{LevelSuperFastSIMD, LevelBalancedSIMD, LevelSmallestSIMD, LevelFastestSIMD | LevelSIMDDelta} {
+		for _, l := range []int{LevelSuperFastSIMD, LevelBalancedSIMD, LevelSmallestSIMD, LevelUltraSIMD, LevelFastestSIMD | LevelSIMDDelta} {
+			if l == LevelUltraSIMD && len(b) > 64<<10 {
+				continue
+			}
 			enc, _ := Encode(nil, b, l)
 			if _, _, simd, body, size, err := isMinLZ(enc); simd && err == nil {
 				f.Add(uint32(size-len(body)-4-simdMinSaving), body)

@@ -110,7 +110,9 @@ func encodeGo(dst, src []byte, level int) []byte {
 		}
 	case LevelSmallest:
 		n = encodeBlockBest(dst[d:], src)
-	case LevelSuperFastSIMD, LevelFastestSIMD, LevelBalancedSIMD, LevelSmallestSIMD,
+	case LevelUltra:
+		n = encodeBlockUltra(dst[d:], src)
+	case LevelSuperFastSIMD, LevelFastestSIMD, LevelBalancedSIMD, LevelSmallestSIMD, LevelUltraSIMD,
 		LevelSuperFastSIMD | LevelSIMDDelta, LevelFastestSIMD | LevelSIMDDelta, LevelBalancedSIMD | LevelSIMDDelta:
 		d = 1
 		n = encodeBlockSIMD(dst[d:], src, level)
@@ -144,7 +146,11 @@ func cmp(got, want []byte) error {
 func roundtrip(b, ebuf, dbuf []byte) error {
 	bOrg := make([]byte, len(b))
 	copy(bOrg, b)
-	for level := LevelFastest; level <= LevelSmallestSIMD; level++ {
+	for level := LevelFastest; level <= LevelUltraSIMD; level++ {
+		// The ultra levels are slow, and the small inputs are what these tests are for.
+		if (level == LevelUltra || level == LevelUltraSIMD) && len(b) > 4<<10 {
+			continue
+		}
 		asmEnc, err := Encode(nil, b, level)
 		if err != nil {
 			return err
@@ -1947,7 +1953,7 @@ func testFile(t *testing.T, i, repeat int) {
 			d := data
 			testBlockRoundtrip(t, d, LevelSmallest)
 		})
-		for _, level := range simdLevels {
+		for _, level := range append([]int{LevelUltra}, simdLevels...) {
 			t.Run(fmt.Sprint("block-", level), func(t *testing.T) {
 				testBlockRoundtrip(t, data, level)
 			})
@@ -1978,7 +1984,7 @@ func TestDataRoundtrips(t *testing.T) {
 			d := data
 			testBlockRoundtrip(t, d, LevelSmallest)
 		})
-		for _, level := range simdLevels {
+		for _, level := range append([]int{LevelUltra}, simdLevels...) {
 			t.Run(fmt.Sprint("block-", level), func(t *testing.T) {
 				testBlockRoundtrip(t, data, level)
 			})

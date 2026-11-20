@@ -854,6 +854,10 @@ func TestWriterSIMD(t *testing.T) {
 	}
 	var k int
 	for _, level := range simdLevels {
+		// The write paths are the same for every level. TestWriterSIMDChunks has LevelUltraSIMD.
+		if level == LevelUltraSIMD && testing.Short() {
+			continue
+		}
 		for _, bs := range []int{4 << 10, 64 << 10, 1 << 20, 8 << 20} {
 			for _, conc := range []int{1, 4} {
 				for _, wr := range writes {
@@ -935,7 +939,7 @@ func TestWriterSIMDChunks(t *testing.T) {
 // have the SIMD flag exactly for SIMD levels, and that WriterLevel takes the levels Encode takes.
 func TestWriterSIMDIdentifier(t *testing.T) {
 	data := makeTestData(10 << 10)
-	for level := -2; level <= LevelSIMDDelta|LevelSmallestSIMD+1; level++ {
+	for level := -2; level <= LevelSIMDDelta|LevelUltraSIMD+1; level++ {
 		_, encErr := Encode(nil, data, level)
 		// A user chunk first makes AddUserChunk write the identifier.
 		for i := range 4 {
@@ -961,7 +965,7 @@ func TestWriterSIMDIdentifier(t *testing.T) {
 				}
 				continue
 			}
-			simd := level >= LevelSuperFastSIMD
+			simd := isSIMDLevel(level)
 			for _, b := range [][]byte{main.Bytes(), side.Bytes()} {
 				if got := b[len(magicChunk)]&streamFlagSIMD != 0; got != simd {
 					t.Fatalf("level %d, user chunk %v, concurrency %d: SIMD flag %v", level, userFirst, conc, got)
