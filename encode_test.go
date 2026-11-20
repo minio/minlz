@@ -133,7 +133,9 @@ func TestSizes(t *testing.T) {
 }
 
 func TestEmitters(t *testing.T) {
-	var tmp [11]byte
+	// The longest operations are 11 bytes, and the assembly emitters store a byte past them (see emitCopy).
+	// tmp is on the heap, so a store past it changes another object.
+	var tmp [12]byte
 	lFactor := 1.01
 	if testing.Short() {
 		lFactor = 1.5

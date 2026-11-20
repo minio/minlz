@@ -38,6 +38,52 @@ import (
 	"github.com/zeebo/xxh3"
 )
 
+// simdTablesBuilt holds the tables the encoders and decoders share, as built.
+var simdTablesBuilt = struct {
+	layouts   [len(simdLayouts)]simdLayout
+	offTab    [len(simdOffTab)]uint32
+	codeBytes [len(simdCodeBytes)]int
+}{simdLayouts, simdOffTab, simdCodeBytes}
+
+func init() { reference.CheckTables = simdTablesChanged }
+
+// simdTablesChanged returns an error naming the shared tables that no longer hold what they were built with.
+// The encoders and decoders then agree on blocks that the reference rejects.
+func simdTablesChanged() error {
+	b := &simdTablesBuilt
+	// The reference calls this for every block it rejects.
+	if simdLayouts == b.layouts && simdOffTab == b.offTab && simdCodeBytes == b.codeBytes {
+		return nil
+	}
+	var errs []error
+	diff := func(name string, k int, cur, built []byte) {
+		for i := range cur {
+			if cur[i] != built[i] {
+				errs = append(errs, fmt.Errorf("simdLayouts[%d].%s[%d] changed from %d to %d", k, name, i, built[i], cur[i]))
+				return
+			}
+		}
+	}
+	for k := range simdLayouts {
+		l, lb := &simdLayouts[k], &b.layouts[k]
+		diff("class", k, l.class[:], lb.class[:])
+		diff("in", k, l.in[:], lb.in[:])
+		if l.n != lb.n {
+			errs = append(errs, fmt.Errorf("simdLayouts[%d].n changed from %d to %d", k, lb.n, l.n))
+		}
+	}
+	for i, v := range simdOffTab {
+		if v != b.offTab[i] {
+			errs = append(errs, fmt.Errorf("simdOffTab[%d] changed from %#x to %#x", i, b.offTab[i], v))
+			break
+		}
+	}
+	if simdCodeBytes != b.codeBytes {
+		errs = append(errs, fmt.Errorf("simdCodeBytes changed from %v to %v", b.codeBytes, simdCodeBytes))
+	}
+	return errors.Join(errs...)
+}
+
 // The test block builder below is written from SPEC_SIMD.md, independently of the encoder.
 
 // simdTestOp copies ll literals, then ml bytes from offset off back. off 0 repeats the offset.

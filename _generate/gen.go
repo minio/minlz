@@ -2358,7 +2358,8 @@ func (o options) emitLiteral(name string, litLen, retval, dstBase, litBase reg.G
 func (o options) genEmitRepeat() {
 	TEXT("emitRepeat", NOSPLIT, "func(dst []byte, length int) int")
 	Doc("emitRepeat writes a repeat chunk and returns the number of bytes written.",
-		"Length must be at least 4 and < 1<<32", "")
+		"Length must be at least 4 and < 1<<32.",
+		"dst must have room for the encoded bytes and one more: 3-byte lengths are stored with 4 bytes.", "")
 	Pragma("noescape")
 
 	dstBase, length, retval := GP64(), GP64(), GP64()
@@ -2452,7 +2453,7 @@ func (o options) emitRepeatLong(name string, length reg.GPVirtual, retval reg.GP
 // emitCopy writes a copy chunk and returns the number of bytes written.
 //
 // It assumes that:
-//	dst is long enough to hold the encoded bytes
+//	dst has room for the encoded bytes and one more: 3-byte lengths are stored with 4 bytes
 //	1 <= offset && offset <= math.MaxUint32
 //	4 <= length && length <= 1 << 24
 
@@ -2461,7 +2462,7 @@ func (o options) genEmitCopy() {
 	TEXT("emitCopy", NOSPLIT, "func(dst []byte, offset, length int) int")
 	Doc("emitCopy writes a copy chunk and returns the number of bytes written.", "",
 		"It assumes that:",
-		"  dst is long enough to hold the encoded bytes",
+		"  dst has room for the encoded bytes and one more: 3-byte lengths are stored with 4 bytes",
 		"  1 <= offset && offset <= math.MaxUint32",
 		"  4 <= length && length <= 1 << 24", "")
 	Pragma("noescape")
@@ -2483,7 +2484,7 @@ func (o options) genEmitCopyLits2() {
 	TEXT("emitCopyLits2", NOSPLIT, "func(dst, lits []byte, offset, length int) int")
 	Doc("emitCopyLits2 writes a copy chunk and returns the number of bytes written.", "",
 		"It assumes that:",
-		"  dst is long enough to hold the encoded bytes",
+		"  dst has room for the encoded bytes and one more: 3-byte lengths are stored with 4 bytes",
 		"  1 <= offset && offset <= 65536",
 		"  4 <= length && length <= MaxBlockSize", "")
 	Pragma("noescape")
@@ -2519,7 +2520,7 @@ func (o options) genEmitCopyLits3() {
 	TEXT("emitCopyLits3", NOSPLIT, "func(dst, lits []byte, offset, length int) int")
 	Doc("emitCopyLits3 writes a copy chunk and returns the number of bytes written.", "",
 		"It assumes that:",
-		"  dst is long enough to hold the encoded bytes",
+		"  dst has room for the encoded bytes and one more: 3-byte lengths are stored with 4 bytes",
 		"  1 <= offset && offset <= (1<<21)",
 		"  4 <= length && length <= MaxBlockSize", "")
 	Pragma("noescape")

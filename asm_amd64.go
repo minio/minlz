@@ -162,7 +162,8 @@ func encodeBetterBlockAsm1K(dst []byte, src []byte, tmp *[4608]byte) int
 func emitLiteral(dst []byte, lit []byte) int
 
 // emitRepeat writes a repeat chunk and returns the number of bytes written.
-// Length must be at least 4 and < 1<<32
+// Length must be at least 4 and < 1<<32.
+// dst must have room for the encoded bytes and one more: 3-byte lengths are stored with 4 bytes.
 //
 //go:noescape
 func emitRepeat(dst []byte, length int) int
@@ -171,7 +172,7 @@ func emitRepeat(dst []byte, length int) int
 //
 // It assumes that:
 //
-//	dst is long enough to hold the encoded bytes
+//	dst has room for the encoded bytes and one more: 3-byte lengths are stored with 4 bytes
 //	1 <= offset && offset <= math.MaxUint32
 //	4 <= length && length <= 1 << 24
 //
@@ -182,7 +183,7 @@ func emitCopy(dst []byte, offset int, length int) int
 //
 // It assumes that:
 //
-//	dst is long enough to hold the encoded bytes
+//	dst has room for the encoded bytes and one more: 3-byte lengths are stored with 4 bytes
 //	1 <= offset && offset <= 65536
 //	4 <= length && length <= MaxBlockSize
 //
@@ -193,7 +194,7 @@ func emitCopyLits2(dst []byte, lits []byte, offset int, length int) int
 //
 // It assumes that:
 //
-//	dst is long enough to hold the encoded bytes
+//	dst has room for the encoded bytes and one more: 3-byte lengths are stored with 4 bytes
 //	1 <= offset && offset <= (1<<21)
 //	4 <= length && length <= MaxBlockSize
 //

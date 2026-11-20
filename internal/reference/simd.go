@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"math/bits"
+	"slices"
 )
 
 // Streams of a chunk, in order, then the literals.
@@ -57,17 +58,51 @@ type simdStream struct {
 	classes classLayout
 }
 
+var simdStreams = newSIMDStreams()
+
 // For tokens, the classes are the match length code groups.
-var simdStreams = [...]simdStream{
-	streamTokens:     {"tokens", 0, 135, lastValues(0, 0, 3, 4, 5, 6, 7, 8, 10, 12, 16, 24, 31, 32, 33)},
-	streamLitLens:    {"literal lengths", 1, 33, lastValues(1, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 33)},
-	streamOffsets:    {"offset symbols", 1, 175, offsetClasses()},
-	streamEscapes:    {"escapes", 0, 255, lastValues(0, 0, 1, 2, 4, 6, 10, 14, 22, 30, 46, 62, 94, 126, 190, 254, 255)},
-	streamOffsetBits: {"offset bits", 0, 255, nil},
-	streamLiterals:   {"literals", 0, 255, classesOf(0, 255, literalClass)},
+func newSIMDStreams() [streamLiterals + 1]simdStream {
+	return [...]simdStream{
+		streamTokens:     {"tokens", 0, 135, lastValues(0, 0, 3, 4, 5, 6, 7, 8, 10, 12, 16, 24, 31, 32, 33)},
+		streamLitLens:    {"literal lengths", 1, 33, lastValues(1, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 33)},
+		streamOffsets:    {"offset symbols", 1, 175, offsetClasses()},
+		streamEscapes:    {"escapes", 0, 255, lastValues(0, 0, 1, 2, 4, 6, 10, 14, 22, 30, 46, 62, 94, 126, 190, 254, 255)},
+		streamOffsetBits: {"offset bits", 0, 255, nil},
+		streamLiterals:   {"literals", 0, 255, classesOf(0, 255, literalClass)},
+	}
 }
 
-var deltaClasses = classesOf(0, 255, func(b int) int { return bits.Len(uint(min(b, 256-b))) })
+var deltaClasses = newDeltaClasses()
+
+func newDeltaClasses() classLayout {
+	return classesOf(0, 255, func(b int) int { return bits.Len(uint(min(b, 256-b))) })
+}
+
+// CheckTables is called when a SIMD block fails to decode, and an error it returns is added to the block's.
+// Tests set it to check the tables of the encoders and decoders they compare with this one:
+// if one of them changed, they can agree on blocks this rejects.
+var CheckTables = func() error { return nil }
+
+// Copies of the classes, which tablesChanged compares with. Building them for each check
+// would slow down tests that decode many corrupt blocks.
+var simdStreamsBuilt, deltaClassesBuilt = newSIMDStreams(), newDeltaClasses()
+
+// tablesChanged returns an error naming the classes that differ from their copies built at init.
+func tablesChanged() error {
+	var errs []error
+	diff := func(name string, l, built classLayout) {
+		for c := range built {
+			if !slices.Equal(l[c], built[c]) {
+				errs = append(errs, fmt.Errorf("reference %s class %d is %v, built as %v", name, c, l[c], built[c]))
+			}
+		}
+	}
+	for k, s := range simdStreamsBuilt {
+		diff(s.name, simdStreams[k].classes, s.classes)
+	}
+	diff("delta literal", deltaClasses, deltaClassesBuilt)
+	return errors.Join(errs...)
+}
 
 // lastValues returns the classes of the values from first on, given the last value of each class.
 func lastValues(first int, last ...int) (l classLayout) {
@@ -311,6 +346,16 @@ func WalkSIMDBlock(src []byte, w *SIMDWalker) ([]byte, error) {
 }
 
 func decodeSIMDBlock(src []byte, strict bool, w *SIMDWalker) ([]byte, error) {
+	out, err := decodeSIMD(src, strict, w)
+	if err != nil {
+		if changed := errors.Join(tablesChanged(), CheckTables()); changed != nil {
+			err = fmt.Errorf("%w\ntables changed: %v", err, changed)
+		}
+	}
+	return out, err
+}
+
+func decodeSIMD(src []byte, strict bool, w *SIMDWalker) ([]byte, error) {
 	if len(src) == 0 || src[0] != 0 {
 		return nil, errors.New("indicator byte is not 0")
 	}
