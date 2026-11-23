@@ -139,7 +139,7 @@ func TestStatsSIMD(t *testing.T) {
 		data = append(data, words[rng.IntN(len(words))]...)
 		data = append(data, byte(' '+rng.IntN(3)))
 	}
-	for _, level := range []int{minlz.LevelSuperFastSIMD, minlz.LevelFastestSIMD | minlz.LevelSIMDDelta, minlz.LevelBalancedSIMD, minlz.LevelSmallestSIMD} {
+	for _, level := range []int{minlz.LevelSuperFastSIMD, minlz.LevelFastestSIMD | minlz.LevelSIMDDelta, minlz.LevelBalancedSIMD, minlz.LevelSmallestSIMD, minlz.LevelUltraSIMD} {
 		block, err := minlz.Encode(nil, data, level)
 		if err != nil {
 			t.Fatal(err)

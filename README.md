@@ -77,14 +77,15 @@ Blocks are mainly useful for small data sizes.
 Streams are a collection of independent blocks, which each have checksums and EOF checks, 
 which ensures against corruption and truncation.
 
-4 compression levels are provided:
+5 compression levels are provided:
 
 * Level -1, "SuperFast": Provides the fastest compression, but at a very reduced compression ratio.
 * Level 1, "Fastest": Provides the fastest compression with reasonable compression. 
 * Level 2, "Balanced": Provides a good balance between compression and speed. ~50% the speed of the fastest level.
-* Level 3, "Smallest": Provides the smallest output possible. Not tuned for speed.
+* Level 3, "Smallest": Provides small output, at a fraction of the speed of the levels above.
+* Level 8, "Ultra": Provides the smallest output, but is very slow and needs a lot of memory. See "Ultra Levels" below.
 
-Levels 4 to 7 write SIMD blocks instead. See "SIMD Blocks" below.
+Levels 4 to 7 and 9 write SIMD blocks instead. See "SIMD Blocks" below.
 
 A secondary option to control speed/compression is adjusting the block size.
 See "Writer Block Size" section below.
@@ -137,12 +138,13 @@ Compression is about as fast as the MinLZ levels on blocks of 1MB and more, but 
 SIMD levels pay off for blocks of 64KB and more, for example streams with the default 2MB block size.
 For small blocks the MinLZ levels compress faster, and usually decompress faster too.
 
-4 levels write SIMD blocks:
+5 levels write SIMD blocks:
 
 * Level 4, `LevelSuperFastSIMD`: The fastest SIMD compression, at a reduced compression ratio.
 * Level 5, `LevelFastestSIMD`: Fast compression with a good compression ratio.
 * Level 6, `LevelBalancedSIMD`: A balance between compression and speed. ~50% the speed of level 5.
-* Level 7, `LevelSmallestSIMD`: The smallest output. Not tuned for speed.
+* Level 7, `LevelSmallestSIMD`: Small output, at a fraction of the speed of the levels above.
+* Level 9, `LevelUltraSIMD`: The smallest output, but very slow. See "Ultra Levels" below.
 
 ```Go
    compressed, err := minlz.Encode(nil, src, minlz.LevelFastestSIMD)
@@ -157,7 +159,7 @@ For small blocks the MinLZ levels compress faster, and usually decompress faster
 `LevelSIMDDelta` can be added to levels 4 to 6, for example `minlz.LevelBalancedSIMD | minlz.LevelSIMDDelta`.
 The first 32 literals of each operation are then stored as the difference to the bytes at the last match offset (see [SPEC_SIMD.md](SPEC_SIMD.md) 4.5).
 This mainly helps binary data, like tables of numbers, but makes text larger and costs decompression speed.
-Level 7 decides this itself.
+Levels 7 and 9 decide this themselves.
 
 SIMD blocks can be used with `Encode`, `TryEncode`, `AppendEncoded`, the decoding functions and streams,
 see "Writer Compression Level" below.
@@ -167,7 +169,7 @@ Decompression uses AVX-512 on amd64 CPUs with AVX-512 (F, BW, VL, VBMI, VBMI2), 
 and AVX2 on CPUs with AVX2 and BMI2; arm64 uses NEON. Other platforms use Go.
 Huffman coding picks AVX-512, AVX2 or NEON the same way, but also needs POPCNT for AVX2, and AVX-512 VPOPCNTDQ for AVX-512.
 SuperFast, Fastest and Balanced SIMD compress with assembly on amd64 and arm64, with the same output as the Go code.
-Smallest and delta literals use Go.
+Smallest, Ultra and delta literals use Go.
 
 Each row compares a SIMD level with the MinLZ level of the same name, for example `LevelFastestSIMD` with `LevelFastest`.
 Speeds are shown as MinLZ → SIMD, with the SIMD speed relative to MinLZ.
@@ -210,6 +212,44 @@ All levels except Smallest compress with assembly.
 | Smallest  | 256KB |      -19.9% |     103 → 107 (1.0x) |  4,899 → 9,483 (1.9x) |
 | Smallest  | 1MB   |      -19.8% |     130 → 140 (1.1x) | 5,201 → 10,498 (2.0x) |
 | Smallest  | 8MB   |      -20.1% |     148 → 170 (1.1x) | 5,887 → 11,223 (1.9x) |
+
+## Ultra Levels
+
+`LevelUltra` (8) writes MinLZ blocks and `LevelUltraSIMD` (9) writes SIMD blocks.
+They search much harder for matches than Smallest, and pick the combination of matches and literals that codes smallest.
+They are meant for data that is compressed once and decompressed many times.
+
+* Output is on average 1-13% smaller than Smallest of the same block type, and the gain grows with the block size:
+  matches can reach back to the start of their block, or about 2MB in MinLZ blocks, so use blocks of 2MB or more where possible.
+* Compressing blocks of 2MB and more is about 20 times slower than Smallest, and up to 75 times on very compressible data,
+  such as logs. Smaller blocks lose less.
+* Decompression is about as fast as for Smallest blocks of 256KB and more.
+  `LevelUltraSIMD` codes more of a block with Huffman tables, so its blocks of 64KB and less decompress slower.
+* Compressing a block of 8MB takes about 90MB of memory with `LevelUltra` and 150MB with `LevelUltraSIMD`,
+  besides the buffers of a stream. A `Writer` compresses up to one block more than its concurrency at once.
+* `LevelUltraSIMD` blocks are practically never larger than `LevelSmallestSIMD` blocks of the same data.
+
+Each row compares an ultra level with Smallest of the same block type, for example `LevelUltraSIMD` with `LevelSmallestSIMD`.
+Single core, geometric mean of 10 files (logs, JSON, CSV, text, a tar file, protobuf and URLs),
+the first 8MB of each (2MB for blocks of 64KB and less, 4MB for 256KB blocks), on an AMD Ryzen 9 9950X,
+decompressing SIMD blocks with AVX-512.
+
+| Blocks | Block | Output size |  Compression MB/s |      Decompression MB/s |
+|--------|-------|------------:|------------------:|------------------------:|
+| MinLZ  | 4KB   |       -1.4% | 21 → 17.3 (0.83x) |   4,586 → 4,355 (0.95x) |
+| MinLZ  | 16KB  |       -2.7% | 46 → 13.0 (0.28x) |   4,984 → 4,931 (0.99x) |
+| MinLZ  | 64KB  |       -4.4% | 74 → 10.8 (0.14x) |   5,468 → 5,594 (1.02x) |
+| MinLZ  | 256KB |       -6.4% |  99 → 8.8 (0.09x) |   4,967 → 4,984 (1.00x) |
+| MinLZ  | 2MB   |       -9.6% | 139 → 7.2 (0.05x) |   5,550 → 5,998 (1.08x) |
+| MinLZ  | 8MB   |      -10.9% | 150 → 6.8 (0.05x) |   5,910 → 6,624 (1.12x) |
+| SIMD   | 4KB   |       -3.7% |  20 → 5.2 (0.27x) |   3,305 → 2,108 (0.64x) |
+| SIMD   | 16KB  |       -4.2% |  45 → 5.3 (0.12x) |   4,863 → 3,893 (0.80x) |
+| SIMD   | 64KB  |       -4.3% |  74 → 9.1 (0.12x) |   8,232 → 7,438 (0.90x) |
+| SIMD   | 256KB |       -6.8% | 104 → 8.4 (0.08x) |  10,209 → 9,724 (0.95x) |
+| SIMD   | 2MB   |      -11.2% | 152 → 7.5 (0.05x) | 11,694 → 11,938 (1.02x) |
+| SIMD   | 8MB   |      -13.4% | 170 → 6.5 (0.04x) | 11,529 → 12,123 (1.05x) |
+
+`mz c -ultra` compresses with `LevelUltraSIMD`, and `mz c -ultra -classic` with `LevelUltra`.
 
 ## Streams
 
@@ -278,7 +318,7 @@ The default level is `LevelBalanced`.
 Typical speeds are `LevelFastest` is 2x the speed of `LevelBalanced` 
 and `LevelSmallest` is at least an order of magnitude slower.
 
-The SIMD levels `LevelSuperFastSIMD`, `LevelFastestSIMD`, `LevelBalancedSIMD` and `LevelSmallestSIMD`,
+The SIMD levels `LevelSuperFastSIMD`, `LevelFastestSIMD`, `LevelBalancedSIMD`, `LevelSmallestSIMD` and `LevelUltraSIMD`,
 the first three optionally with `LevelSIMDDelta`, write SIMD blocks. See "SIMD Blocks" above.
 Blocks that don't compress are stored uncompressed, as with the other levels.
 
@@ -652,6 +692,8 @@ so experiment with fine-tuning for your needs.
 
 Streams are compressed with 16 threads on an AMD Ryzen 9 9950X 16-Core Processor.
 MinLZ rows are the classic levels of v1.2.1, MinLZ SIMD rows the SIMD levels of v1.3.0.
+The Ultra rows (`LevelUltra`, `LevelUltraSIMD`) were measured later, with each thread on its own core.
+Measured that way, MinLZ 3 compresses the JSON stream at about 1,300 MiB/s.
 
 Decompression is single-threaded. Gzip is pgzip, which inflates in one goroutine with read-ahead.
 With 16 threads MinLZ, S2 and LZ4 streams all decompress at 8,000-13,000 MiB/s, limited by memory bandwidth.
@@ -660,21 +702,23 @@ With 16 threads MinLZ, S2 and LZ4 streams all decompress at 8,000-13,000 MiB/s, 
 
 Input Size: 6,273,951,764 bytes
 
-| Compressor   | Speed MiB/s |          Size | Reduction | Dec MiB/s |
-|--------------|------------:|--------------:|----------:|----------:|
-| MinLZ 1      |      20,829 |   944,744,935 |    84.94% |     4,183 |
-| MinLZ 2      |      11,570 |   888,075,500 |    85.85% |     3,882 |
-| MinLZ 3      |         752 |   760,347,482 |    87.88% |     4,802 |
-| MinLZ SIMD 1 |      20,436 |   755,828,965 |    87.95% |     6,695 |
-| MinLZ SIMD 2 |      11,446 |   727,552,584 |    88.40% |     6,676 |
-| MinLZ SIMD 3 |       1,185 |   620,265,897 |    90.11% |     7,645 |
-| S2 Default   |      20,900 | 1,041,700,255 |    83.40% |     3,414 |
-| S2 Better    |      12,034 |   944,872,699 |    84.94% |     3,348 |
-| S2 Best      |         950 |   826,384,742 |    86.83% |     3,750 |
-| LZ4 Fastest  |       9,788 | 1,274,297,625 |    79.69% |     4,117 |
-| LZ4 Best     |       2,100 | 1,091,826,458 |    82.60% |     4,252 |
-| Snappy       |       1,488 | 1,525,176,492 |    75.69% |     2,557 |
-| Gzip L5      |       4,891 |   938,779,472 |    85.04% |       899 |
+| Compressor       | Speed MiB/s |          Size | Reduction | Dec MiB/s |
+|------------------|------------:|--------------:|----------:|----------:|
+| MinLZ 1          |      20,829 |   944,744,935 |    84.94% |     4,183 |
+| MinLZ 2          |      11,570 |   888,075,500 |    85.85% |     3,882 |
+| MinLZ 3          |         752 |   760,347,482 |    87.88% |     4,802 |
+| MinLZ Ultra      |         115 |   709,737,820 |    88.69% |     4,069 |
+| MinLZ SIMD 1     |      20,436 |   755,828,965 |    87.95% |     6,695 |
+| MinLZ SIMD 2     |      11,446 |   727,552,584 |    88.40% |     6,676 |
+| MinLZ SIMD 3     |       1,185 |   620,265,897 |    90.11% |     7,645 |
+| MinLZ SIMD Ultra |         110 |   567,719,843 |    90.95% |     6,659 |
+| S2 Default       |      20,900 | 1,041,700,255 |    83.40% |     3,414 |
+| S2 Better        |      12,034 |   944,872,699 |    84.94% |     3,348 |
+| S2 Best          |         950 |   826,384,742 |    86.83% |     3,750 |
+| LZ4 Fastest      |       9,788 | 1,274,297,625 |    79.69% |     4,117 |
+| LZ4 Best         |       2,100 | 1,091,826,458 |    82.60% |     4,252 |
+| Snappy           |       1,488 | 1,525,176,492 |    75.69% |     2,557 |
+| Gzip L5          |       4,891 |   938,779,472 |    85.04% |       899 |
 
 ![Compression vs Size](img/json-v1-comp.png)
 ![Decompression Speed](img/json-v1-decomp.png)
@@ -689,21 +733,23 @@ Source file: https://files.klauspost.com/compress/github-june-2days-2019.json.zs
 
 Input Size: 3,325,605,752 bytes
 
-| Compressor   | Speed MiB/s |          Size | Reduction | Dec MiB/s |
-|--------------|------------:|--------------:|----------:|----------:|
-| MinLZ 1      |      10,665 |   906,259,396 |    72.75% |     2,342 |
-| MinLZ 2      |       7,376 |   761,034,455 |    77.12% |     2,580 |
-| MinLZ 3      |         484 |   642,900,085 |    80.67% |     3,036 |
-| MinLZ SIMD 1 |      10,674 |   676,370,562 |    79.66% |     5,462 |
-| MinLZ SIMD 2 |       5,064 |   605,187,097 |    81.80% |     5,518 |
-| MinLZ SIMD 3 |         559 |   513,043,373 |    84.57% |     6,223 |
-| S2 Default   |       9,451 | 1,093,516,949 |    67.12% |     1,942 |
-| S2 Better    |       5,404 |   884,711,436 |    73.40% |     2,102 |
-| S2 Best      |         456 |   773,678,211 |    76.74% |     2,294 |
-| LZ4 Fastest  |       5,489 | 1,066,961,737 |    67.92% |     3,665 |
-| LZ4 Best     |         722 |   903,598,068 |    72.83% |     3,269 |
-| Snappy       |         777 | 1,316,042,016 |    60.43% |     1,588 |
-| Gzip L5      |       2,345 |   767,729,808 |    76.91% |       467 |
+| Compressor       | Speed MiB/s |          Size | Reduction | Dec MiB/s |
+|------------------|------------:|--------------:|----------:|----------:|
+| MinLZ 1          |      10,665 |   906,259,396 |    72.75% |     2,342 |
+| MinLZ 2          |       7,376 |   761,034,455 |    77.12% |     2,580 |
+| MinLZ 3          |         484 |   642,900,085 |    80.67% |     3,036 |
+| MinLZ Ultra      |          52 |   581,625,193 |    82.51% |     2,570 |
+| MinLZ SIMD 1     |      10,674 |   676,370,562 |    79.66% |     5,462 |
+| MinLZ SIMD 2     |       5,064 |   605,187,097 |    81.80% |     5,518 |
+| MinLZ SIMD 3     |         559 |   513,043,373 |    84.57% |     6,223 |
+| MinLZ SIMD Ultra |          47 |   459,227,018 |    86.19% |     5,476 |
+| S2 Default       |       9,451 | 1,093,516,949 |    67.12% |     1,942 |
+| S2 Better        |       5,404 |   884,711,436 |    73.40% |     2,102 |
+| S2 Best          |         456 |   773,678,211 |    76.74% |     2,294 |
+| LZ4 Fastest      |       5,489 | 1,066,961,737 |    67.92% |     3,665 |
+| LZ4 Best         |         722 |   903,598,068 |    72.83% |     3,269 |
+| Snappy           |         777 | 1,316,042,016 |    60.43% |     1,588 |
+| Gzip L5          |       2,345 |   767,729,808 |    76.91% |       467 |
 
 ![Compression vs Size](img/csv-v1-comp.png)
 
@@ -718,21 +764,23 @@ Source file: https://files.klauspost.com/compress/nyc-taxi-data-10M.csv.zst
 
 Input Size: 2,622,574,440 bytes
 
-| Compressor   | Speed MiB/s |        Size | Reduction | Dec MiB/s |
-|--------------|------------:|------------:|----------:|----------:|
-| MinLZ 1      |      27,696 | 186,266,387 |    92.90% |     5,862 |
-| MinLZ 2      |      19,558 | 172,551,192 |    93.42% |     5,970 |
-| MinLZ 3      |       1,739 | 141,128,842 |    94.62% |     6,729 |
-| MinLZ SIMD 1 |      29,967 | 143,743,002 |    94.52% |     8,623 |
-| MinLZ SIMD 2 |      13,126 | 134,202,495 |    94.88% |     8,718 |
-| MinLZ SIMD 3 |       2,785 | 106,937,805 |    95.92% |     9,817 |
-| S2 Default   |      23,251 | 230,521,260 |    91.21% |     4,645 |
-| S2 Better    |      14,023 | 217,884,566 |    91.69% |     4,778 |
-| S2 Best      |       1,631 | 185,357,903 |    92.93% |     5,067 |
-| LZ4 Fastest  |      11,427 | 216,323,995 |    91.75% |     5,445 |
-| LZ4 Best     |       3,169 | 169,447,971 |    93.54% |     5,471 |
-| Snappy       |       3,226 | 290,116,961 |    88.94% |     4,407 |
-| Gzip L5      |       7,547 | 142,190,883 |    94.58% |     2,160 |
+| Compressor       | Speed MiB/s |        Size | Reduction | Dec MiB/s |
+|------------------|------------:|------------:|----------:|----------:|
+| MinLZ 1          |      27,696 | 186,266,387 |    92.90% |     5,862 |
+| MinLZ 2          |      19,558 | 172,551,192 |    93.42% |     5,970 |
+| MinLZ 3          |       1,739 | 141,128,842 |    94.62% |     6,729 |
+| MinLZ Ultra      |          64 | 125,730,119 |    95.21% |     6,213 |
+| MinLZ SIMD 1     |      29,967 | 143,743,002 |    94.52% |     8,623 |
+| MinLZ SIMD 2     |      13,126 | 134,202,495 |    94.88% |     8,718 |
+| MinLZ SIMD 3     |       2,785 | 106,937,805 |    95.92% |     9,817 |
+| MinLZ SIMD Ultra |          77 |  91,737,425 |    96.50% |     9,354 |
+| S2 Default       |      23,251 | 230,521,260 |    91.21% |     4,645 |
+| S2 Better        |      14,023 | 217,884,566 |    91.69% |     4,778 |
+| S2 Best          |       1,631 | 185,357,903 |    92.93% |     5,067 |
+| LZ4 Fastest      |      11,427 | 216,323,995 |    91.75% |     5,445 |
+| LZ4 Best         |       3,169 | 169,447,971 |    93.54% |     5,471 |
+| Snappy           |       3,226 | 290,116,961 |    88.94% |     4,407 |
+| Gzip L5          |       7,547 | 142,190,883 |    94.58% |     2,160 |
 
 ![Compression vs Size](img/logs-v1-comp.png)
 
@@ -747,21 +795,23 @@ Source file: https://files.klauspost.com/compress/apache.log.zst
 
 Input Size: 1,862,623,243 bytes
 
-| Compressor   | Speed MiB/s |        Size | Reduction | Dec MiB/s |
-|--------------|------------:|------------:|----------:|----------:|
-| MinLZ 1      |      16,324 | 591,974,386 |    68.22% |     3,541 |
-| MinLZ 2      |       8,666 | 518,109,345 |    72.18% |     2,790 |
-| MinLZ 3      |         329 | 483,073,294 |    74.06% |     2,925 |
-| MinLZ SIMD 1 |      14,504 | 460,844,754 |    75.26% |     5,574 |
-| MinLZ SIMD 2 |       4,507 | 418,840,099 |    77.51% |     5,253 |
-| MinLZ SIMD 3 |         509 | 378,029,682 |    79.70% |     5,072 |
-| S2 Default   |      14,418 | 623,832,101 |    66.51% |     3,068 |
-| S2 Better    |       5,055 | 568,441,654 |    69.48% |     2,648 |
-| S2 Best      |         322 | 553,965,705 |    70.26% |     2,666 |
-| LZ4 Fastest  |       7,545 | 618,174,538 |    66.81% |     4,214 |
-| LZ4 Best     |         582 | 552,015,243 |    70.36% |     3,695 |
-| Snappy       |       1,422 | 589,837,541 |    68.33% |     2,928 |
-| Gzip L5      |       2,871 | 434,976,919 |    76.65% |       609 |
+| Compressor       | Speed MiB/s |        Size | Reduction | Dec MiB/s |
+|------------------|------------:|------------:|----------:|----------:|
+| MinLZ 1          |      16,324 | 591,974,386 |    68.22% |     3,541 |
+| MinLZ 2          |       8,666 | 518,109,345 |    72.18% |     2,790 |
+| MinLZ 3          |         329 | 483,073,294 |    74.06% |     2,925 |
+| MinLZ Ultra      |          86 | 443,465,680 |    76.19% |     2,877 |
+| MinLZ SIMD 1     |      14,504 | 460,844,754 |    75.26% |     5,574 |
+| MinLZ SIMD 2     |       4,507 | 418,840,099 |    77.51% |     5,253 |
+| MinLZ SIMD 3     |         509 | 378,029,682 |    79.70% |     5,072 |
+| MinLZ SIMD Ultra |          68 | 350,200,658 |    81.20% |     4,499 |
+| S2 Default       |      14,418 | 623,832,101 |    66.51% |     3,068 |
+| S2 Better        |       5,055 | 568,441,654 |    69.48% |     2,648 |
+| S2 Best          |         322 | 553,965,705 |    70.26% |     2,666 |
+| LZ4 Fastest      |       7,545 | 618,174,538 |    66.81% |     4,214 |
+| LZ4 Best         |         582 | 552,015,243 |    70.36% |     3,695 |
+| Snappy           |       1,422 | 589,837,541 |    68.33% |     2,928 |
+| Gzip L5          |       2,871 | 434,976,919 |    76.65% |       609 |
 
 ![Compression vs Size](img/msgp-v1-comp.png)
 
@@ -776,21 +826,23 @@ Source file: https://files.klauspost.com/compress/github-ranks-backup.bin.zst
 
 Input Size: 10,065,157,632 bytes
 
-| Compressor   | Speed MiB/s |          Size | Reduction | Dec MiB/s |
-|--------------|------------:|--------------:|----------:|----------:|
-| MinLZ 1      |      10,363 | 5,665,919,270 |    43.71% |     2,471 |
-| MinLZ 2      |       6,756 | 5,211,238,237 |    48.22% |     2,351 |
-| MinLZ 3      |         343 | 4,891,048,094 |    51.41% |     2,601 |
-| MinLZ SIMD 1 |       7,716 | 4,997,154,445 |    50.35% |     4,731 |
-| MinLZ SIMD 2 |       4,469 | 4,668,561,048 |    53.62% |     4,927 |
-| MinLZ SIMD 3 |         395 | 4,426,577,291 |    56.02% |     4,913 |
-| S2 Default   |       9,029 | 5,915,541,066 |    41.23% |     2,259 |
-| S2 Better    |       5,380 | 5,455,008,813 |    45.80% |     2,165 |
-| S2 Best      |         317 | 5,192,490,222 |    48.41% |     2,231 |
-| LZ4 Fastest  |       5,960 | 5,850,848,099 |    41.87% |     3,555 |
-| LZ4 Best     |         281 | 5,348,131,209 |    46.86% |     3,428 |
-| Snappy       |       1,027 | 6,056,946,612 |    39.82% |     2,084 |
-| Gzip L5      |       2,261 | 4,917,967,527 |    51.14% |       520 |
+| Compressor       | Speed MiB/s |          Size | Reduction | Dec MiB/s |
+|------------------|------------:|--------------:|----------:|----------:|
+| MinLZ 1          |      10,363 | 5,665,919,270 |    43.71% |     2,471 |
+| MinLZ 2          |       6,756 | 5,211,238,237 |    48.22% |     2,351 |
+| MinLZ 3          |         343 | 4,891,048,094 |    51.41% |     2,601 |
+| MinLZ Ultra      |          60 | 4,656,701,972 |    53.73% |     2,307 |
+| MinLZ SIMD 1     |       7,716 | 4,997,154,445 |    50.35% |     4,731 |
+| MinLZ SIMD 2     |       4,469 | 4,668,561,048 |    53.62% |     4,927 |
+| MinLZ SIMD 3     |         395 | 4,426,577,291 |    56.02% |     4,913 |
+| MinLZ SIMD Ultra |          50 | 4,265,779,073 |    57.62% |     4,027 |
+| S2 Default       |       9,029 | 5,915,541,066 |    41.23% |     2,259 |
+| S2 Better        |       5,380 | 5,455,008,813 |    45.80% |     2,165 |
+| S2 Best          |         317 | 5,192,490,222 |    48.41% |     2,231 |
+| LZ4 Fastest      |       5,960 | 5,850,848,099 |    41.87% |     3,555 |
+| LZ4 Best         |         281 | 5,348,131,209 |    46.86% |     3,428 |
+| Snappy           |       1,027 | 6,056,946,612 |    39.82% |     2,084 |
+| Gzip L5          |       2,261 | 4,917,967,527 |    51.14% |       520 |
 
 ![Compression vs Size](img/10gb-v1-comp.png)
 
@@ -902,7 +954,9 @@ Options:
   -safe
         Do not overwrite output files
   -simd.delta
-        Store SIMD literals as deltas, mainly for binary data. Not with -classic, -0 or -3, which decides itself
+        Store SIMD literals as deltas, mainly for binary data. Not with -classic, -0, -3 or -ultra, which decide themselves
+  -ultra
+        Compress the most, about 20 times slower than -3, up to 75 times on very compressible data. Needs about 180MB of memory per -cpu thread with 8MB blocks, 125MB with -classic
   -verify
         Verify files, but do not write output
   -xfast

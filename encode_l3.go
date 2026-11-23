@@ -531,7 +531,7 @@ func (e *simdEncoder) encodeBlockBest(src []byte) {
 	}
 	// Literals cost the mean code length of src, which fits the data better than a fixed cost.
 	litBits := 8 * 16
-	if n := e.litBits(src); n+simdBlockBits+simdTableBits < 8*len(src) {
+	if n := e.litBits(src); n+simdBlockBits+e.tableBits() < 8*len(src) {
 		litBits = 16 * n / len(src)
 	}
 

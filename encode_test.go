@@ -41,7 +41,7 @@ import (
 
 func TestEncodeHuge(t *testing.T) {
 	data := make([]byte, MaxBlockSize)
-	for level := LevelFastest; level <= LevelSmallestSIMD; level++ {
+	for level := LevelFastest; level <= LevelUltraSIMD; level++ {
 		t.Run(fmt.Sprintf("level%d", level), func(t *testing.T) {
 			comp, err := Encode(make([]byte, MaxEncodedLen(len(data))), data, level)
 			if err != nil {
@@ -133,7 +133,9 @@ func TestSizes(t *testing.T) {
 }
 
 func TestEmitters(t *testing.T) {
-	var tmp [11]byte
+	// The longest operations are 11 bytes, and the assembly emitters store a byte past them (see emitCopy).
+	// tmp is on the heap, so a store past it changes another object.
+	var tmp [12]byte
 	lFactor := 1.01
 	if testing.Short() {
 		lFactor = 1.5
@@ -575,7 +577,7 @@ func TestEncodeRandomStored(t *testing.T) {
 		src := make([]byte, size)
 		rng.Read(src)
 		want := encodeUncompressed(nil, src)
-		for _, level := range append([]int{LevelSuperFast, LevelFastest, LevelBalanced, LevelSmallest}, simdLevels...) {
+		for _, level := range append([]int{LevelSuperFast, LevelFastest, LevelBalanced, LevelSmallest, LevelUltra}, simdLevels...) {
 			t.Run(fmt.Sprintf("%d/level%d", size, level), func(t *testing.T) {
 				got, err := Encode(nil, src, level)
 				if err != nil {
@@ -687,6 +689,7 @@ var encodeAsmLevels = []struct {
 	{"Fastest", LevelFastest},
 	{"Balanced", LevelBalanced},
 	{"Smallest", LevelSmallest},
+	{"Ultra", LevelUltra},
 }
 
 // TestEncodeAsmGolden pins the assembly encoders' output to digests recorded on
@@ -713,6 +716,10 @@ func TestEncodeAsmGolden(t *testing.T) {
 	got := make(map[string]string, len(encodeAsmInputs)*len(encodeAsmLevels))
 	for _, in := range encodeAsmInputs {
 		for _, lv := range encodeAsmLevels {
+			// LevelUltra takes seconds a MB with -race.
+			if lv.level == LevelUltra && race.Enabled && in.size > 64<<10 {
+				continue
+			}
 			key := in.name + "/" + lv.name
 			t.Run(key, func(t *testing.T) {
 				src := in.gen(rand.New(rand.NewSource(1)), in.size)
@@ -774,70 +781,87 @@ var encodeAsmGolden = map[string]string{
 	"mixed-256k/Fastest":         "2088948cf5d7865d07c32a0c0ac506789b7d08f85af427371749460fe63d260c",
 	"mixed-256k/Smallest":        "e9a5609bf0982c7b843b255ed5b34d6516002f8b4291f3a861c5512529281b0b",
 	"mixed-256k/SuperFast":       "c791b630dacc6738a8305bf5f5f3464d9b87c273d1720482d226b72c1cbe7044",
+	"mixed-256k/Ultra":           "905a14391145890aedf372a78f47651c534f2f47ee6dd212bebc414452360c6e",
 	"mixed-2m-plus-1/Balanced":   "ff0bc3d149572df2288370f113449f2a72f732c75e83fb3d7b1d98df8bc9744f",
 	"mixed-2m-plus-1/Fastest":    "9faef2f77223b35d770f4eb8c58bac081af3cecb9cd22f399d8c1e6354d15676",
 	"mixed-2m-plus-1/Smallest":   "40be3fcec7096111a53027124e6dd5da7085f389cc86d5c56f3292ec1d5db461",
 	"mixed-2m-plus-1/SuperFast":  "6e7206fea57164befa6298c17d5211dc0735c32a89e8d460166833a41ba3c8ae",
+	"mixed-2m-plus-1/Ultra":      "a58846c5c3295662dcf3721c29651874d571266666964f5de0a3350c3d3acebf",
 	"mixed-2m/Balanced":          "3bb0957e9fb47a8d003f2a09038feab8bf91993692063cec9fc00c6d3b87a11e",
 	"mixed-2m/Fastest":           "089783e04b4175e26b5caf86664699cb59fd2b4e67cd8e150d46a7a342d70c27",
 	"mixed-2m/Smallest":          "12383e2d0e98ebcbd02daa488b06b11cf8c6e6939664dad0bafabbaf81c7c5d3",
 	"mixed-2m/SuperFast":         "7211bdd7b5318b5d630435190225495916c83814ef7d67df240c90706770b4a0",
+	"mixed-2m/Ultra":             "957bbc27591fbf6d47885492d60dc21b68572b3c0f32ce90e81400e5c6b5388e",
 	"mixed-4k-plus-1/Balanced":   "d92e19219bf5eb51eed40815fc9acb3de11b3e0a02dae641afd8d10e2819315f",
 	"mixed-4k-plus-1/Fastest":    "d92e19219bf5eb51eed40815fc9acb3de11b3e0a02dae641afd8d10e2819315f",
 	"mixed-4k-plus-1/Smallest":   "d92e19219bf5eb51eed40815fc9acb3de11b3e0a02dae641afd8d10e2819315f",
 	"mixed-4k-plus-1/SuperFast":  "d92e19219bf5eb51eed40815fc9acb3de11b3e0a02dae641afd8d10e2819315f",
+	"mixed-4k-plus-1/Ultra":      "d92e19219bf5eb51eed40815fc9acb3de11b3e0a02dae641afd8d10e2819315f",
 	"mixed-512k/Balanced":        "8896ff57577dea25d32d65b4a7045536b79df45c0b0ef2b12279b499df289610",
 	"mixed-512k/Fastest":         "d31b18b26622609d0d44208f9c689f8f8bf48bee24a18ed1086a5d7ce3b4b774",
 	"mixed-512k/Smallest":        "f46e44a05b1f56988f06a33220a76977a451e658e625e7612fd91c5c8618d92c",
 	"mixed-512k/SuperFast":       "305fb72ce261ae717844f3ffaa5e423dbdfe084e771944c76de354342be7a950",
+	"mixed-512k/Ultra":           "b6e16b1a155ed93ffb494e18ed137b539c3162c0a2e2da7694821b8305d9df81",
 	"random-64k/Balanced":        "07a6b7ac3df0b1f79dec447dddcb369b04d3a060fd56e221456793aee2bfbd93",
 	"random-64k/Fastest":         "07a6b7ac3df0b1f79dec447dddcb369b04d3a060fd56e221456793aee2bfbd93",
 	"random-64k/Smallest":        "07a6b7ac3df0b1f79dec447dddcb369b04d3a060fd56e221456793aee2bfbd93",
 	"random-64k/SuperFast":       "07a6b7ac3df0b1f79dec447dddcb369b04d3a060fd56e221456793aee2bfbd93",
+	"random-64k/Ultra":           "07a6b7ac3df0b1f79dec447dddcb369b04d3a060fd56e221456793aee2bfbd93",
 	"repeats-1k/Balanced":        "0482adbd31ccf6e8f254881c382d962ead21337a09ef23c18125ea655f2528bd",
 	"repeats-1k/Fastest":         "964eb2bd11e018d68395a283a07d65e130b177956710cb408aaa92b6d5af9455",
 	"repeats-1k/Smallest":        "0482adbd31ccf6e8f254881c382d962ead21337a09ef23c18125ea655f2528bd",
 	"repeats-1k/SuperFast":       "997c39d7860da6da0bcb8d831699dff7fa71d1e5f0986e8c3519c98a587caa3c",
+	"repeats-1k/Ultra":           "cf37a07096a941581655473dd1dd0a5117ceb464a36ad6ee89fad1d2cdcd29bf",
 	"repeats-256k/Balanced":      "c3d0852c7f7c6d62e008af056ae1c4366d5b8a860a96ffed41a6c47d8be84424",
 	"repeats-256k/Fastest":       "c3d0852c7f7c6d62e008af056ae1c4366d5b8a860a96ffed41a6c47d8be84424",
 	"repeats-256k/Smallest":      "57cc0ed085f598119fb2bd335c1607da3b85fd1d5595bde16edc42913e67193d",
 	"repeats-256k/SuperFast":     "57cc0ed085f598119fb2bd335c1607da3b85fd1d5595bde16edc42913e67193d",
+	"repeats-256k/Ultra":         "c3d0852c7f7c6d62e008af056ae1c4366d5b8a860a96ffed41a6c47d8be84424",
 	"text-16k-plus-1/Balanced":   "1248ee486bdaa1ebc8aa154a7e8b8217adac1332a1de26423c894e8febac7dd2",
 	"text-16k-plus-1/Fastest":    "d7ff7038b200007baf6a21e8316663eb8121a23a0eea87b9f417aeacb09dd1ec",
 	"text-16k-plus-1/Smallest":   "d2f63012bf40743eb513c1009a3fb598cf4fd06fca7488014cdbd5b87169eb25",
 	"text-16k-plus-1/SuperFast":  "e1efcd5a906f983afafa8f14774a225d64fa4019277d9d3a2f5e258e1b1692cc",
+	"text-16k-plus-1/Ultra":      "4ddf976a96662cfce7a0de3571d956de20944934ff678397ddc16cabdc16731d",
 	"text-16k/Balanced":          "927c03f7a52ab2fa0497e2729a75710fdcbabf91fec8391e250f12271af37ba4",
 	"text-16k/Fastest":           "5229cfe90ce627ac3431e6a63d9253432f0ffc217319aa8d263825cbcfa41afd",
 	"text-16k/Smallest":          "01f2178a6a736fe1587bf4a49114fda87164812848c5b635c112e39530a0e216",
 	"text-16k/SuperFast":         "bc49a0717e5aba747d9e6acd437f5041b3e99bb6d56d46493a894f8916654cd9",
+	"text-16k/Ultra":             "5796dc169fc30280677d4d2cdb8ddab5bea52b407cfb07f631ad0a6e7add5472",
 	"text-1k-plus-1/Balanced":    "788291af88972f6cfd390f0def8d2ccb28781ba2466ccd44f4de97934a26c8bf",
 	"text-1k-plus-1/Fastest":     "3fd425693515c343ba50b50c55b6c94266909abfda96bad24bbc5bee3f1bd41d",
 	"text-1k-plus-1/Smallest":    "0eb95f5f8c422759d384cd1bed9b38399945c3c552ac30a7de08cdd0f664996d",
 	"text-1k-plus-1/SuperFast":   "107763edcd24c08c5b5cdea4da352f0b96f8c228564edf97adc206f715241e5d",
+	"text-1k-plus-1/Ultra":       "5c122d52539dc6afcf8bd591f8a18a3b7b1c8cf16449553fc28cff542984e059",
 	"text-1m/Balanced":           "52d3ff88576103c4b479d8b984f8d6388ef7328a2edc68bd70c23c65337acefb",
 	"text-1m/Fastest":            "db0e947b1af146ebd54b1201cb61d440fadacd5b2492f84f7c3be061aefa663f",
 	"text-1m/Smallest":           "6096d1b5acdc117201fa5be502a5b61f7e53d476eb16287c3ad890e0c3d2c298",
 	"text-1m/SuperFast":          "00d894b3599a7447cae2cc2a643cf241707aa75bc23ea5e35ce11f9a150300a2",
+	"text-1m/Ultra":              "271cc5f8f68b9d4ce0997a1b0406d5dc98b89b72b8cb569fc00c1a1ad1e75f21",
 	"text-32k/Balanced":          "9f17bfdc675ade76a1865c64e2ccadadcf04514e810038520eb1f56c1ae18882",
 	"text-32k/Fastest":           "5c95a5cbabccb2ae2034d865b044c7a749ef439016912597315ff9c241eb0101",
 	"text-32k/Smallest":          "490cc695c4ae91643196549586dade8b565934ad77f73a9f2f6baefcd716a6bc",
 	"text-32k/SuperFast":         "d308d5b7b84180e1a0781f08bef2eab61da262656a6c1f7cb972d6dd3506a40a",
+	"text-32k/Ultra":             "813353f438a45d3b44aeeb148f03799b406ca22c7730e3902a26645a0a7c5a71",
 	"text-4k/Balanced":           "29c090bda31bccf2fb787f37c1d86f7a51f13dad2b48a5bbc2d9a7804178f1d9",
 	"text-4k/Fastest":            "c1d052ce98af5ab30512a33e8e8f4f1678c9fecc8055f1e15e7b203aef1d39ec",
 	"text-4k/Smallest":           "ac63af233502931a3778a80746b6b4e273b44762dbcb201c5e0a49ecd1e45a62",
 	"text-4k/SuperFast":          "51d0f51e7875c2e024248401392b8ab13e3fb552509314bc4086495156698e42",
+	"text-4k/Ultra":              "79c72d2b0bd04de7dfe7c4f2e2ad87967a9f8b59305c22ea36c87d60681ffb30",
 	"text-512k-plus-1/Balanced":  "b33b5689af334ba1322f7bb2dbd92681df1d39c6c7ea270fd9286b0ca5ed8fc3",
 	"text-512k-plus-1/Fastest":   "90b7423aa6d7e167ba74d981a843dbfbca5bfc78b4ffff8516e7cc4973aa342c",
 	"text-512k-plus-1/Smallest":  "fd86cf4e79c6430615d4e5c6be27e075f3a98a009837166099ef6bef3746d058",
 	"text-512k-plus-1/SuperFast": "a7eec24ebab564f8ce24607d7b49a430f4f9e6b3e5fe55089cebe276d1bcbc81",
+	"text-512k-plus-1/Ultra":     "62fcdf5d43d075294811b9d50aa5e45966130c58c72ca4255282c79f10eef8ec",
 	"text-64k-minus-1/Balanced":  "cdfec76bf9cd97695555fbc22e7937492b1ae6f765cd50d69220ba263059ddcf",
 	"text-64k-minus-1/Fastest":   "7c0faaa524b4a0c62a14be36210aec3460b60a30497859687afbbcd80f5904b0",
 	"text-64k-minus-1/Smallest":  "c22078911e504bd3ccfcaa274a298a8c0fff529326e117fac13b7550babe7135",
 	"text-64k-minus-1/SuperFast": "c2667cf412b18157a9d0e500d4bab685e19eb2b0f9608d8140757af5a4f70224",
+	"text-64k-minus-1/Ultra":     "cfdb5dc568024e8785277830ab192778cb4e8dd9dc15d9e26bd2168c4ae42a3e",
 	"text-64k-plus-1/Balanced":   "4c99619b199a3bdbafd28685b715d4c4da240a7b4eab54aa55b8a0a6fb3a6b60",
 	"text-64k-plus-1/Fastest":    "ec9e4627c2cb5a69731cf088b3b10e248b94bdac2da8f27585829cf754ed001c",
 	"text-64k-plus-1/Smallest":   "3d4fec4dfdf4a1a5352b98a810b25454212b38a3190f683be6ed5e8c0cfe8d49",
 	"text-64k-plus-1/SuperFast":  "efbf13d66ad6482bf8a3e7d75f8dfce0016ffcf55f669b0087158c84f063fbde",
+	"text-64k-plus-1/Ultra":      "f8b7c588c19a4363ed6aad93d426cc951dcc1c2dce007943089dc97739627a7d",
 }
 
 // TestEncodePoolsRoundTrip checks that every assembly encoder returns its
@@ -1062,7 +1086,15 @@ func TestMaxOffsetBoundary(t *testing.T) {
 	}
 }
 
-var simdLevels = []int{LevelSuperFastSIMD, LevelFastestSIMD, LevelBalancedSIMD, LevelSmallestSIMD,
+// simdTestCut returns src, or its start for LevelUltraSIMD with -short, which is too slow for large inputs there.
+func simdTestCut(src []byte, level int) []byte {
+	if level == LevelUltraSIMD && testing.Short() {
+		return src[:min(len(src), 64<<10)]
+	}
+	return src
+}
+
+var simdLevels = []int{LevelSuperFastSIMD, LevelFastestSIMD, LevelBalancedSIMD, LevelSmallestSIMD, LevelUltraSIMD,
 	LevelSuperFastSIMD | LevelSIMDDelta, LevelFastestSIMD | LevelSIMDDelta, LevelBalancedSIMD | LevelSIMDDelta}
 
 // simdTestStats adds the entry modes of the streams of SIMD block b to modes, with the literals as simdLits,
@@ -1162,6 +1194,7 @@ func TestSIMDEncode(t *testing.T) {
 	var flags [2]int
 	for name, src := range inputs {
 		for _, level := range simdLevels {
+			src := simdTestCut(src, level)
 			enc, err := Encode(nil, src, level)
 			if err != nil {
 				t.Fatal(err)
@@ -1311,6 +1344,7 @@ func testSIMDEncodeOps(t *testing.T) {
 	}
 	for i, src := range inputs {
 		for _, level := range simdLevels {
+			src := simdTestCut(src, level)
 			enc, err := Encode(nil, src, level)
 			if err != nil {
 				t.Fatal(err)
@@ -1357,6 +1391,7 @@ func testSIMDEncodeNoOverlap(t *testing.T) {
 	}
 	for i, src := range inputs {
 		for _, level := range simdLevels {
+			src := simdTestCut(src, level)
 			enc, err := Encode(nil, src, level)
 			if err != nil {
 				t.Fatal(err)
@@ -1611,6 +1646,7 @@ func testSIMDEncodeParse(t *testing.T) {
 	src := simdTestParseInput(rng)
 	for _, in := range [][]byte{src[:64<<10], src, genEncText(rng, 1<<20)} {
 		for _, level := range simdLevels {
+			in := simdTestCut(in, level)
 			block := make([]byte, MaxEncodedLen(len(in)))
 			e := simdEncoder{out: block[1:1:len(block)]}
 			e.parse(in, level)
@@ -1826,6 +1862,10 @@ func testSIMDEncodeAllocs(t *testing.T) {
 	src := genEncText(rand.New(rand.NewSource(1)), 1<<20)
 	dst := make([]byte, MaxEncodedLen(len(src)))
 	for _, level := range simdLevels {
+		src := src
+		if level == LevelUltraSIMD {
+			src = src[:64<<10]
+		}
 		if _, err := Encode(dst, src, level); err != nil {
 			t.Fatal(err)
 		}
@@ -2321,5 +2361,151 @@ func TestSIMDEncodeLiteralsStored(t *testing.T) {
 				t.Errorf("alphabet %d, level %d: %d of %d literal blocks stored, want stored %v", tc.alphabet, level, stored, blocks, tc.stored[i])
 			}
 		}
+	}
+}
+
+// TestUltraClassicPrices checks that every operation LevelUltra emits takes the bytes its parser priced.
+func TestUltraClassicPrices(t *testing.T) {
+	lits, dst := make([]byte, maxCopy2Lits+1), make([]byte, 32)
+	var lens []int
+	for ml := 1; ml <= 400; ml++ {
+		lens = append(lens, ml)
+	}
+	lens = append(lens, 65565, 65566, 65599, 65600, 65601, 1<<20)
+	for _, off := range []int{1, 63, 64, 1024, 1025, 65535, 65536, 65599, 65600, maxCopy3Offset} {
+		for _, ml := range lens {
+			for nl := range len(lits) + 1 {
+				for _, rep := range []int{off, off + 1} {
+					want := ultraHdr(nl) + nl + ultraHdr(ml)
+					if rep != off {
+						if ml < 4 {
+							continue
+						}
+						want = ultraHdr(nl) + nl + ultraClassicCopy(off, ml, nl)
+					}
+					if got := ultraEmitOp(dst, lits[:nl], off, ml, rep); got != want {
+						t.Errorf("%d literals, %d bytes at offset %d, repeat %d: %d bytes, priced %d", nl, ml, off, rep, got, want)
+					}
+				}
+			}
+		}
+	}
+}
+
+// TestUltraOffsets checks the ultra levels on matches at the offsets where classic copies change, and past the largest.
+func TestUltraOffsets(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	for _, off := range []int{63, 64, 1024, 1025, 65599, 65600, maxCopy3Offset, maxCopy3Offset + 1} {
+		if testing.Short() && off > 65600 {
+			continue
+		}
+		src := make([]byte, off+64<<10)
+		rng.Read(src[:off])
+		for i := off; i < len(src); i++ {
+			src[i] = src[i-off]
+		}
+		for _, level := range []int{LevelUltra, LevelUltraSIMD} {
+			enc, err := Encode(nil, src, level)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if dec, err := Decode(nil, enc); err != nil || !bytes.Equal(dec, src) {
+				t.Fatalf("level %d offset %d: roundtrip mismatch (err=%v)", level, off, err)
+			}
+			if (level == LevelUltraSIMD || off <= maxCopy3Offset) && len(enc) > len(src)-32<<10 {
+				t.Errorf("level %d offset %d: %d bytes, the match was not taken", level, off, len(enc))
+			}
+		}
+	}
+}
+
+// TestUltraSIMDOps checks that LevelUltraSIMD fits an 8 MB block of an operation every 3 bytes in the chunks
+// of a block, without the fallback to LevelSmallestSIMD, and that it never parses a repeat of less than 4 bytes
+// without literals: a block has room for operations of 3 bytes on average.
+func TestUltraSIMDOps(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	// Matches of 35 bytes, which run on for 8 bytes into a longer match. The parser can take 32 bytes,
+	// then the next 3 at the same offset to reach the longer match, but not as a repeat without literals.
+	var split []byte
+	for len(split) < 512<<10 {
+		far := make([]byte, 64)
+		rng.Read(far)
+		pad := make([]byte, 40+rng.Intn(40))
+		rng.Read(pad)
+		split = append(append(split, far...), pad...)
+		split = append(append(split, split[len(split)-35:]...), far[:8]...)
+		r := make([]byte, 1+rng.Intn(8))
+		rng.Read(r)
+		split = append(append(split, far...), r...)
+	}
+	for b := split; len(b) > 0; b = b[min(len(b), 64<<10):] {
+		rep := 1
+		for _, q := range new(ultraParser).parseSIMD(b[:min(len(b), 64<<10)]) {
+			off, ml := int(q.off), int(q.ml)
+			if q.ll == 0 && off == rep && ml < 4 {
+				t.Fatalf("repeat of %d bytes without literals", ml)
+			}
+			rep = ultraRepAfter(off, ml)
+		}
+	}
+	n := MaxBlockSize
+	if testing.Short() {
+		n = 256 << 10
+	}
+	// A literal, then 2 bytes at the repeat offset 3.
+	src := make([]byte, n)
+	for i := range src {
+		src[i] = byte(i % 3)
+		if i%3 == 0 {
+			src[i] = byte(rng.Intn(256))
+		}
+	}
+	block := make([]byte, MaxEncodedLen(n))
+	e := simdEncoder{out: block[1:1:len(block)]}
+	e.parse(src, LevelUltraSIMD)
+	size := e.finish()
+	got, err := reference.DecodeSIMDBlockStrict(block[:size+1])
+	if size == 0 || err != nil || !bytes.Equal(got, src) {
+		t.Fatalf("block of %d bytes in %d chunks, roundtrip mismatch (err=%v)", size, e.chunks, err)
+	}
+}
+
+// TestUltraStreamCounts checks that the statistics of a LevelUltraSIMD parse count the values that the emitters write
+// to the operation streams, which its prices and its choice of stored streams assume.
+func TestUltraStreamCounts(t *testing.T) {
+	src := simdTestParseInput(rand.New(rand.NewSource(1)))[:64<<10]
+	u := new(ultraParser)
+	u.simd, u.minRep, u.maxOff = true, 2, len(src)-1
+	u.st.init(src)
+	first := u.st
+	seqs := u.parse(src)
+	block := make([]byte, MaxEncodedLen(len(src)))
+	e := simdEncoder{out: block[1:1:len(block)]}
+	e.reset(src, 0, 0)
+	ultraEmitSIMD(&e, src, seqs)
+	if e.chunks != 0 {
+		t.Fatal("more than one chunk")
+	}
+	for k, x := range [...]struct {
+		vals      []byte
+		cur, prev []uint32
+	}{
+		{e.tok[:e.nTok], u.st.tok[:], first.tok[:]},
+		{e.ll[:e.nLL], u.st.ll[:], first.ll[:]},
+		{e.offc[:e.nOffc], u.st.off[:], first.off[:]},
+		{e.esc[:e.nEsc], u.st.esc[:], first.esc[:]},
+	} {
+		var h [256]uint32
+		for _, v := range x.vals {
+			h[v]++
+		}
+		for v := range x.cur {
+			if got := x.cur[v] - x.prev[v]; got != h[v] {
+				t.Errorf("stream %d value %d: counted %d, emitted %d", k, v, got, h[v])
+			}
+		}
+	}
+	if e.nEsc == 0 || e.nOffc == 0 {
+		t.Errorf("no escapes (%d) or offsets (%d) to compare", e.nEsc, e.nOffc)
 	}
 }

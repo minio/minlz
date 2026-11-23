@@ -581,6 +581,10 @@ func TestSIMDEncodeAsm(t *testing.T) {
 	parse, text := simdTestParseInput(rng), genEncText(rng, 1<<20)
 	gd, ad := make([]byte, MaxEncodedLen(1<<20)), make([]byte, MaxEncodedLen(1<<20))
 	for _, level := range simdLevels {
+		// LevelUltraSIMD has no assembly parser either, and is slow.
+		if level == LevelUltraSIMD {
+			continue
+		}
 		asm := level&LevelSIMDDelta == 0 && level != LevelSmallestSIMD
 		for _, n := range []int{4 << 10, 64 << 10, 64<<10 + 1, 1 << 20} {
 			for _, src := range [][]byte{parse[:n], text[:n]} {
