@@ -1686,8 +1686,9 @@ func (r *ReadSeeker) Seek(offset int64, whence int) (int64, error) {
 	r.maxBufSize = MaxEncodedLen(r.maxBlock) + checksumSize
 	r.streamStart = u
 
-	r.i = r.j                     // Remove rest of current block.
-	r.blockStart = u - int64(r.j) // Adjust current block start for accounting.
+	// Drop the decoded block, or the in-block check above would serve it for offsets before u.
+	r.i, r.j = 0, 0
+	r.blockStart = u
 	if u < absOffset {
 		// Forward inside block
 		return absOffset, r.Skip(absOffset - u)
