@@ -259,6 +259,39 @@ func TestReadSeekerJumpSingleStream(t *testing.T) {
 	}
 }
 
+// TestReadSeekerJumpDropsBlock checks that an index jump drops the decoded block,
+// so a read just before the jump target isn't served from it.
+func TestReadSeekerJumpDropsBlock(t *testing.T) {
+	data := seekTestData(3<<20, 1)
+	stream := seekTestStream(t, LevelBalanced, data)
+	idx, err := IndexStream(bytes.NewReader(stream))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]byte, 100)
+	// Decode a block before the jump target, or after it. Seeking exactly to an entry doesn't decode.
+	for _, first := range []int64{0, int64(len(data) - 1000)} {
+		rs, err := NewReader(bytes.NewReader(stream)).ReadSeeker(idx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, u, err := rs.index.Find(int64(len(data) / 2))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := rs.ReadAt(got, first); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := rs.Seek(u, io.SeekStart); err != nil {
+			t.Fatal(err)
+		}
+		off := u - int64(len(got))
+		if _, err := rs.ReadAt(got, off); err != nil || !bytes.Equal(got, data[off:off+int64(len(got))]) {
+			t.Errorf("ReadAt(%d) after reading at %d and Seek(%d): %v", off, first, u, err)
+		}
+	}
+}
+
 // TestReaderS2AfterMinLZ checks that an S2 stream with larger blocks than the MinLZ stream
 // before it is accepted, and that S2 blocks advance the offset when decoded concurrently.
 func TestReaderS2AfterMinLZ(t *testing.T) {
