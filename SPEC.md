@@ -1,6 +1,6 @@
-# MINLZ FORMAT SPECIFICATION V1.1.0
+# MINLZ FORMAT SPECIFICATION V1.2.0
 
-All implementations are requested to state: "This implements the MinLZ specification v1.1"
+All implementations are requested to state: "This implements the MinLZ specification v1.2"
 
 Furthermore, if a subset of features is supported, it should state this clearly.
 
@@ -15,6 +15,7 @@ The spec versioning follows [semantic versioning](https://semver.org/).
 
 * v1.0: Initial release.
 * v1.1: Adds [SIMD Blocks](SPEC_SIMD.md).
+* v1.2: Adds [Dictionaries](SPEC_DICT.md).
 
 # BLOCK FORMAT
 
@@ -42,7 +43,8 @@ of the block if this value is non-zero.
 ## 1.1 Block Size 
 
 A block starts with the uncompressed length in bits 0-23 of an unsigned varint.
-Bits 24-31 of the varint are the block type ([SPEC_SIMD.md](SPEC_SIMD.md) 1.0); MinLZ blocks are type 0.
+Bits 24-31 of the varint are the block type ([SPEC_SIMD.md](SPEC_SIMD.md) 1.0); MinLZ blocks are type 0,
+or 3 and 5 with a dictionary ([SPEC_DICT.md](SPEC_DICT.md) 2).
 
 Maximum uncompressed block size is 8 MiB = 8,388,608 bytes.
 
@@ -270,7 +272,7 @@ or a repeat can be set up for copy.
 
 ## 3 DICTIONARY FORMAT
 
-TBD.
+See [SPEC_DICT.md](SPEC_DICT.md).
 
 # STREAM FORMAT
 
@@ -338,9 +340,11 @@ be extended in the future.
 | 2, 3    | MinLZ Compressed Block        | 4.4, 4.5    |
 | 16      | MinLZ SIMD Block              | 4.5B        |
 | 32      | EOF                           | 4.6         |
+| 33, 34  | Dictionary                    | [SPEC_DICT.md](SPEC_DICT.md) 3.2 |
 | 0-63    | (reserved, non-skippable)     | 4.8         |
 | 64      | Stream Index                  | 4.12        |
-| 65-127  | (reserved, skippable)         | 4.9         |
+| 65      | Stream Index, dictionaries    | [SPEC_DICT.md](SPEC_DICT.md) 3.4 |
+| 66-127  | (reserved, skippable)         | 4.9         |
 | 128-191 | (user defined, skippable)     | 4.10        |
 | 192-253 | (user defined, non-skippable) | 4.11        |
 | 254     | Padding                       | 4.7         |
@@ -349,20 +353,21 @@ be extended in the future.
 ### 4.1. Stream identifier (chunk type 0xff)
 
 The stream identifier is always the first element in the stream.
-It is exactly six bytes long and starts with "MinLz" in ASCII. 
-This means that a valid MinLZ framed stream always starts with the bytes:
+It holds "MinLz" in ASCII, a stream info byte, and the extension bytes that the info byte announces (4.1.2):
+six bytes, plus one byte per extension byte.
+This means that a valid MinLZ framed stream without extension bytes always starts with the bytes:
 
     (type) (length)        M    i    n    L    z
     0xff   0x06 0x00 0x00  0x4d 0x69 0x6e 0x4c 0x7a <stream info>
 
-The final byte of the identifier is a block size indicator.
+The stream info byte:
 
 | Bits | Description                                                        |
 |------|--------------------------------------------------------------------|
 | 0-3  | Max block size indicator                                           |
 | 4-5  | Reserved, must be ignored                                          |
 | 6    | Stream may contain [SIMD Block(s)](SPEC_SIMD.md) (chunk type 0x10) |
-| 7    | Reserved, must be 0                                                |
+| 7    | An extension byte follows (4.1.2)                                  |
 
 #### 4.1.1 Max Block Size
 
@@ -377,6 +382,31 @@ Decoders may choose not to decode streams based on the maximum block size.
 Decoders *must* reject any value > 13.
 
 To allow concatenation, a stream identifier can follow an EOF chunk. 
+
+#### 4.1.2 Extension Bytes
+
+Extension bytes hold flags that readers must not ignore.
+Bit 7 of the stream info byte announces the first extension byte, and bit 7 of an extension byte announces the next one.
+They follow the info byte in order.
+
+| Bits | Description                     |
+|------|---------------------------------|
+| 0-6  | Flags                           |
+| 7    | Another extension byte follows  |
+
+| Extension byte | Bit | Flag       | See                                  |
+|----------------|-----|------------|--------------------------------------|
+| 1              | 0   | Dictionary | [SPEC_DICT.md](SPEC_DICT.md) 3.1     |
+
+All other flags are reserved, and must be 0.
+
+* The length of the identifier chunk is exactly 6 plus the number of extension bytes.
+* The last extension byte sets at least one flag.
+* Readers *must* reject an identifier that breaks either rule, or that sets a flag they do not support,
+  which includes every reserved flag.
+
+Hints that readers may ignore use the reserved bits 4-5 of the stream info byte instead.
+The flags of a stream identifier apply to the stream it starts.
 
 ### 4.2. Uncompressed data (chunk type 0x01)
 
@@ -399,7 +429,8 @@ Instead, use type 0x02, which indicates a MinLZ compressed block.
 ### 4.4. MinLZ Compressed data (chunk type 0x02)
 
 A MinLZ block *without* the MinLZ identifier (initial 0 byte).
-The block type (see 1.1 Block Size) must be 0. SIMD blocks are stored as chunk type 0x10.
+The block type (see 1.1 Block Size) must be 0, or 3 or 5 in a stream with a dictionary ([SPEC_DICT.md](SPEC_DICT.md) 3.3).
+SIMD blocks are stored as chunk type 0x10.
 
 A CRC32C (see section 3) checksum of the *uncompressed* 
 data is stored at the beginning of the block.
@@ -410,7 +441,7 @@ as well as blocks with decompressed size less than compressed size.
 ### 4.5. MinLZ Compressed data - Compressed CRC (chunk type 0x03).
 
 A MinLZ block *without* the MinLZ identifier (initial 0 byte).
-The block type (see 1.1 Block Size) must be 0.
+The block type (see 1.1 Block Size) must be 0, or 3 or 5 in a stream with a dictionary ([SPEC_DICT.md](SPEC_DICT.md) 3.3).
 
 A CRC32C (see section 3) checksum of the *compressed* 
 data is stored at the beginning of the block.
@@ -423,7 +454,7 @@ If possible prefer type `0x02` over this.
 ### 4.5B. MinLZ SIMD Block (chunk type 0x10).
 
 A [SIMD block](SPEC_SIMD.md) *without* the MinLZ indicator (initial 0 byte).
-The block type (see 1.1 Block Size) must be 1.
+The block type (see 1.1 Block Size) must be 1, or 2 or 4 in a stream with a dictionary ([SPEC_DICT.md](SPEC_DICT.md) 3.3).
 
 An [xxhash3](https://github.com/Cyan4973/xxHash#xxhash---extremely-fast-hash-algorithm)
 (XXH3 64-bit, seed 0) of the *uncompressed* data is stored unmasked, as an 8-byte little endian value, at the start of the chunk data, before the block.
@@ -465,7 +496,7 @@ All bytes of the padding chunk, except the chunk byte itself and the length,
 should be zero, but decompressors must not try to interpret or verify the
 padding data in any way.
 
-### 4.8. Reserved unskippable chunks (chunk types 0x04-0x0f, 0x11-0x1f, 0x21-0x3f)
+### 4.8. Reserved unskippable chunks (chunk types 0x04-0x0f, 0x11-0x1f, 0x23-0x3f)
 
 These are reserved for future expansion. A decoder that sees such a chunk
 should immediately return an error, as it must assume it cannot decode the
@@ -503,6 +534,7 @@ Future versions of this specification will not define meanings for these chunks.
 ### 4.12 Index (chunk type 0x40) — OPTIONAL
 
 Each block is structured as a skippable block, with the chunk ID 0x40.
+An index that covers a stream with a dictionary uses chunk 0x41 instead ([SPEC_DICT.md](SPEC_DICT.md) 3.4).
 
 Decoders are free to skip this block.
 

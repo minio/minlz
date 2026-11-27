@@ -26,7 +26,8 @@ The varint holds the block type and the decoded size:
 |-------|------------------------------|
 | 0     | MinLZ block (SPEC.md)        |
 | 1     | SIMD block, this document    |
-| 2-255 | Reserved                     |
+| 2-5   | Blocks with a dictionary, [SPEC_DICT.md](SPEC_DICT.md) |
+| 6-255 | Reserved                     |
 
 Decoders *must* reject reserved types. The varint must fit in 32 bits.
 
@@ -110,7 +111,7 @@ An entry starts with an unsigned varint: the stored size of the stream's data in
 | 2    | A pivco block coded with a new Huffman table, given as code lengths (2.3)                      |
 | 3    | A pivco block coded with a new Huffman table, given as class lengths (2.3)                     |
 | 4    | A pivco block coded with a new Huffman table, given as class lengths of the delta layout (A.6) |
-| 5-7  | Reserved, invalid modes                                                                        |
+| 5-7  | Reserved, invalid modes; in blocks with a dictionary, see [SPEC_DICT.md](SPEC_DICT.md) 2.3     |
 
 With modes 2-4, the new Huffman table follows the varint, inside the entry.
 It becomes the stream's current table, also for the following chunks or literal blocks.
@@ -235,7 +236,8 @@ Each entry is an unsigned varint: the stored size of the stream's data in bytes 
 | 2    | A pivco block, coded with a new table                | The code lengths (2.3)  |
 | 3    | A pivco block, coded with a new table                | The class lengths (2.3) |
 
-Modes 4-7 are invalid in chunk records. The offset bits are raw bits, so their entry always has mode 0:
+Modes 4-7 are invalid in chunk records, except in blocks with a dictionary ([SPEC_DICT.md](SPEC_DICT.md) 2.3).
+The offset bits are raw bits, so their entry always has mode 0:
 its varint is the size of the offset bits times 8.
 
 A table has a fixed size, so it has no size of its own:
